@@ -1,13 +1,13 @@
 {
   "domain": "optim_energy",
   "name": "Optim Energy",
-  "codeowners": ["@optim-al"],
+  "codeowners": ["@mkyuchukov"],
   "config_flow": true,
   "dependencies": ["frontend", "http", "lovelace"],
-  "documentation": "https://github.com/optim-al/optim-energy",
+  "documentation": "https://github.com/mkyuchukov/optim-energy",
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/optim-al/optim-energy/issues",
+  "issue_tracker": "https://github.com/mkyuchukov/optim-energy/issues",
   "requirements": [],
   "single_config_entry": true,
   "version": "0.1.0"
