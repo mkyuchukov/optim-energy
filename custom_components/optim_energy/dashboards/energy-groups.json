@@ -1,0 +1,71 @@
+{
+  "title": "Groups",
+  "views": [
+    {
+      "title": "Groups",
+      "path": "groups",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-spaces-card",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "3D",
+      "path": "3d",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-3d-card",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

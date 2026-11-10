@@ -1,0 +1,71 @@
+{
+  "title": "Devices",
+  "views": [
+    {
+      "title": "Map",
+      "path": "topology",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-topology-card",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "List",
+      "path": "list",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-devices-card",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

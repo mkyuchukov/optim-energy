@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Optim Energy",
+        "description": "Create the portal and its dashboards. Use the client or site name.",
+        "data": {
+          "site_name": "Site name"
+        }
+      }
+    },
+    "error": {
+      "required": "Enter a site name."
+    },
+    "abort": {
+      "already_configured": "Optim Energy is already set up on this Home Assistant instance."
+    }
+  },
+  "abort": {
+    "already_configured": "Optim Energy is already set up on this Home Assistant instance."
+  }
+}
