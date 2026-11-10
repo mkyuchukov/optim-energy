@@ -15,8 +15,5 @@
     "abort": {
       "already_configured": "Optim Energy is already set up on this Home Assistant instance."
     }
-  },
-  "abort": {
-    "already_configured": "Optim Energy is already set up on this Home Assistant instance."
   }
 }
