@@ -56,6 +56,21 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(tree["places"][0]["kind"], "location")
         self.assertEqual(tree["placed"], {})
 
+    def test_existing_client_tree_is_preserved_but_layout_is_replaced(self) -> None:
+        configs = dashboards.build_dashboard_configs("New Package Name")
+        old_tree = {
+            "main": "virt:old",
+            "places": [{"id": "loc:a", "name": "Existing Client", "kind": "location"}],
+            "prices": {"loc:a": {"mode": "fixed", "fixed": 0.3}},
+        }
+        dashboards.apply_existing_device_tree(
+            configs,
+            {"device_tree": old_tree, "views": [{"title": "Old layout"}]},
+        )
+        home = configs["energy-home"]
+        self.assertEqual(home["device_tree"], old_tree)
+        self.assertEqual([view["path"] for view in home["views"]], ["home", "help"])
+
     def test_assets_exist(self) -> None:
         for name in (
             "building-cards.js",
@@ -65,6 +80,12 @@ class PackageTests(unittest.TestCase):
             self.assertTrue((COMPONENT / "frontend" / name).is_file())
         self.assertTrue((COMPONENT / "brand" / "icon.png").is_file())
         self.assertTrue((COMPONENT / "brand" / "logo.png").is_file())
+
+    def test_client_sidebar_is_limited_to_portal(self) -> None:
+        source = (COMPONENT / "frontend" / "building-cards.js").read_text("utf-8")
+        self.assertIn("hass.user?.is_admin", source)
+        self.assertIn("Object.keys(hass.panels || {})", source)
+        self.assertIn("allowed.has(id)", source)
 
     def test_bill_reader_uses_integration_route(self) -> None:
         source = (COMPONENT / "frontend" / "building-cards.js").read_text("utf-8")

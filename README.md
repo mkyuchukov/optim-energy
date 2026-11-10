@@ -7,7 +7,7 @@ This repository is the **0.1.0 internal preview**. It packages the existing Opti
 ## What it installs
 
 - The Optim Energy building, controls, alerts and report cards.
-- Eight Home Assistant dashboards:
+- Eight replacement Home Assistant dashboards:
   - Locations
   - Overview and Help
   - Groups
@@ -19,7 +19,7 @@ This repository is the **0.1.0 internal preview**. It packages the existing Opti
 - A first-run form asking for the client or site name.
 - A local static asset route for the bundled JavaScript and bill-reader settings.
 
-Existing dashboards with the same URL paths are never overwritten.
+The known Optim Energy dashboards are replaced with the bundled package layout. Their existing `device_tree` is carried over so locations, groups, main meters and prices are not lost. Old manually installed Optim Energy dashboard resources are removed. Client accounts see only the Optim Energy panels; the default Home Assistant dashboard and other panels are hidden for those accounts. Administrator accounts keep the normal Home Assistant tools.
 
 ## Requirements
 
@@ -37,8 +37,9 @@ Once this repository is published:
 4. Install **Optim Energy**.
 5. Open **Settings → Devices & services → Add integration → Optim Energy**.
 6. Enter the client or site name.
+7. Create a non-admin account for the client.
 
-The integration creates the dashboards and serves the portal assets.
+The integration replaces the known Optim Energy dashboards with the bundled layouts, removes legacy portal resources, serves the portal assets and sets Locations as the first page. Non-admin accounts see only the Optim Energy panels; administrator accounts keep Home Assistant maintenance tools.
 
 ## Updates
 

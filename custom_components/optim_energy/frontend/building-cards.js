@@ -439,16 +439,20 @@ function treeWithoutVirtual(tree, id) {
   for (const [k, v] of Object.entries(tree.parents)) { if (k === id) continue; if (v !== id) parents[k] = v; else if (up) parents[k] = up; }
   return treeWithDevicePlaced({ ...tree, parents, virtual: tree.virtual.filter((v) => v.id !== id), main: tree.main === id ? null : tree.main }, id, null);
 }
-// Home Assistant keeps the sidebar order per account and has no shared setting, so each account is set to this list as the app loads.
-// What an account may not open never shows, so admins see the last four and others do not.
-const SIDEBAR = ['energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup', 'core_configurator', '45df7312_zigbee2mqtt', 'hacs'];
+// Home Assistant keeps the sidebar order per account. Client accounts see the
+// packaged portal only; administrator accounts keep the normal HA tools.
+const SIDEBAR = ['energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup'];
+const ADMIN_EXTRA = ['core_configurator', '45df7312_zigbee2mqtt', 'hacs'];
 let sidebarDone = false;
 async function syncSidebar(hass) {
   if (sidebarDone || typeof location === 'undefined') return;
   sidebarDone = true;
   try {
     const now = (await hass.callWS({ type: 'frontend/get_user_data', key: 'sidebar' }))?.value;
-    if (JSON.stringify(now?.panelOrder) !== JSON.stringify(SIDEBAR) || now?.hiddenPanels?.length) await hass.callWS({ type: 'frontend/set_user_data', key: 'sidebar', value: { panelOrder: SIDEBAR, hiddenPanels: [] } });
+    const admin = !!hass.user?.is_admin;
+    const allowed = new Set(admin ? [...SIDEBAR, ...ADMIN_EXTRA] : SIDEBAR.filter((id) => id !== 'energy-setup'));
+    const hidden = admin ? (now?.hiddenPanels || []) : [...new Set([...(now?.hiddenPanels || []), ...Object.keys(hass.panels || {}).filter((id) => !allowed.has(id))])];
+    if (JSON.stringify(now?.panelOrder) !== JSON.stringify(SIDEBAR) || JSON.stringify(now?.hiddenPanels || []) !== JSON.stringify(hidden)) await hass.callWS({ type: 'frontend/set_user_data', key: 'sidebar', value: { panelOrder: SIDEBAR, hiddenPanels: hidden } });
   } catch (e) { /* the order is a nicety, the app works without it */ }
 }
 let treeLoad = null, treeWatched = false;

@@ -108,3 +108,14 @@ def build_dashboard_configs(site_name: str) -> dict[str, dict[str, Any]]:
             config["device_tree"] = default_device_tree(site_name)
         configs[spec["url_path"]] = config
     return configs
+
+
+def apply_existing_device_tree(
+    configs: dict[str, dict[str, Any]], existing_home_config: dict[str, Any] | None
+) -> None:
+    """Keep client data while replacing every dashboard layout from the package."""
+    if not existing_home_config:
+        return
+    tree = existing_home_config.get("device_tree")
+    if isinstance(tree, dict) and tree:
+        configs["energy-home"]["device_tree"] = copy.deepcopy(tree)
