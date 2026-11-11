@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.6
+
+- Allow the read-only recorder metadata command required by the frontend bootstrap.
+
 ## 0.2.5
 
 - Return area ids in filtered registry responses and log denied websocket commands for tenant UI tuning.
