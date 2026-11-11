@@ -287,15 +287,56 @@ class WebsocketFirewall:
         return False, "command is not allowlisted for tenant accounts"
 
 
-REST_ALLOWLIST = {
-    "/api/",
-    "/api/config",
-    "/api/websocket",
-}
+REST_ALLOWLIST = frozenset(
+    {
+        "/api/",
+        "/api/config",
+        "/api/websocket",
+    }
+)
+
+REST_ROOT_ONLY = (
+    "/api/webhook",
+    "/api/hassio_ingress",
+)
+
+
+def _is_api_surface(path: str, surface: str) -> bool:
+    """Return whether path is the surface itself or one of its children."""
+    return path == surface or path.startswith(f"{surface}/")
+
+
+def _rest_request_decision(
+    path: str,
+    *,
+    authenticated: bool,
+    root: bool,
+) -> tuple[bool, str]:
+    """Return whether a REST request may reach Home Assistant's auth layer."""
+    if not path.startswith("/api/") or path in REST_ALLOWLIST:
+        return True, ""
+    if path.startswith("/api/auth/"):
+        return True, ""
+
+    # Home Assistant webhooks are capability URLs and Supervisor ingress uses a
+    # separate signed session. Neither surface carries tenant identity at this
+    # boundary, so they are unavailable unless the caller proves root access.
+    if any(_is_api_surface(path, surface) for surface in REST_ROOT_ONLY):
+        if root:
+            return True, ""
+        return False, "webhook and ingress routes require root authentication"
+
+    if not authenticated:
+        # Preserve Home Assistant's native 401 challenge for missing or invalid
+        # credentials. There is no tenant user to filter at this point.
+        return True, ""
+    if root:
+        return True, ""
+    return False, "REST API is not available to tenant accounts"
 
 
 class RestFirewall:
-    """Block raw REST API access for authenticated tenant accounts.
+    """Block REST and capability-based bypass surfaces for tenant accounts.
 
     Home Assistant starts aiohttp before custom integrations are set up, so the
     frozen middleware chain must be extended in place. The startup self-test
@@ -325,25 +366,40 @@ class RestFirewall:
             if path.startswith("/api/auth/"):
                 return await handler(request)
             auth = request.headers.get("Authorization", "")
-            if not auth.lower().startswith("bearer "):
-                # Let Home Assistant's auth layer answer unauthenticated
-                # requests. Login and signed webhook flows stay outside this
-                # bearer-token tenant guard.
-                return await handler(request)
-            token = self.hass.auth.async_validate_access_token(auth[7:].strip())
+            token_value = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+            token = (
+                self.hass.auth.async_validate_access_token(token_value)
+                if token_value
+                else None
+            )
             user = token.user if token is not None else None
-            if user is None or self.manager.is_root(user):
+            authenticated = user is not None
+            root = authenticated and self.manager.is_root(user)
+            allowed, reason = _rest_request_decision(
+                path,
+                authenticated=authenticated,
+                root=root,
+            )
+            if allowed:
                 return await handler(request)
             if self.audit:
                 _LOGGER.warning(
-                    "Optim Energy audit: would deny REST %s %s for %s",
+                    "Optim Energy audit: would deny REST %s %s (%s)",
                     request.method,
                     path,
-                    user.name,
+                    reason,
                 )
                 return await handler(request)
+            actor = user.name if user is not None else "unauthenticated"
+            _LOGGER.warning(
+                "Optim Energy denied REST %s %s for %s: %s",
+                request.method,
+                path,
+                actor,
+                reason,
+            )
             return web.json_response(
-                {"code": "unauthorized", "message": "REST API is not available to tenant accounts"},
+                {"code": "unauthorized", "message": reason},
                 status=403,
             )
 

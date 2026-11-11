@@ -183,6 +183,47 @@ def test_unassigned_account_is_fail_closed() -> None:
     assert _decision(None, set(), {"type": "optim_energy/whoami"})[0]
 
 
+def test_rest_guard_keeps_only_the_bootstrap_allowlist_for_tenants() -> None:
+    for path in ("/api/", "/api/config", "/api/websocket"):
+        assert firewall._rest_request_decision(path, authenticated=True, root=False)[0]
+
+    for path in (
+        "/api/states",
+        "/api/history/period/2026-11-11T00:00:00+00:00",
+        "/api/logbook/2026-11-11T00:00:00+00:00",
+        "/api/template",
+        "/api/services",
+        "/api/config/config_entries/entry",
+        "/api/error_log",
+    ):
+        assert not firewall._rest_request_decision(path, authenticated=True, root=False)[0]
+
+
+def test_rest_guard_leaves_unauthenticated_regular_api_paths_to_ha_auth() -> None:
+    assert firewall._rest_request_decision("/api/states", authenticated=False, root=False)[0]
+    assert firewall._rest_request_decision("/api/template", authenticated=False, root=False)[0]
+
+
+def test_rest_guard_hard_blocks_webhooks_and_ingress_without_root() -> None:
+    for path in (
+        "/api/webhook",
+        "/api/webhook/",
+        "/api/webhook/companion-device",
+        "/api/hassio_ingress",
+        "/api/hassio_ingress/",
+        "/api/hassio_ingress/signed-addon-url",
+    ):
+        assert not firewall._rest_request_decision(path, authenticated=False, root=False)[0]
+        assert not firewall._rest_request_decision(path, authenticated=True, root=False)[0]
+        assert firewall._rest_request_decision(path, authenticated=True, root=True)[0]
+
+
+def test_rest_guard_allows_root_and_non_api_paths() -> None:
+    assert firewall._rest_request_decision("/api/states", authenticated=True, root=True)[0]
+    assert firewall._rest_request_decision("/auth/login_flow", authenticated=False, root=False)[0]
+    assert firewall._rest_request_decision("/optim_energy_static/app.js", authenticated=False, root=False)[0]
+
+
 def test_tree_payload_rejects_wrong_shapes() -> None:
     try:
         tenancy._guard_tree({"places": "not a list"})
@@ -206,6 +247,18 @@ class TenancyTests(unittest.TestCase):
 
     def test_unassigned_policy(self) -> None:
         test_unassigned_account_is_fail_closed()
+
+    def test_rest_tenant_allowlist(self) -> None:
+        test_rest_guard_keeps_only_the_bootstrap_allowlist_for_tenants()
+
+    def test_rest_unauthenticated_fallback(self) -> None:
+        test_rest_guard_leaves_unauthenticated_regular_api_paths_to_ha_auth()
+
+    def test_rest_bypass_surfaces(self) -> None:
+        test_rest_guard_hard_blocks_webhooks_and_ingress_without_root()
+
+    def test_rest_root_and_static_paths(self) -> None:
+        test_rest_guard_allows_root_and_non_api_paths()
 
     def test_tree_shape(self) -> None:
         test_tree_payload_rejects_wrong_shapes()

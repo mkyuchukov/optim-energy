@@ -27,12 +27,13 @@ Optim Energy runs multiple clients in one Home Assistant instance, but it does *
 - An ordinary client user is assigned to one location.
 - Authentication groups are generated from the client's areas and entities for Home Assistant's native state, history and entity-service filtering.
 - A websocket firewall allows only the portal command surface and checks history, statistics and logbook requests against the tenant.
-- Raw REST API access, templates, Assist, mobile-app hooks, arbitrary services and native configuration commands remain outside the client surface.
+- Raw REST API access, templates, Assist, arbitrary services and native configuration commands remain outside the client surface.
+- Webhook IDs and Supervisor ingress routes do not carry tenant identity. They are blocked unless the request presents a valid Home Assistant root bearer token.
 - Client portal settings live in `.storage/optim_energy.tenancy`, not in a dashboard document.
 
 Create users under **Setup → People**. A client administrator can create, disable, move and delete ordinary users inside its own client. Only the Home Assistant administrator can create clients or client administrators.
 
-The following remain shared: the recorder database, backups, logs, `/local` files, restarts and Home Assistant updates. Do not use this as a hostile-tenant boundary or expose secrets in shared files. For strict isolation, use one Home Assistant instance per client.
+The following remain shared: the recorder database, backups, logs, `/local` files, restarts and Home Assistant updates. Do not use this as a hostile-tenant boundary or expose secrets in shared files. For strict isolation, use one Home Assistant instance per client. Do not enable generic or companion-app webhooks, and do not expose add-on ingress, on a shared instance unless every caller is trusted to use the global root identity.
 
 ## Requirements
 
