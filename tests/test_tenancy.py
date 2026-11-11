@@ -34,6 +34,7 @@ def _install_ha_stubs() -> None:
         "homeassistant.helpers.area_registry": ModuleType("homeassistant.helpers.area_registry"),
         "homeassistant.helpers.device_registry": ModuleType("homeassistant.helpers.device_registry"),
         "homeassistant.helpers.entity_registry": ModuleType("homeassistant.helpers.entity_registry"),
+        "homeassistant.helpers.floor_registry": ModuleType("homeassistant.helpers.floor_registry"),
         "homeassistant.helpers.label_registry": ModuleType("homeassistant.helpers.label_registry"),
         "homeassistant.helpers.event": ModuleType("homeassistant.helpers.event"),
         "homeassistant.helpers.storage": ModuleType("homeassistant.helpers.storage"),

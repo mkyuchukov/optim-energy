@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Add explicit client assignment of native location labels and fix the floor registry API.
+- Move dashboard template loading off the event loop.
+
 ## 0.2.2
 
 - Correctly map the server root identity into the portal frontend.

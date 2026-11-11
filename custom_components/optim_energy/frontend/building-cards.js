@@ -2837,8 +2837,9 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
 .clientbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);font-size:13px;color:var(--muted)}
 .clientbar select{min-width:220px}.users{display:grid;gap:8px}.user{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:10px 12px;display:grid;grid-template-columns:minmax(170px,1.4fr) minmax(130px,.8fr) minmax(150px,1fr) auto;gap:8px;align-items:center}.user.me{border-color:var(--accent)}.who{display:grid;gap:2px;min-width:0}.who b{font-weight:600;overflow-wrap:anywhere}.who small{color:var(--muted);font-size:12px}.user select,.user button,.form input,.form select{font-size:13px;min-width:0}.acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;border-top:1px solid var(--line);padding-top:12px}.form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.form .wide{grid-column:1/-1}.err{color:var(--bad);font-size:13px}.ok{color:var(--ok);font-size:13px}.empty{color:var(--muted);padding:12px 0}
 .newclient{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.newclient label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.newclient input{min-width:220px}
+.locmap{display:grid;gap:7px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:11px 12px}.locmap .labs{display:flex;gap:8px 18px;flex-wrap:wrap}.locmap label{display:flex;gap:7px;align-items:center;font-size:13px}.locmap input{accent-color:var(--accent)}.locmap small{color:var(--muted);font-size:12px}
 @media(max-width:760px){.user{grid-template-columns:minmax(0,1fr) auto}.who{grid-column:1/-1}.acts{grid-column:1/-1;justify-content:flex-start}}
-</style><div class="w"><div class="head"><div><h2>People & clients</h2><p>Client administrators can create and disable users for their own client. Only the Home Assistant administrator can create a client or another client administrator.</p></div><button data-reload="1">Refresh</button></div><div id="clientbar"></div><div id="users"></div><div id="newclient"></div><div id="form"></div><span class="err" id="err"></span><span class="ok" id="ok"></span></div>`;
+</style><div class="w"><div class="head"><div><h2>People & clients</h2><p>Client administrators can create and disable users for their own client. Only the Home Assistant administrator can create a client or another client administrator.</p></div><button data-reload="1">Refresh</button></div><div id="clientbar"></div><div id="locationmap"></div><div id="users"></div><div id="newclient"></div><div id="form"></div><span class="err" id="err"></span><span class="ok" id="ok"></span></div>`;
       const r = this.shadowRoot;
       r.querySelector('.w').addEventListener('click', (e) => this.onClick(e));
       r.querySelector('.w').addEventListener('change', (e) => this.onChange(e));
@@ -2850,6 +2851,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       if (!portalCanManageUsers()) { this._users = []; return; }
       try {
         this._users = await this._hass.callWS({ type: 'optim_energy/user/list', ...(PORTAL.isRoot && portalClient ? { client: portalClient } : {}) });
+        this._catalog = PORTAL.isRoot ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }) : [];
         this._error = '';
       } catch (e) { this._users = []; this._error = e?.message || String(e); }
     }
@@ -2885,6 +2887,15 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     async onChange(e) {
       const t = e.target;
       if (t.id === 'clientSwitch') { switchPortalClient(this._hass, t.value); setTimeout(() => this.refresh(), 300); return; }
+      if (t.dataset.clientLabel) {
+        const chosen = [...this.shadowRoot.querySelectorAll('[data-client-label]')].filter((x) => x.checked).map((x) => x.dataset.clientLabel);
+        try {
+          const res = await this._hass.callWS({ type: 'optim_energy/client/set_locations', client: portalClient, labels: chosen });
+          const c = (PORTAL.clients || []).find((x) => x.id === portalClient); if (c) c.labels = res.labels || chosen;
+          whoLoad = null; treeLoad = null; await ensureTree(this._hass); await this.refresh(); this.flash('Client locations updated.');
+        } catch (x) { this.flash(x?.message || 'Could not assign the location.', true); this.paint(); }
+        return;
+      }
       if (t.dataset.userLoc) {
         try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: t.dataset.userLoc, location: t.value }); await this.refresh(); this.flash('Location updated.'); } catch (x) { this.flash(x?.message || 'Could not move the user.', true); }
       }
@@ -2905,8 +2916,13 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     flash(text, bad = false) { const r = this.shadowRoot; r.getElementById('err').textContent = bad ? text : ''; r.getElementById('ok').textContent = bad ? '' : text; clearTimeout(this._msgT); this._msgT = setTimeout(() => { r.getElementById('err').textContent = ''; r.getElementById('ok').textContent = ''; }, 5000); }
     paint() {
       const r = this.shadowRoot; if (!r) return;
-      if (!portalCanManageUsers()) { r.getElementById('users').innerHTML = '<div class="empty">Only a client administrator can change users.</div>'; r.getElementById('clientbar').innerHTML = ''; r.getElementById('newclient').innerHTML = ''; r.getElementById('form').innerHTML = ''; return; }
+      if (!portalCanManageUsers()) { r.getElementById('users').innerHTML = '<div class="empty">Only a client administrator can change users.</div>'; r.getElementById('clientbar').innerHTML = ''; r.getElementById('locationmap').innerHTML = ''; r.getElementById('newclient').innerHTML = ''; r.getElementById('form').innerHTML = ''; return; }
       const users = this._users || [], locs = this.locations(), root = PORTAL.isRoot;
+      const current = (PORTAL.clients || []).find((x) => x.id === portalClient) || {};
+      const selectedLabels = new Set(current.labels || []);
+      r.getElementById('locationmap').innerHTML = root
+        ? `<div class="locmap"><b>Portal locations</b><small>Choose the 📍 labels that belong to this client. Their areas and floors become groups.</small><div class="labs">${(this._catalog || []).map((x) => `<label><input type="checkbox" data-client-label="${esc(x.id)}"${selectedLabels.has(x.id) ? ' checked' : ''}${x.client && x.client !== portalClient ? ' disabled' : ''}>${esc(x.name)}${x.client && x.client !== portalClient ? ` <small>(${esc(x.client)})</small>` : ''}</label>`).join('') || '<small>No 📍 location labels exist yet.</small>'}</div></div>`
+        : `<div class="locmap"><b>Portal locations</b><small>${locs.map((x) => esc(x.name)).join(' · ') || 'No locations assigned.'}</small></div>`;
       r.getElementById('clientbar').innerHTML = `${root ? `<label class="clientbar"><span>Client</span><select id="clientSwitch" aria-label="Client">${(PORTAL.clients || []).map((c) => `<option value="${esc(c.id)}"${c.id === portalClient ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>` : `<div class="clientbar"><span>Client · ${esc(PORTAL.clientName || '')}</span></div>`}`;
       r.getElementById('newclient').innerHTML = root ? `<div class="newclient"><label>Name of new client<input id="clientName" maxlength="80" placeholder="Example Client"></label><button class="gold" data-create-client="1">Create client</button></div>` : '';
       r.getElementById('users').innerHTML = users.length ? users.map((u) => {

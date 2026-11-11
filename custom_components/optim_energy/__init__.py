@@ -121,7 +121,7 @@ async def _async_replace_dashboards(hass: HomeAssistant, site_name: str) -> None
     existing = {
         item["url_path"]: item for item in collection.async_items()
     }
-    configs = build_dashboard_configs(site_name)
+    configs = await hass.async_add_executor_job(build_dashboard_configs, site_name)
 
     await _async_remove_legacy_resources(hass)
 

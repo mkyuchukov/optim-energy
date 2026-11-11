@@ -26,6 +26,7 @@ from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
     entity_registry as er,
+    floor_registry as fr,
     label_registry as lr,
 )
 from homeassistant.helpers.event import async_call_later
@@ -276,29 +277,93 @@ class TenancyManager:
             client.setdefault("id", client_id)
             client.setdefault("slug", client_id)
             client.setdefault("name", client_id)
+            client.setdefault("labels", [])
             if not isinstance(self.data["trees"].get(client_id), dict):
                 self.data["trees"][client_id] = _copy_tree(None, str(client["name"]))
                 changed = True
         return changed
 
     def _refresh_location_index(self) -> None:
-        """Rebuild the UI index of locations from the client trees."""
+        """Rebuild the UI index of locations from trees and assigned labels."""
         locations: dict[str, dict[str, Any]] = {}
+        label_registry = lr.async_get(self.hass)
+        labels = {x.label_id: x for x in label_registry.async_list_labels()}
         for client_id, tree in self.data.get("trees", {}).items():
             if not isinstance(tree, dict):
                 continue
             for place in _place_locations(tree):
                 location_id = str(place["id"])
-                if location_id in locations and locations[location_id].get("client") != client_id:
-                    _LOGGER.warning("Location %s is present in more than one client tree", location_id)
-                    continue
-                locations[location_id] = {
+                entry = {
                     "id": location_id,
                     "name": str(place.get("name") or location_id),
                     "client": client_id,
                     "label_id": location_id[4:] if location_id.startswith("loc:") else None,
                 }
+                existing = locations.get(location_id)
+                if existing and existing.get("client") != client_id:
+                    _LOGGER.warning("Location %s is present in more than one client", location_id)
+                    continue
+                locations[location_id] = entry
+            for label_id in self.data.get("clients", {}).get(client_id, {}).get("labels", []):
+                label = labels.get(label_id)
+                location_id = f"loc:{label_id}"
+                if location_id in locations and locations[location_id].get("client") != client_id:
+                    _LOGGER.warning("Location label %s is assigned to more than one client", label_id)
+                    continue
+                locations[location_id] = {
+                    "id": location_id,
+                    "name": str(getattr(label, "name", label_id) or label_id),
+                    "client": client_id,
+                    "label_id": label_id,
+                }
         self.data["locations"] = locations
+
+    def _merge_native_places(self, tree: dict[str, Any], client_id: str) -> dict[str, Any]:
+        """Merge native location labels and areas assigned to one client."""
+        label_registry = lr.async_get(self.hass)
+        area_registry = ar.async_get(self.hass)
+        floor_registry = fr.async_get(self.hass)
+        assigned = set(self.data.get("clients", {}).get(client_id, {}).get("labels", []))
+        if not assigned:
+            return tree
+        labels = {x.label_id: x for x in label_registry.async_list_labels()}
+        areas = list(area_registry.async_list_areas())
+        floors = {x.floor_id: x for x in floor_registry.async_list_floors()}
+        area_loc = {
+            area.id: next((label for label in (area.labels or []) if label in assigned), None)
+            for area in areas
+        }
+        floor_loc: dict[str, str] = {}
+        for area in areas:
+            if area_loc.get(area.id) and area.floor_id and area.floor_id not in floor_loc:
+                floor_loc[area.floor_id] = area_loc[area.id]
+        old = _tree_places(tree)
+        kept = []
+        for place in old:
+            pid = str(place.get("id") or "")
+            if pid.startswith("loc:") and pid[4:] in labels:
+                continue
+            if pid.startswith("area:") or pid.startswith("floor:"):
+                continue
+            kept.append(place)
+        places = kept
+        for label_id in sorted(assigned):
+            label = labels.get(label_id)
+            if label is None:
+                continue
+            places.append({"id": f"loc:{label_id}", "name": str(label.name), "kind": "location", "parent": None})
+        for floor_id, label_id in floor_loc.items():
+            floor = floors.get(floor_id)
+            places.append({"id": f"floor:{floor_id}", "name": str(getattr(floor, "name", floor_id) or floor_id), "kind": "group", "parent": f"loc:{label_id}"})
+        for area in areas:
+            label_id = area_loc.get(area.id)
+            if not label_id:
+                continue
+            parent = f"floor:{area.floor_id}" if area.floor_id and floor_loc.get(area.floor_id) == label_id else f"loc:{label_id}"
+            places.append({"id": f"area:{area.id}", "name": str(area.name), "kind": "group", "parent": parent})
+        result = copy.deepcopy(tree)
+        result["places"] = places
+        return result
 
     async def async_save(self) -> None:
         """Persist the tenant store now."""
@@ -358,7 +423,10 @@ class TenancyManager:
     def tree_for(self, user: User, requested_client: str | None = None) -> dict[str, Any]:
         """Return the tree visible to one connection user."""
         client_id, ctx = self.require_client_value(user, requested_client)
-        tree = self.data.get("trees", {}).get(client_id, _copy_tree(None, "Optim Energy"))
+        tree = self._merge_native_places(
+            self.data.get("trees", {}).get(client_id, _copy_tree(None, "Optim Energy")),
+            client_id,
+        )
         if ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN:
             return {"client": client_id, "client_name": ctx["client_name"], "role": ctx["role"], "tree": copy.deepcopy(tree)}
         location = ctx.get("location")
@@ -378,7 +446,7 @@ class TenancyManager:
         client_id, ctx = self.require_client_value(user, requested_client)
         if not self.can_manage_tree(ctx):
             raise HomeAssistantError("Only a client administrator can change the dashboard")
-        clean = _guard_tree(tree)
+        clean = self._merge_native_places(_guard_tree(tree), client_id)
         self.data["trees"][client_id] = clean
         self._refresh_location_index()
         await self.async_save()
@@ -389,13 +457,23 @@ class TenancyManager:
         """Return clients visible to the caller."""
         if self.is_root(user):
             return [
-                {"id": cid, "name": c.get("name", cid), "slug": c.get("slug", cid)}
+                {
+                    "id": cid,
+                    "name": c.get("name", cid),
+                    "slug": c.get("slug", cid),
+                    "labels": list(c.get("labels", [])),
+                }
                 for cid, c in self.data.get("clients", {}).items()
             ]
         record = self.user_record(user)
         client_id = record.get("client") if record else None
         client = self.data.get("clients", {}).get(client_id)
-        return [{"id": client_id, "name": client.get("name", client_id), "slug": client.get("slug", client_id)}] if client else []
+        return [{
+            "id": client_id,
+            "name": client.get("name", client_id),
+            "slug": client.get("slug", client_id),
+            "labels": list(client.get("labels", [])),
+        }] if client else []
 
     async def async_create_client(self, user: User, name: str) -> dict[str, Any]:
         """Create a new client tree. Only the global administrator may call this."""
@@ -425,6 +503,35 @@ class TenancyManager:
         await self.async_save()
         await self.async_sync_groups()
         return {"id": client_id, "name": name, "slug": client_id}
+
+    async def async_set_client_labels(self, user: User, client_id: str, label_ids: list[str]) -> dict[str, Any]:
+        """Assign native location labels to one client. Root only."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can assign client locations")
+        if client_id not in self.data.get("clients", {}):
+            raise HomeAssistantError("Client not found")
+        label_registry = lr.async_get(self.hass)
+        known = {x.label_id for x in label_registry.async_list_labels()}
+        clean = sorted({str(x) for x in label_ids if str(x) in known})
+        for other_id, client in self.data["clients"].items():
+            if other_id == client_id:
+                continue
+            other = set(client.get("labels", []))
+            overlap = other.intersection(clean)
+            if overlap:
+                other.difference_update(overlap)
+                client["labels"] = sorted(other)
+                self.data["trees"][other_id] = self._merge_native_places(
+                    self.data["trees"].get(other_id, _copy_tree(None, client.get("name", other_id))),
+                    other_id,
+                )
+        self.data["clients"][client_id]["labels"] = clean
+        tree = self.data["trees"].get(client_id, _copy_tree(None, self.data["clients"][client_id].get("name", client_id)))
+        self.data["trees"][client_id] = self._merge_native_places(tree, client_id)
+        self._refresh_location_index()
+        await self.async_save()
+        await self.async_sync_groups()
+        return {"client": client_id, "labels": clean}
 
     async def async_delete_client(self, user: User, client_id: str) -> None:
         """Delete an unused client. Existing users must be removed first."""
@@ -752,7 +859,7 @@ class TenancyManager:
         for device_id, place in (tree.get("placed") or {}).items():
             if place in allowed_places:
                 allowed_devices.add(str(device_id))
-        for device in device_registry.devices.values():
+        for device in device_registry:
             device_labels = set(getattr(device, "labels", ()) or ())
             device_area = getattr(device, "area_id", None)
             by_area = bool(device_area and device_area in area_ids)
@@ -1027,6 +1134,49 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
 
     @websocket_api.websocket_command(
         {
+            probatio.Required("type"): f"{DOMAIN}/client/set_locations",
+            probatio.Required("client"): str,
+            probatio.Required("labels"): [str],
+        }
+    )
+    @websocket_api.async_response
+    async def ws_client_set_locations(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+        try:
+            connection.send_result(
+                msg["id"],
+                await manager.async_set_client_labels(connection.user, msg["client"], msg["labels"]),
+            )
+        except HomeAssistantError as err:
+            _error(connection, msg, str(err))
+
+    @websocket_api.websocket_command(
+        {
+            probatio.Required("type"): f"{DOMAIN}/location/catalog",
+        }
+    )
+    @websocket_api.async_response
+    async def ws_location_catalog(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+        if not manager.is_root(connection.user):
+            _error(connection, msg, "Only a Home Assistant administrator can list all location labels")
+            return
+        registry = lr.async_get(hass)
+        labels = []
+        for label in registry.async_list_labels():
+            if (
+                str(getattr(label, "icon", "") or "").startswith("mdi:map-marker")
+                or "location" in str(getattr(label, "description", "") or "").lower()
+            ):
+                location_id = f"loc:{label.label_id}"
+                labels.append({
+                    "id": label.label_id,
+                    "name": label.name,
+                    "icon": label.icon,
+                    "client": (manager.data.get("locations", {}).get(location_id) or {}).get("client"),
+                })
+        connection.send_result(msg["id"], labels)
+
+    @websocket_api.websocket_command(
+        {
             probatio.Required("type"): f"{DOMAIN}/bill/read",
             probatio.Required("body"): str,
         }
@@ -1063,6 +1213,8 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
         ws_client_list,
         ws_client_create,
         ws_client_delete,
+        ws_client_set_locations,
+        ws_location_catalog,
         ws_registry_list,
         ws_bill_read,
     ):
@@ -1113,7 +1265,7 @@ def _registry_list(self: TenancyManager, user: User, kind: str, requested_client
     """Return a tenant-filtered registry list without using admin-only commands."""
     client_id, ctx = self.require_client_value(user, requested_client)
     ar_reg = ar.async_get(self.hass)
-    dr_reg = dr.async_get(self.hass)
+    dr_reg = {entry.id: entry for entry in dr.async_get(self.hass)}
     er_reg = er.async_get(self.hass)
     lr_reg = lr.async_get(self.hass)
     root = self.is_root(user)
@@ -1132,10 +1284,11 @@ def _registry_list(self: TenancyManager, user: User, kind: str, requested_client
     allowed_area_ids = {
         x.area_id for x in allowed_entities if x.area_id
     } | {
-        dr_reg.devices[d].area_id
+        dr_reg[d].area_id
         for d in allowed_device_ids
-        if d in dr_reg.devices and dr_reg.devices[d].area_id
+        if d in dr_reg and dr_reg[d].area_id
     }
+    area_items = list(ar_reg.async_list_areas())
     allowed_labels = {
         label
         for x in allowed_entities
@@ -1143,25 +1296,25 @@ def _registry_list(self: TenancyManager, user: User, kind: str, requested_client
     } | {
         label
         for device_id in allowed_device_ids
-        if device_id in dr_reg.devices
-        for label in (getattr(dr_reg.devices[device_id], "labels", ()) or ())
+        if device_id in dr_reg
+        for label in (getattr(dr_reg[device_id], "labels", ()) or ())
+    } | {
+        label
+        for area in area_items
+        if area.id in allowed_area_ids
+        for label in (getattr(area, "labels", ()) or ())
     }
-    area_items = list(ar_reg.async_list_areas())
     if not (root and not scoped_root):
         area_items = [x for x in area_items if x.id in allowed_area_ids]
     floor_ids = {x.floor_id for x in area_items if x.floor_id}
-    floor_items = list(ar_reg.async_list_floors())
+    floor_items = list(fr.async_get(self.hass).async_list_floors())
     if not (root and not scoped_root):
         floor_items = [x for x in floor_items if x.floor_id in floor_ids]
-    label_ids = {
-        v.get("label_id")
-        for v in (self.data.get("locations") or {}).values()
-        if v.get("client") == client_id and v.get("label_id")
-    }
+    label_ids = set(self.data.get("clients", {}).get(client_id, {}).get("labels", []))
     label_items = list(lr_reg.async_list_labels())
     if not (root and not scoped_root):
         label_items = [x for x in label_items if x.label_id in allowed_labels or x.label_id in label_ids]
-    device_items = list(dr_reg.devices.values())
+    device_items = list(dr_reg.values())
     if not (root and not scoped_root):
         device_items = [x for x in device_items if x.id in allowed_device_ids]
     if kind == "label":
