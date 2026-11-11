@@ -29,7 +29,7 @@ from acceptance import (
     set_entity_place,
     wait_until,
 )
-from ha_client import Http, WebSocket, wait_ready
+from ha_client import Http, WebSocket, wait_ready, wait_server
 
 VERSION_FILE = Path(__file__).with_name("HA_VERSION")
 PASSWORD = "Scale-Test-2026!"
@@ -484,7 +484,7 @@ def run(version: str, *, keep: bool = False) -> None:
         if root is not None:
             root.close()
         harness.restart()
-        wait_ready(http, timeout=180)
+        wait_server(http, timeout=180)
         root = WebSocket(http.host, http.port)
         root.auth(http.login(OWNER_USERNAME, OWNER_PASSWORD)["access_token"])
 
