@@ -533,16 +533,42 @@ class TenancyManager:
         await self.async_sync_groups()
         return {"client": client_id, "labels": clean}
 
-    async def async_delete_client(self, user: User, client_id: str) -> None:
-        """Delete an unused client. Existing users must be removed first."""
+    async def async_delete_client(
+        self,
+        user: User,
+        client_id: str,
+        *,
+        delete_users: bool = False,
+    ) -> None:
+        """Delete a client, optionally revoking and deleting all of its users."""
         if not self.is_root(user):
             raise HomeAssistantError("Only a Home Assistant administrator can delete clients")
         if client_id not in self.data["clients"]:
             raise HomeAssistantError("Client not found")
-        if any(r.get("client") == client_id for r in self.data["users"].values()):
+        assigned_ids = [
+            user_id
+            for user_id, record in self.data["users"].items()
+            if record.get("client") == client_id
+        ]
+        if assigned_ids and not delete_users:
             raise HomeAssistantError("Remove or reassign the client's users first")
+        targets: list[User] = []
+        if delete_users:
+            for user_id in assigned_ids:
+                target = await self.hass.auth.async_get_user(user_id)
+                if (
+                    target is None
+                    or target.id == user.id
+                    or target.system_generated
+                    or target.is_owner
+                ):
+                    raise HomeAssistantError("One of the client's users cannot be deleted")
+                targets.append(target)
         del self.data["clients"][client_id]
         self.data["trees"].pop(client_id, None)
+        for target in targets:
+            await self.hass.auth.async_remove_user(target)
+            self.data["users"].pop(target.id, None)
         self._refresh_location_index()
         await self.async_save()
         await self.async_sync_groups()
@@ -894,6 +920,28 @@ class TenancyManager:
             allowed.update(entities)
         return allowed
 
+    def _device_ids_for_location(
+        self,
+        tree: dict[str, Any],
+        location: str,
+        area_ids: set[str],
+    ) -> set[str]:
+        """Return devices owned by one location, including devices without entities."""
+        label_id = location[4:] if location.startswith("loc:") else None
+        allowed_places = _place_descendants(tree, location)
+        allowed: set[str] = {
+            str(device_id)
+            for device_id, place in (tree.get("placed") or {}).items()
+            if place in allowed_places
+        }
+        for device in dr.async_get(self.hass).devices:
+            device_labels = set(getattr(device, "labels", ()) or ())
+            if device.area_id in area_ids or (
+                label_id and label_id in device_labels and not device.area_id
+            ):
+                allowed.add(device.id)
+        return allowed
+
     def _install_registry_watchers(self) -> None:
         """Debounce auth-policy updates when registries change."""
         events = (
@@ -1108,12 +1156,17 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
         {
             probatio.Required("type"): f"{DOMAIN}/client/delete",
             probatio.Required("client"): str,
+            probatio.Optional("delete_users"): bool,
         }
     )
     @websocket_api.async_response
     async def ws_client_delete(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
         try:
-            await manager.async_delete_client(connection.user, msg["client"])
+            await manager.async_delete_client(
+                connection.user,
+                msg["client"],
+                delete_users=bool(msg.get("delete_users")),
+            )
             connection.send_result(msg["id"], {"deleted": True})
         except HomeAssistantError as err:
             _error(connection, msg, str(err))
@@ -1270,25 +1323,58 @@ def _registry_list(self: TenancyManager, user: User, kind: str, requested_client
     lr_reg = lr.async_get(self.hass)
     root = self.is_root(user)
     scoped_root = root and bool(requested_client)
-    root_entities = self._tree_visible_entities(client_id) if scoped_root else None
-
+    all_areas = list(ar_reg.async_list_areas())
     entities = list(er_reg.entities.values())
-    if root_entities is None:
+    if root and not scoped_root:
         allowed_entities = entities if root else [
             x for x in entities if _entity_is_allowed(self, user, x.entity_id)
         ]
+        allowed_device_ids = set(dr_reg)
+        allowed_area_ids = {area.id for area in all_areas}
     else:
-        allowed_entities = [x for x in entities if x.entity_id in root_entities]
-    allowed_ids = {x.entity_id for x in allowed_entities}
-    allowed_device_ids = {x.device_id for x in allowed_entities if x.device_id}
-    allowed_area_ids = {
-        x.area_id for x in allowed_entities if x.area_id
-    } | {
-        dr_reg[d].area_id
-        for d in allowed_device_ids
-        if d in dr_reg and dr_reg[d].area_id
-    }
-    area_items = list(ar_reg.async_list_areas())
+        tree = self.data.get("trees", {}).get(client_id, {})
+        record = self.user_record(user) or {}
+        if root or ctx.get("role") == ROLE_CLIENT_ADMIN:
+            locations = _place_locations(tree)
+        else:
+            locations = [
+                place
+                for place in _place_locations(tree)
+                if place.get("id") == record.get("location")
+            ]
+        tree_device_ids: set[str] = set()
+        allowed_area_ids: set[str] = set()
+        for place in locations:
+            area_ids, _ = self._policy_for_location(
+                client_id, str(place["id"]), tree
+            )
+            allowed_area_ids.update(area_ids)
+            tree_device_ids.update(
+                self._device_ids_for_location(tree, str(place["id"]), area_ids)
+            )
+        if scoped_root:
+            visible_entities = self._tree_visible_entities(client_id)
+            allowed_entities = [
+                entity for entity in entities if entity.entity_id in visible_entities
+            ]
+        else:
+            allowed_entities = [
+                entity
+                for entity in entities
+                if _entity_is_allowed(self, user, entity.entity_id)
+            ]
+        allowed_device_ids = tree_device_ids | {
+            entity.device_id for entity in allowed_entities if entity.device_id
+        }
+        allowed_area_ids.update(
+            entity.area_id for entity in allowed_entities if entity.area_id
+        )
+        allowed_area_ids.update(
+            dr_reg[device_id].area_id
+            for device_id in allowed_device_ids
+            if device_id in dr_reg and dr_reg[device_id].area_id
+        )
+    area_items = all_areas
     allowed_labels = {
         label
         for x in allowed_entities
