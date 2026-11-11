@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.12
+
+- Allow the read-only service catalog used by frontend controls.
+
 ## 0.2.11
 
 - Allow read-only frontend theme, translation, panel and UI event commands.

@@ -42,6 +42,7 @@ READ_COMMANDS = {
     "subscribe_events",
     "unsubscribe_events",
     "recorder/info",
+    "get_services",
     f"{DOMAIN}/tree/get",
     f"{DOMAIN}/user/list",
     f"{DOMAIN}/client/list",
