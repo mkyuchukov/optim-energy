@@ -154,6 +154,7 @@ async def _async_replace_dashboards(hass: HomeAssistant, site_name: str) -> None
     """Replace the known portal dashboards with the bundled versions."""
     collection = DashboardsCollection(hass)
     await collection.async_load()
+    lovelace_data = hass.data[LOVELACE_DATA]
     existing = {
         item["url_path"]: item for item in collection.async_items()
     }
