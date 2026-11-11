@@ -65,3 +65,21 @@ Only after the clean install passes:
 6. Confirm old portal resources and duplicate sidebar entries are removed.
 7. Load all portal pages against copied data.
 8. Record any migration work needed before the main VM is upgraded.
+
+
+## Tenancy acceptance test
+
+Use the same test VM after creating A and B client trees and fixture devices.
+
+1. Create client A and client B in Setup → People as the Home Assistant administrator.
+2. Create one client administrator and one ordinary user for each client.
+3. Confirm each shared client tree has at least one location and one distinct test device.
+4. Sign in as A's ordinary user and inspect `hass.states`, `hass.entities`, `hass.devices` and the generated registries. No B item may appear.
+5. As A, request B's entity in history, statistics, logbook, template and service calls. Every request must be refused.
+6. As A, call `curl /api/history/period` and `/api/template` with A's bearer token. Both must return `403`.
+7. As A's client administrator, create a user, disable it, and move an ordinary user between A locations. B users must not be listed.
+8. Confirm the client administrator cannot create a client or client administrator and cannot call native Home Assistant configuration commands.
+9. Restart Home Assistant with the integration files temporarily renamed. Native auth groups must still keep A's states and history free of B data.
+10. Restore the integration and confirm the portal tree, users and navigation survive.
+
+Capture `.storage/auth` and `.storage/optim_energy.tenancy` only on the isolated VM. Do not copy them to production.

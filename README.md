@@ -1,8 +1,6 @@
 # Optim Energy
 
-Optim Energy is our Home Assistant portal package for commercial energy monitoring, controls, alerts and reports.
-
-This repository is the **0.1.0 internal preview**. It packages the existing Optim Energy portal as one Home Assistant integration and creates its dashboards automatically on a clean installation.
+Optim Energy is a Home Assistant portal package for commercial energy monitoring, controls, alerts and reports.
 
 ## What it installs
 
@@ -15,35 +13,52 @@ This repository is the **0.1.0 internal preview**. It packages the existing Opti
   - Devices
   - Reports
   - Alerts
-  - Setup
-- A first-run form asking for the client or site name.
+  - Setup, including People
+- A first-run form asking for the first client or site name.
 - A local static asset route for the bundled JavaScript and bill-reader settings.
+- A shared-instance tenant model: clients, portal user roles, locations and per-client dashboard trees.
 
-The known Optim Energy dashboards are replaced with the bundled package layout. Their existing `device_tree` is carried over so locations, groups, main meters and prices are not lost. Old manually installed Optim Energy dashboard resources are removed. Client accounts see only the Optim Energy panels; the default Home Assistant dashboard and other panels are hidden for those accounts. Administrator accounts keep the normal Home Assistant tools.
+## Client separation
+
+Optim Energy runs multiple clients in one Home Assistant instance, but it does **not** make Home Assistant a hard multi-tenant system.
+
+- A Home Assistant owner or administrator is the global root.
+- A client administrator is a portal role. It is never added to Home Assistant's global `Administrators` group.
+- An ordinary client user is assigned to one location.
+- Authentication groups are generated from the client's areas and entities for Home Assistant's native state, history and entity-service filtering.
+- A websocket firewall allows only the portal command surface and checks history, statistics and logbook requests against the tenant.
+- Raw REST API access, templates, Assist, mobile-app hooks, arbitrary services and native configuration commands remain outside the client surface.
+- Client portal settings live in `.storage/optim_energy.tenancy`, not in a dashboard document.
+
+Create users under **Setup → People**. A client administrator can create, disable, move and delete ordinary users inside its own client. Only the Home Assistant administrator can create clients or client administrators.
+
+The following remain shared: the recorder database, backups, logs, `/local` files, restarts and Home Assistant updates. Do not use this as a hostile-tenant boundary or expose secrets in shared files. For strict isolation, use one Home Assistant instance per client.
 
 ## Requirements
 
 - Home Assistant OS or Supervised
 - Home Assistant 2026.11 or newer
 - Home Assistant Marketplace enabled
+- Recorder enabled, which is the normal Home Assistant setup
 
 ## Install from a custom repository
-
-Once this repository is published:
 
 1. Open **Settings → Marketplace**.
 2. Open the menu and select **Add from link**.
 3. Add the repository URL.
 4. Install **Optim Energy**.
-5. Open **Settings → Devices & services → Add integration → Optim Energy**.
-6. Enter the client or site name.
-7. Create a non-admin account for the client.
+5. Restart Home Assistant when prompted.
+6. Open **Settings → Devices & services → Add integration → Optim Energy**.
+7. Enter the first client or site name.
+8. Open **Setup → People** to add client administrators and users.
 
-The integration replaces the known Optim Energy dashboards with the bundled layouts, removes legacy portal resources, serves the portal assets and sets Locations as the first page. Non-admin accounts see only the Optim Energy panels; administrator accounts keep Home Assistant maintenance tools.
+The integration replaces the known Optim Energy dashboards with the bundled layouts, repairs legacy dashboard resources, migrates the old `device_tree` into the tenant store, serves the portal assets and sets Locations as the first page.
 
 ## Updates
 
-Marketplace creates an update entity for Optim Energy. An update replaces the integration files and requires a Home Assistant restart. Client settings and dashboards are stored separately and are not replaced by the package update.
+Marketplace creates an update entity for Optim Energy. An update replaces the integration files and requires a Home Assistant restart. Client settings live in the tenancy store and are not replaced by a package update.
+
+Back up `.storage/optim_energy.tenancy`, `.storage/auth` and `.storage/lovelace*` before changing versions. Keep a VM snapshot for testing private Home Assistant hooks.
 
 ## Development checks
 
@@ -51,8 +66,6 @@ Marketplace creates an update entity for Optim Energy. An update replaces the in
 make test
 ```
 
-## Scope
-
-The integration currently packages and installs the portal. It does not yet migrate existing client settings out of the dashboard `device_tree` or bundle the bill-reading provider configuration.
+The tests cover the package, frontend helpers, tenant tree filtering and websocket policy decisions. The private auth-store and websocket interfaces must also be exercised on the pinned Home Assistant test VM for every supported release.
 
 This is not an official Home Assistant integration.

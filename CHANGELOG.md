@@ -1,14 +1,16 @@
 # Changelog
 
-## 0.1.0 - Unreleased
+## 0.2.0
 
-- First installable Optim Energy integration bundle.
-- Serves the existing Optim Energy portal cards from the integration.
-- Creates the eight Optim Energy dashboards on a clean installation.
-- Replaces the known portal dashboards with the bundled layouts.
-- Preserves client locations, groups, main meters and prices from the existing `device_tree`.
-- Removes legacy manually installed dashboard resources.
-- Sets Locations as the default page.
-- Hides all non-portal panels from non-admin client accounts.
-- Adds a first-run site name and empty site model.
-- Includes the existing portal and report tests.
+- Add a persistent multi-client tenant store and migrate `device_tree` out of Lovelace.
+- Generate fail-closed Home Assistant auth groups from client ownership.
+- Add the checked websocket API, tenant websocket firewall and REST guard.
+- Add portal roles for root, client administrator and location-scoped user.
+- Add Setup → People for tenant user administration and root client creation.
+- Add client switching for the Home Assistant administrator.
+- Route bill reading through a checked server command instead of exposing `rest_command` to tenants.
+- Add tenant tree filtering and security-policy unit tests.
+
+## 0.1.0
+
+- Initial internal preview package with bundled dashboards and frontend assets.

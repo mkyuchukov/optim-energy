@@ -25,7 +25,7 @@ class PackageTests(unittest.TestCase):
 
     def test_manifest_and_hacs_versions(self) -> None:
         self.assertEqual(MANIFEST["domain"], "optim_energy")
-        self.assertEqual(MANIFEST["version"], "0.1.0")
+        self.assertEqual(MANIFEST["version"], "0.2.0")
         self.assertTrue(MANIFEST["config_flow"])
         self.assertEqual(HACS["homeassistant"], "2026.11.0")
 
@@ -48,28 +48,14 @@ class PackageTests(unittest.TestCase):
             self.assertNotIn("theme", json.dumps(config))
             self.assertGreaterEqual(len(config["views"]), 1)
 
-    def test_home_has_one_help_view_and_default_site(self) -> None:
-        config = dashboards.build_dashboard_configs("Example Client")["energy-home"]
-        self.assertEqual([view["path"] for view in config["views"]], ["home", "help"])
-        tree = config["device_tree"]
-        self.assertEqual(tree["places"][0]["name"], "Example Client")
-        self.assertEqual(tree["places"][0]["kind"], "location")
-        self.assertEqual(tree["placed"], {})
-
-    def test_existing_client_tree_is_preserved_but_layout_is_replaced(self) -> None:
-        configs = dashboards.build_dashboard_configs("New Package Name")
-        old_tree = {
-            "main": "virt:old",
-            "places": [{"id": "loc:a", "name": "Existing Client", "kind": "location"}],
-            "prices": {"loc:a": {"mode": "fixed", "fixed": 0.3}},
-        }
-        dashboards.apply_existing_device_tree(
-            configs,
-            {"device_tree": old_tree, "views": [{"title": "Old layout"}]},
+    def test_dashboards_never_contain_tenant_data(self) -> None:
+        configs = dashboards.build_dashboard_configs("Example Client")
+        self.assertNotIn("device_tree", configs["energy-home"])
+        self.assertEqual(
+            [view["path"] for view in configs["energy-home"]["views"]],
+            ["home", "help"],
         )
-        home = configs["energy-home"]
-        self.assertEqual(home["device_tree"], old_tree)
-        self.assertEqual([view["path"] for view in home["views"]], ["home", "help"])
+        self.assertFalse(next(s for s in dashboards.DASHBOARD_SPECS if s["url_path"] == "energy-setup")["require_admin"])
 
     def test_assets_exist(self) -> None:
         for name in (
@@ -83,9 +69,14 @@ class PackageTests(unittest.TestCase):
 
     def test_client_sidebar_is_limited_to_portal(self) -> None:
         source = (COMPONENT / "frontend" / "building-cards.js").read_text("utf-8")
-        self.assertIn("hass.user?.is_admin", source)
         self.assertIn("Object.keys(hass.panels || {})", source)
         self.assertIn("allowed.has(id)", source)
+        self.assertIn("optim_energy/whoami", source)
+        self.assertIn("building-tenant-admin-card", source)
+
+    def test_server_tenancy_files_are_present(self) -> None:
+        for name in ("tenancy.py", "firewall.py"):
+            self.assertTrue((COMPONENT / name).is_file())
 
     def test_bill_reader_uses_integration_route(self) -> None:
         source = (COMPONENT / "frontend" / "building-cards.js").read_text("utf-8")

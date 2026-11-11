@@ -822,7 +822,7 @@ if (typeof HTMLElement !== 'undefined') {
         <label class="c-range">From<input id="from" type="datetime-local"></label><label class="c-range">To<input id="to" type="datetime-local"></label>
         <button id="back" hidden>Reset zoom</button><span class="spacer"></span><span class="live" id="live"><i></i><span></span></span>
         <button class="export" id="pdf">Export PDF</button>
-        <details><summary>Customise</summary><div class="blocks">${BLOCKS.filter(([b]) => this._hass?.user?.is_admin || !TECH_BLOCKS.has(b)).map(([b, n]) => `<label><input type="checkbox" data-block="${b}">${n}</label>`).join('')}</div></details>
+        <details><summary>Customise</summary><div class="blocks">${BLOCKS.filter(([b]) => window.portalContext?.isRoot || !TECH_BLOCKS.has(b)).map(([b, n]) => `<label><input type="checkbox" data-block="${b}">${n}</label>`).join('')}</div></details>
       </div><div id="out" class="out"><p class="state">Loading…</p></div></div>`;
       const $ = (id) => root.getElementById(id);
       this._out = $('out'); this._root = root;
@@ -1099,7 +1099,7 @@ if (typeof HTMLElement !== 'undefined') {
         const phases = raw ? Object.fromEntries(phaseIds.map(([k, id]) => [k, minuteEnergy(raw[id], +start, +end)])) : hourly.phases;
         const counted = new Map();
         if (raw) for (const m of meters) for (const r of minuteEnergy(raw[m.energy], +start, +end)) counted.set(r.start, (counted.get(r.start) || 0) + r.change);
-        this._last = { a, ctx: { tz, start, end, client: !h.user?.is_admin, tariff: a.price, priceAt: priceAt || (() => info.now), vat: info.vat, varies: !!priceAt?.varies, period: periodName(this._p), title: item.name, location: window.portalTree.location(), meterCount: meters.length, prevRows, prevTotal, noCompare, breakdown, extraMeters: Object.fromEntries(EXTRA_CHARTS.map(([k]) => [k, meters.filter((m) => m[k]).map((m) => m.name)])), ...(today ? { prevStart: prevFrom, prevLabel: 'vs this time yesterday' } : {}), trends: { step: shown, power: lines.power, voltages: lines.voltages, frequency: lines.frequency, ...Object.fromEntries(EXTRA_CHARTS.map(([k]) => [k, meters.some((m) => m[k]) && (k !== 'linkQuality' || one) ? lines[k] : null])), phases, minuteEnergy: [...counted].sort(([u], [w]) => u - w).map(([start, change]) => ({ start, change })), energyPts: meterPts(raw), prevEnergyPts: meterPts(rawPrev) } } };
+        this._last = { a, ctx: { tz, start, end, client: !window.portalContext?.isRoot, tariff: a.price, priceAt: priceAt || (() => info.now), vat: info.vat, varies: !!priceAt?.varies, period: periodName(this._p), title: item.name, location: window.portalTree.location(), meterCount: meters.length, prevRows, prevTotal, noCompare, breakdown, extraMeters: Object.fromEntries(EXTRA_CHARTS.map(([k]) => [k, meters.filter((m) => m[k]).map((m) => m.name)])), ...(today ? { prevStart: prevFrom, prevLabel: 'vs this time yesterday' } : {}), trends: { step: shown, power: lines.power, voltages: lines.voltages, frequency: lines.frequency, ...Object.fromEntries(EXTRA_CHARTS.map(([k]) => [k, meters.some((m) => m[k]) && (k !== 'linkQuality' || one) ? lines[k] : null])), phases, minuteEnergy: [...counted].sort(([u], [w]) => u - w).map(([start, change]) => ({ start, change })), energyPts: meterPts(raw), prevEnergyPts: meterPts(rawPrev) } } };
         this._paint();
       } catch (e) {
         console.error('Energy report', e);

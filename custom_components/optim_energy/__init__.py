@@ -23,27 +23,50 @@ from .const import (
     STATIC_URL_PATH,
     VERSION,
 )
-from .dashboards import (
-    DASHBOARD_SPECS,
-    apply_existing_device_tree,
-    build_dashboard_configs,
-)
+from .dashboards import DASHBOARD_SPECS, build_dashboard_configs
+from .firewall import RestFirewall, WebsocketFirewall
+from .tenancy import TenancyManager, async_register_commands, async_setup_tenancy
 
 _LOGGER = logging.getLogger(__name__)
 _FRONTEND_KEY = f"{DOMAIN}_frontend"
 _FRONTEND_READY_KEY = f"{DOMAIN}_frontend_ready"
+_TENANCY_KEY = f"{DOMAIN}_tenancy"
+_FIREWALL_KEY = f"{DOMAIN}_firewall"
+_REST_FIREWALL_KEY = f"{DOMAIN}_rest_firewall"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Optim Energy and its bundled dashboard views."""
+    """Set up Optim Energy tenancy, its API, and its bundled portal."""
     await _async_register_frontend(hass)
+    initial_tree = await _async_existing_device_tree(hass)
+    manager = await async_setup_tenancy(hass, entry.data[CONF_SITE_NAME], initial_tree)
+    async_register_commands(hass, manager)
+
+    audit = bool(entry.options.get("audit", False))
+    websocket_firewall = WebsocketFirewall(hass, manager, audit=audit)
+    websocket_firewall.install()
+    hass.data[_FIREWALL_KEY] = websocket_firewall
+
+    rest_firewall = RestFirewall(hass, manager, audit=audit)
+    await rest_firewall.install()
+    hass.data[_REST_FIREWALL_KEY] = rest_firewall
+
     await _async_replace_dashboards(hass, entry.data[CONF_SITE_NAME])
     await _async_set_portal_default(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Remove runtime frontend hooks while keeping client dashboards."""
+    """Remove runtime hooks while keeping client data and dashboards."""
+    rest_firewall: RestFirewall | None = hass.data.pop(_REST_FIREWALL_KEY, None)
+    if rest_firewall is not None:
+        rest_firewall.uninstall()
+    websocket_firewall: WebsocketFirewall | None = hass.data.pop(_FIREWALL_KEY, None)
+    if websocket_firewall is not None:
+        websocket_firewall.uninstall()
+    manager: TenancyManager | None = hass.data.pop(_TENANCY_KEY, None)
+    if manager is not None:
+        await manager.async_unload()
     urls: set[str] = hass.data.pop(_FRONTEND_KEY, set())
     for url in urls:
         frontend.remove_extra_js_url(hass, url)
@@ -74,6 +97,23 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     hass.data[_FRONTEND_KEY] = urls
 
 
+async def _async_existing_device_tree(hass: HomeAssistant) -> dict[str, Any] | None:
+    """Read the old tree before replacing the dashboard storage document."""
+    collection = DashboardsCollection(hass)
+    await collection.async_load()
+    existing = {item["url_path"]: item for item in collection.async_items()}
+    old_home = existing.get("energy-home")
+    if old_home is None:
+        return None
+    old_dashboard = _dashboard_storage(hass, old_home)
+    try:
+        old_config = await old_dashboard.async_load(False)
+    except HomeAssistantError:
+        return None
+    tree = old_config.get("device_tree") if isinstance(old_config, dict) else None
+    return tree if isinstance(tree, dict) and tree else None
+
+
 async def _async_replace_dashboards(hass: HomeAssistant, site_name: str) -> None:
     """Replace the known portal dashboards with the bundled versions."""
     collection = DashboardsCollection(hass)
@@ -82,15 +122,6 @@ async def _async_replace_dashboards(hass: HomeAssistant, site_name: str) -> None
         item["url_path"]: item for item in collection.async_items()
     }
     configs = build_dashboard_configs(site_name)
-
-    old_home = existing.get("energy-home")
-    if old_home is not None:
-        old_dashboard = _dashboard_storage(hass, old_home)
-        try:
-            old_config = await old_dashboard.async_load(False)
-        except HomeAssistantError:
-            old_config = None
-        apply_existing_device_tree(configs, old_config)
 
     await _async_remove_legacy_resources(hass)
 

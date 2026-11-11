@@ -64,7 +64,7 @@ DASHBOARD_SPECS: tuple[dict[str, Any], ...] = (
         "title": "Setup",
         "icon": "mdi:cog-outline",
         "filename": "energy-setup.json",
-        "require_admin": True,
+        "require_admin": False,
     },
 )
 
@@ -104,8 +104,9 @@ def build_dashboard_configs(site_name: str) -> dict[str, dict[str, Any]]:
             (DASHBOARD_DIRECTORY / spec["filename"]).read_text("utf-8")
         )
         config = copy.deepcopy(config)
-        if spec["url_path"] == "energy-home":
-            config["device_tree"] = default_device_tree(site_name)
+        # Tenant data lives in the integration store now. Dashboards are
+        # replaceable presentation only and must never contain another
+        # client's tree.
         configs[spec["url_path"]] = config
     return configs
 

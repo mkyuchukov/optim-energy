@@ -134,6 +134,39 @@
           ]
         }
       ]
+    },
+    {
+      "title": "People",
+      "path": "people",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-tenant-admin-card",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

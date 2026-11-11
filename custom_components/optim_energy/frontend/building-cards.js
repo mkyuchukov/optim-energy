@@ -21,7 +21,17 @@ const TREE = { main: null, mains: {}, parents: {}, virtual: [], known: null, pla
 let nodeIds = new Set(), allNodes = [];
 // The location being viewed. Locations act like tenants: every page shows only the chosen one.
 // ponytail: this is what is shown, not a security boundary. Any logged-in user can still read everything in Home Assistant.
-const LOCATION_KEY = 'portalLocation', START_PATH = '/energy-locations/start', HOME_PATH = '/energy-home/home', SETUP_PATH = '/energy-setup/structure';
+const LOCATION_KEY = 'portalLocation', CLIENT_KEY = 'portalClient', START_PATH = '/energy-locations/start', HOME_PATH = '/energy-home/home', SETUP_PATH = '/energy-setup/structure';
+// Server-provided identity. A Home Assistant admin is the only root; a
+// client administrator is a portal role and never receives HA's admin flag.
+const PORTAL = { ready: false, isRoot: false, role: null, client: null, clientName: '', location: null, clients: [], capabilities: {}, error: '' };
+const portalCanManage = () => !!PORTAL.capabilities.manage_tree;
+const portalCanManageHA = () => !!PORTAL.capabilities.manage_ha;
+const portalCanManageUsers = () => !!PORTAL.capabilities.manage_users;
+const portalTenantMode = () => !PORTAL.isRoot;
+let portalClient = null;
+try { portalClient = typeof localStorage === 'undefined' ? null : localStorage.getItem(CLIENT_KEY); } catch (e) { /* private window */ }
+if (typeof window !== 'undefined') window.portalContext = PORTAL;
 // The screens that show one location. Choosing locations, adding devices and the structure itself cover all of them.
 const NEEDS_LOCATION = /^\/(energy-(home|groups|controls|devices|reports|alerts)\/|energy-setup\/wiring)/;
 let currentLocation = null;
@@ -392,7 +402,7 @@ async function readBill(hass, files) {
   const cfg = await billSettings(), pages = await billPages(files, cfg);
   if (!pages.length) throw new Error('Choose the bill first.');
   const body = JSON.stringify({ model: cfg.model, ...(cfg.reasoning_effort ? { reasoning_effort: cfg.reasoning_effort } : {}), max_tokens: cfg.max_tokens || 4000, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: [].concat(cfg.prompt).join('\n') }, ...pages.map((url) => ({ type: 'image_url', image_url: { url, ...(cfg.image_detail ? { detail: cfg.image_detail } : {}) } }))] }] });
-  const r = await hass.callWS({ type: 'call_service', domain: 'rest_command', service: cfg.service || 'discretestack_chat', service_data: { body }, return_response: true });
+  const r = await hass.callWS({ type: 'optim_energy/bill/read', body });
   const res = r?.response;
   if (res?.status !== 200) throw new Error(`The reader answered ${res?.status ?? 'nothing'}: ${String(typeof res?.content === 'string' ? res.content : JSON.stringify(res?.content ?? '')).slice(0, 200)}`);
   return { bill: parseBill(res.content?.choices?.[0]?.message?.content), model: res.content?.model || cfg.model, pages: pages.length };
@@ -403,13 +413,9 @@ async function billFigures(hass, bill, loc) {
   const tz = hass.config.time_zone, next = new Date(Date.parse(`${bill.period_to}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
   const from = dayStartMs(bill.period_from, tz), to = dayStartMs(next, tz);
   if (!(to > from)) throw new Error('The bill’s period could not be read.');
-  let prices = [], source = 'ENTSO-e';
-  try {
-    const ent = (await hass.callWS({ type: 'config_entries/get', domain: 'entsoe' })).find((e) => e.state === 'loaded');
-    if (ent) prices = exchangeRows((await hass.callWS({ type: 'call_service', domain: 'entsoe', service: 'get_energy_prices', service_data: { config_entry: ent.entry_id, start: new Date(from).toISOString(), end: new Date(to).toISOString() }, return_response: true }))?.response).filter((x) => x.t >= from && x.t < to);
-  } catch (e) { /* the price sensor's history stands in */ }
+  let prices = [], source = 'the price history in Home Assistant';
   const sensor = TREE.prices?.[loc]?.sensor;
-  if (!prices.length && sensor) {
+  if (sensor) {
     source = 'the price history in Home Assistant';
     const div = /mwh/i.test(hass.states[sensor]?.attributes?.unit_of_measurement || '') ? 1000 : 1;
     const st = await hass.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(), statistic_ids: [sensor], period: 'hour', types: ['mean'] });
@@ -443,34 +449,98 @@ function treeWithoutVirtual(tree, id) {
 // packaged portal only; administrator accounts keep the normal HA tools.
 const SIDEBAR = ['energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup'];
 const ADMIN_EXTRA = ['core_configurator', '45df7312_zigbee2mqtt', 'hacs'];
-let sidebarDone = false;
+let sidebarKey = null;
 async function syncSidebar(hass) {
-  if (sidebarDone || typeof location === 'undefined') return;
-  sidebarDone = true;
+  if (!PORTAL.ready || typeof location === 'undefined') return;
+  const setup = portalCanManage();
+  const allowed = new Set(PORTAL.isRoot ? [...SIDEBAR, ...ADMIN_EXTRA] : SIDEBAR.filter((id) => setup || id !== 'energy-setup'));
+  const key = `${PORTAL.role}|${[...allowed].join(',')}`;
+  if (sidebarKey === key) return;
   try {
     const now = (await hass.callWS({ type: 'frontend/get_user_data', key: 'sidebar' }))?.value;
-    const admin = !!hass.user?.is_admin;
-    const allowed = new Set(admin ? [...SIDEBAR, ...ADMIN_EXTRA] : SIDEBAR.filter((id) => id !== 'energy-setup'));
-    const hidden = admin ? (now?.hiddenPanels || []) : [...new Set([...(now?.hiddenPanels || []), ...Object.keys(hass.panels || {}).filter((id) => !allowed.has(id))])];
+    const hidden = PORTAL.isRoot ? (now?.hiddenPanels || []) : [...new Set([...(now?.hiddenPanels || []), ...Object.keys(hass.panels || {}).filter((id) => !allowed.has(id))])];
     if (JSON.stringify(now?.panelOrder) !== JSON.stringify(SIDEBAR) || JSON.stringify(now?.hiddenPanels || []) !== JSON.stringify(hidden)) await hass.callWS({ type: 'frontend/set_user_data', key: 'sidebar', value: { panelOrder: SIDEBAR, hiddenPanels: hidden } });
+    sidebarKey = key;
   } catch (e) { /* the order is a nicety, the app works without it */ }
 }
-let treeLoad = null, treeWatched = false;
+let treeLoad = null, whoLoad = null, treeWatched = false;
 const announceTree = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event('portal-tree')); };
-// Loads the tree once, and again whenever the dashboard's settings change.
+function resetPortalTree() {
+  currentLocation = null;
+  try { sessionStorage.removeItem(LOCATION_KEY); } catch (e) { /* private window */ }
+  NATIVE = null;
+  LABELS = [];
+  modelFrom = null;
+  totalsCache = null;
+  setTree({ places: [], placed: {}, mains: {}, parents: {}, virtual: [], known: [] });
+}
+function switchPortalClient(hass, client) {
+  if (!PORTAL.isRoot || !client || client === portalClient) return;
+  portalClient = client;
+  try { localStorage.setItem(CLIENT_KEY, client); } catch (e) { /* private window */ }
+  treeLoad = null;
+  whoLoad = null;
+  resetPortalTree();
+  announceTree();
+  ensureTree(hass);
+}
 function ensureTree(hass) {
   portalUser = hass.user?.id || null;
-  syncSidebar(hass);
+  if (!whoLoad) {
+    whoLoad = hass.callWS({ type: 'optim_energy/whoami' }).then((ctx) => {
+      Object.assign(PORTAL, ctx || {}, { ready: true, error: '' });
+      if (PORTAL.isRoot) {
+        const ids = (PORTAL.clients || []).map((c) => c.id);
+        if (!ids.includes(portalClient)) portalClient = ids[0] || null;
+        try { if (portalClient) localStorage.setItem(CLIENT_KEY, portalClient); } catch (e) { /* private window */ }
+      } else {
+        portalClient = ctx?.client || null;
+      }
+      syncSidebar(hass);
+      return ctx;
+    }).catch((e) => {
+      PORTAL.ready = true;
+      PORTAL.error = 'This account is not assigned to a client. Ask the administrator to add it under Setup.';
+      announceTree();
+      return null;
+    });
+  }
   if (!treeWatched) {
     treeWatched = true;
     hass.connection?.subscribeEvents(() => { treeLoad = null; ensureTree(hass); }, 'lovelace_updated').catch(() => {});
+    // A change to labels, floors, areas or devices shows straight away. The
+    // server recomputes the native permission groups when these change.
+    for (const ev of ['label_registry_updated', 'floor_registry_updated', 'area_registry_updated', 'device_registry_updated', 'entity_registry_updated']) hass.connection?.subscribeEvents(() => { treeLoad = null; ensureTree(hass); }, ev).catch(() => {});
   }
-  if (!treeLoad) {
-    const reg = (type) => hass.callWS({ type }).catch(() => null);
-    treeLoad = Promise.all([hass.callWS({ type: 'lovelace/config', url_path: PORTAL_PATH }), reg('config/label_registry/list'), reg('config/floor_registry/list'), reg('config/area_registry/list')]).then(([c, labels, floors, areas]) => { NATIVE = nativePlaces(labels, floors, areas); LABELS = Array.isArray(labels) ? labels : []; setTree(c.device_tree); restoreLocation(); modelFrom = null; syncModel(hass); announceTree(); needLocation(); }).catch(() => {});
-    // A change to labels, floors or areas in Home Assistant shows straight away.
-    if (!ensureTree.watchingRegistries) { ensureTree.watchingRegistries = true; for (const ev of ['label_registry_updated', 'floor_registry_updated', 'area_registry_updated', 'device_registry_updated']) hass.connection?.subscribeEvents(() => { treeLoad = null; ensureTree(hass); }, ev).catch(() => {}); }
-  }
+  if (!treeLoad) treeLoad = whoLoad.then(async (ctx) => {
+    if (!ctx) return null;
+    const client = PORTAL.isRoot ? portalClient : null;
+    const reg = (kind) => hass.callWS({ type: 'optim_energy/registry/list', kind, ...(client ? { client } : {}) }).catch(() => []);
+    try {
+      const [payload, labels, floors, areas, devices, entities] = await Promise.all([
+        hass.callWS({ type: 'optim_energy/tree/get', ...(client ? { client } : {}) }),
+        reg('label'), reg('floor'), reg('area'), reg('device'), reg('entity'),
+      ]);
+      if (payload) { PORTAL.client = payload.client; PORTAL.clientName = payload.client_name || ''; }
+      NATIVE = nativePlaces(labels, floors, areas);
+      LABELS = Array.isArray(labels) ? labels : [];
+      // Home Assistant only ships the device/entity registry to admins. The
+      // server has already filtered these lists for this tenant.
+      try { hass.devices = Object.fromEntries((devices || []).map((d) => [d.id, d])); hass.entities = Object.fromEntries((entities || []).map((e) => [e.entity_id, e])); } catch (e) { /* read-only test host */ }
+      setTree(payload?.tree);
+      restoreLocation();
+      modelFrom = null;
+      syncModel(hass);
+      announceTree();
+      needLocation();
+      return payload;
+    } catch (e) {
+      console.warn('Optim Energy: could not load the tenant tree', e);
+      PORTAL.error = 'The portal settings could not be loaded. An administrator can check the Home Assistant log.';
+      announceTree();
+      return null;
+    }
+  });
   return treeLoad;
 }
 // With locations set up, nothing shows until one is chosen, so every page starts from the choice.
@@ -503,9 +573,8 @@ function showToast(card, text, before) {
   t._timer = setTimeout(() => { t.hidden = true; t._before = null; }, 8000);
 }
 async function saveTree(hass, next) {
-  const cfg = await hass.callWS({ type: 'lovelace/config', url_path: PORTAL_PATH });
   const tree = { ...next, mains: currentLocation ? { ...next.mains, [currentLocation]: next.main } : next.mains || {}, known: [...new Set([...(TREE.known || []), ...nodeIds, ...next.virtual.map((v) => v.id)])] };
-  await hass.callWS({ type: 'lovelace/config/save', url_path: PORTAL_PATH, config: { ...cfg, device_tree: tree } });
+  await hass.callWS({ type: 'optim_energy/tree/save', tree, ...(PORTAL.isRoot && portalClient ? { client: portalClient } : {}) });
   setTree(tree);
   syncModel(hass);
   announceTree();
@@ -541,7 +610,7 @@ async function groupMembers(hass, entry, members) {
 }
 let sumsBusy = false, sumsAgain = false;
 async function syncSums(hass) {
-  if (!hass.user?.is_admin) return;
+  if (!portalCanManageHA()) return;
   if (sumsBusy) { sumsAgain = true; return; }
   sumsBusy = true;
   try {
@@ -1706,7 +1775,7 @@ ${CHART_CSS}
     paint() {
       if (this._hover) return;
       if (this._place && !placeById(this._place)) this._place = null;
-      const r = this.shadowRoot, st = this._hass.states, sp = this.space(), admin = this._hass.user?.is_admin;
+      const r = this.shadowRoot, st = this._hass.states, sp = this.space(), admin = portalCanManage();
       if (!placeById(currentLocation)) { r.getElementById('stack').innerHTML = '<span class="muted">Loading…</span>'; r.getElementById('main').innerHTML = ''; this._lastPaint = 0; return; }
       const countOf = (id) => { const under = placesUnder(id); return allNodes.filter((d) => !d.virtual && under.has(d.place)).length; };
       const row = (id, name, selected, target) => { const s = resolveSpace(id), n = countOf(id); return `<button class="f${selected ? ' sel' : ''}" data-place="${target}"><b>${esc(name)}</b><em>${s.energy ? spacePower(s, st) : ''}</em><span>${n} ${n === 1 ? 'device' : 'devices'}</span></button>`; };
@@ -2020,7 +2089,7 @@ ${SHEET_CSS}</style><div class="w"><div class="chead"><h2>Automations</h2><butto
     async refresh() {
       // What each automation switches, so the list can say so and the form can change it. Only an admin can read it.
       this._cfgs = AUTO_CFG;
-      if (this._hass.user?.is_admin) for (const a of automationsIn(resolveSpace())) { try { this._cfgs[a.entity] = (await this._hass.callWS({ type: 'automation/config', entity_id: a.entity })).config; } catch (e) { /* listed without its devices */ } }
+      if (portalCanManageHA()) for (const a of automationsIn(resolveSpace())) { try { this._cfgs[a.entity] = (await this._hass.callWS({ type: 'automation/config', entity_id: a.entity })).config; } catch (e) { /* listed without its devices */ } }
       this.paint();
     }
     // Lights are ticked; sockets, relays and the rest are left out unless someone ticks them.
@@ -2126,7 +2195,7 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
     }
     paint() {
       if (!this._cfgs) return;
-      const r = this.shadowRoot, st = this._hass.states, whole = resolveSpace(), admin = this._hass.user?.is_admin && this._c?.manage;
+      const r = this.shadowRoot, st = this._hass.states, whole = resolveSpace(), admin = portalCanManageHA() && this._c?.manage;
       r.getElementById('new').hidden = !admin || !this.groupsWithSwitches().length;
       const list = schedulesSorted(automationsIn(whole));
       const note = (a) => { const ids = cfgSwitches(this._cfgs?.[a.entity]); if (!ids.length) return ''; const odd = ids.map((id) => switchInfo(this._hass, id)).filter((x) => x.kind !== 'lights'); return ` · ${ids.length} device${ids.length === 1 ? '' : 's'}${odd.length ? `<span class="warnx"> · also ${odd.map((x) => `${esc(x.name)} (${KIND_LABEL[x.kind]})`).join(', ')}</span>` : ''}`; };
@@ -2314,7 +2383,7 @@ button:disabled{opacity:.45;cursor:default}
       w.addEventListener('toggle', (e) => { const g = e.target.dataset?.group; if (g) { if (e.target.open) this._openGroups.add(g); else this._openGroups.delete(g); } }, true);
       r.getElementById('tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) this.show(b.dataset.tab); });
       // Only an admin can open a device's page in Home Assistant.
-      for (const k of ['now', 'history']) r.getElementById(k).addEventListener('click', (e) => { const b = e.target.closest('[data-config]'); if (b && this._hass.user?.is_admin) navigate(`/config/devices/device/${b.dataset.config.split(':')[0]}`); });
+      for (const k of ['now', 'history']) r.getElementById(k).addEventListener('click', (e) => { const b = e.target.closest('[data-config]'); if (b && portalCanManageHA()) navigate(`/config/devices/device/${b.dataset.config.split(':')[0]}`); });
       this.startTimer();
     }
     show(tab) {
@@ -2341,7 +2410,7 @@ button:disabled{opacity:.45;cursor:default}
       this.paint();
     }
     paint() {
-      const r = this.shadowRoot, admin = this._hass.user?.is_admin, active = computeActive(this._hass.states, Date.now()).filter((a) => a.sev !== 'info').length;
+      const r = this.shadowRoot, admin = portalCanManageHA(), active = computeActive(this._hass.states, Date.now()).filter((a) => a.sev !== 'info').length;
       const tabs = [['now', active ? `Now (${active})` : 'Now'], ['history', 'Last 7 days'], ['runs', 'Automations']];
       const bar = tabs.map(([k, n]) => `<button class="tab${this._tab === k ? ' on' : ''}" role="tab" aria-selected="${this._tab === k}" data-tab="${k}">${n}</button>`).join('');
       if (r.getElementById('tabs').innerHTML !== bar) r.getElementById('tabs').innerHTML = bar;
@@ -2426,7 +2495,7 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
     paint() {
       const r = this.shadowRoot, active = r.activeElement;
       if (active && (active.tagName === 'SELECT' || (active.tagName === 'INPUT' && active.type !== 'checkbox'))) return;
-      const st = this._hass.states, now = Date.now(), admin = this._c?.manage && this._hass.user?.is_admin, t = this._totals, main = mainDevice();
+      const st = this._hass.states, now = Date.now(), admin = this._c?.manage && portalCanManage(), canName = portalCanManageHA(), t = this._totals, main = mainDevice();
       const tops = topNodes(), others = main ? tops.filter((d) => d.id !== main.id) : tops;
       const energy = (key) => { const out = new Map(); const flat = (n) => { out.set(n.id, n); n.kids.forEach(flat); }; if (t) tops.forEach((d) => flat(nodeEnergy(d.id, (id) => t.devices[id]?.[key] ?? null, t.stale))); return out; };
       const today = energy('today'), month = energy('month');
@@ -2444,7 +2513,7 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
         const box = pick.map((x) => { const p = parentOf(x.id), on = p === d.id; return `<label><input type="checkbox" data-under="${d.id}|${x.id}"${on ? ' checked' : ''}><span>${esc(x.name)}${!on && p ? ` <small>now under ${esc(nodeById(p)?.name || '')}</small>` : ''}</span></label>`; }).join('');
         const sum = d.virtual && TREE.sums?.[d.id], helpers = sum ? ['energy', 'power'].map((k) => sum[k]?.entity).filter(Boolean) : [];
         const ctl = admin ? `<div class="ctl"><details${this._openUnder === d.id ? ' open' : ''} data-under-box="${d.id}"><summary>Devices under it (${kids.length})${d.virtual ? ' · it adds them up' : ''}</summary><div class="unders">${box || '<span class="muted">No other devices here.</span>'}</div></details>${helpers.length ? `<span>In Home Assistant: ${helpers.map(esc).join(', ')}</span>` : ''}${d.virtual ? `<button data-del="${d.id}">${this._confirm === d.id ? 'Confirm delete' : 'Delete'}</button>` : ''}${parts.length ? `<button data-report="${d.report}">Open report</button>` : ''}</div>` : '';
-        const title = admin ? `<input data-rename="${d.id}" value="${esc(d.name)}" aria-label="Name of ${esc(d.name)}">` : !admin && parts.length ? `<button class="open" data-report="${d.report}" title="Open report">${esc(d.name)}</button>` : `<b>${esc(d.name)}</b>`;
+        const title = canName ? `<input data-rename="${d.id}" value="${esc(d.name)}" aria-label="Name of ${esc(d.name)}">` : !admin && parts.length ? `<button class="open" data-report="${d.report}" title="Open report">${esc(d.name)}</button>` : `<b>${esc(d.name)}</b>`;
         const tags = `${isMain ? '<span class="demo">Main</span>' : ''}${d.virtual ? '<span class="demo">Virtual</span>' : ''}${fresh ? '<span class="demo">New</span>' : ''}`;
         const partial = a?.partial ? ` · ${a.reporting} of ${kids.length} devices sending data` : '';
         const leftover = !d.virtual && kids.length ? `<li><div class="node um${a?.over || m?.over ? ' bad' : ''}"><div class="who"><b>Unmeasured</b><small>${a?.over || m?.over ? 'The devices under it add up to more than it. Check the wiring.' : `Energy of ${d.name} that no device under it measured`}</small></div><div class="val"></div>${val('Today', left(a))}${val('This month', left(m))}</div></li>` : '';
@@ -2454,7 +2523,7 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
       };
       r.getElementById('sum').textContent = main ? `Main device: ${main.name}` : 'No main device set';
       r.getElementById('warn').textContent = main && others.length ? `Not counted: ${others.map((d) => d.name).join(', ')}.` : '';
-      r.getElementById('add').innerHTML = `${admin ? '<input id="vname" type="text" placeholder="Name of virtual device" aria-label="Name of virtual device"><button class="gold" data-new="1">Add virtual device</button><span class="muted">It adds up the devices you tick under it, and appears in Home Assistant as a Sum helper for energy and power.</span>' : this._hass.user?.is_admin ? '<button data-wiring="1">Change the wiring</button>' : ''}<button data-fold-all="open">Expand all</button><button data-fold-all="shut">Collapse all</button>`;
+      r.getElementById('add').innerHTML = `${admin ? '<input id="vname" type="text" placeholder="Name of virtual device" aria-label="Name of virtual device"><button class="gold" data-new="1">Add virtual device</button><span class="muted">It adds up the devices you tick under it, and appears in Home Assistant as a Sum helper for energy and power.</span>' : portalCanManage() ? '<button data-wiring="1">Change the wiring</button>' : ''}<button data-fold-all="open">Expand all</button><button data-fold-all="shut">Collapse all</button>`;
       r.getElementById('tree').innerHTML = [...(main ? [main] : []), ...others].map(row).join('') || '<li class="muted">No devices in this location yet. An administrator adds them under Setup.</li>';
       if (focusNow) { const i = r.querySelector(`input[data-rename="${CSS.escape(this._hl)}"]`); if (i) { i.focus({ preventScroll: true }); i.select(); setTimeout(() => i.scrollIntoView({ block: 'center' }), 500); } }
     }
@@ -2468,22 +2537,26 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
 .locs{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:12px}
 .loc{all:unset;box-sizing:border-box;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;display:grid;gap:4px}.loc:hover{border-color:var(--muted)}.loc:focus-visible{outline:2px solid var(--accent)}.loc.on{border-color:var(--accent)}
 .loc b{font-weight:650;letter-spacing:-.02em;font-size:24px;line-height:1.2;overflow-wrap:anywhere}.loc span{font-size:13px;color:var(--muted)}
-.add{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.err{color:var(--bad);font-size:13px}
+.add{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.err{color:var(--bad);font-size:13px}.clientpick{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:13px;color:var(--muted)}.clientpick select{min-width:220px;max-width:100%}
 .addg{padding-top:8px;flex-wrap:nowrap}.addg input{flex:1 1 auto;width:0}.addg button{flex:none}.hint{font-size:12px}
 ul.gtree,ul.gtree ul{list-style:none;margin:0;padding:0;display:grid;gap:5px}ul.gtree ul{margin-top:5px;padding-left:18px}ul.gtree ul>li{position:relative}
 ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0;border-left:1px solid var(--muted)}ul.gtree ul>li:last-child::before{bottom:auto;height:28px}ul.gtree ul>li::after{content:"";position:absolute;left:-11px;top:23px;width:10px;border-top:1px solid var(--muted)}
 .gr{position:relative}.gr .f{width:100%}.gr .f>span:last-child{grid-column:1/-1;padding-right:84px;min-width:0}.cnt{all:unset;position:absolute;right:12px;bottom:8px;cursor:pointer;font-size:12.5px;color:var(--accent);white-space:nowrap}.cnt:hover{text-decoration:underline}.cnt:focus-visible{outline:2px solid var(--accent)}
-</style><div class="w"><h2>Choose a location</h2><div class="locs" id="locs"></div><div class="add" id="add"></div><span class="err" id="err"></span><span class="muted" id="free"></span></div>`;
+</style><div class="w"><h2>Choose a location</h2><div id="client"></div><div class="locs" id="locs"></div><div class="add" id="add"></div><span class="err" id="err"></span><span class="muted" id="free"></span></div>`;
       const r = this.shadowRoot;
       r.getElementById('locs').addEventListener('click', (e) => { const b = e.target.closest('[data-loc]'); if (b) { setLocation(b.dataset.loc); location.assign(HOME_PATH); } });
       r.getElementById('add').addEventListener('click', (e) => { if (e.target.closest('[data-setup]')) navigate(SETUP_PATH); });
+      r.getElementById('client').addEventListener('change', (e) => { if (e.target.id === 'clientSwitch') switchPortalClient(this._hass, e.target.value); });
     }
     paint() {
       const r = this.shadowRoot, active = r.activeElement;
-      if (active && active.tagName === 'INPUT') return;
-      const admin = this._hass.user?.is_admin, list = TREE.places.filter((p) => p.kind === 'location').sort(byName), real = allNodes.filter((d) => !d.virtual);
+      if (active && ['INPUT', 'SELECT'].includes(active.tagName)) return;
+      const admin = portalCanManage(), canHA = portalCanManageHA(), list = TREE.places.filter((p) => p.kind === 'location').sort(byName), real = allNodes.filter((d) => !d.virtual);
+      const clients = PORTAL.clients || [];
+      r.getElementById('client').innerHTML = PORTAL.isRoot && clients.length ? `<label class="clientpick"><span>Client</span><select id="clientSwitch" aria-label="Client">${clients.map((c) => `<option value="${esc(c.id)}"${c.id === portalClient ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>` : PORTAL.clientName ? `<div class="clientpick"><span>Client · ${esc(PORTAL.clientName)}</span></div>` : '';
       r.getElementById('locs').innerHTML = list.map((p) => { const under = placesUnder(p.id), n = real.filter((d) => under.has(d.place)).length, g = under.size - 1; return `<button class="loc${p.id === currentLocation ? ' on' : ''}" data-loc="${p.id}"><b>${esc(p.name)}</b><span>${n} ${n === 1 ? 'device' : 'devices'} · ${g} ${g === 1 ? 'group' : 'groups'}${p.id === currentLocation ? ' · Open now' : ''}</span></button>`; }).join('') || '<span class="muted">No locations yet.</span>';
-      r.getElementById('add').innerHTML = admin && !NATIVE ? '<button data-setup="1">Add or change locations</button>' : '';
+      r.getElementById('err').textContent = PORTAL.error || '';
+      r.getElementById('add').innerHTML = canHA && !NATIVE ? '<button data-setup="1">Add or change locations</button>' : '';
       const free = real.filter((d) => !d.place).length;
       r.getElementById('free').textContent = admin && free ? `${free} ${free === 1 ? 'device is' : 'devices are'} not in a location yet. ${NATIVE ? 'Give them an area in Home Assistant.' : 'Add them under Setup.'}` : '';
     }
@@ -2539,7 +2612,7 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
       const r = this.shadowRoot, h = this._hass, st = h.states, now = Date.now(), n = nowPanel(st, now), t = this._totals, tariff = t?.tariff ?? priceOf(h);
       const c = r.getElementById('charts'), W = c.clientWidth || 640, wide = W >= 900;
       const act = computeActive(st, now).filter((a) => a.sev !== 'info');
-      if (!DEVICES.some(isMeasuring)) { r.getElementById('top').innerHTML = `<div class="now"><span>No devices in this location yet.</span>${h.user?.is_admin ? '<button data-nav="/config/areas/dashboard">Give devices an area in Home Assistant ›</button>' : ''}</div>`; c.innerHTML = ''; return; }
+      if (!DEVICES.some(isMeasuring)) { r.getElementById('top').innerHTML = `<div class="now"><span>No devices in this location yet.</span>${portalCanManageHA() ? '<button data-nav="/config/areas/dashboard">Give devices an area in Home Assistant ›</button>' : ''}</div>`; c.innerHTML = ''; return; }
       const several = homeDevices().length > 1;
       const kpi = (label, value, sub) => `<div class="kpi"><span>${label}</span><b>${value}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
       const rule = priceRule(h), vat = vatNote(rule), money = (eur) => `€ ${eur.toFixed(2)} ${vat}`, pr = chartPrice(t, tariff);
@@ -2753,6 +2826,97 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       r.getElementById('main').innerHTML = `${problems.length ? `<div class="box"><h3>Needs attention (${problems.length})</h3>${problems.map((x) => `<span class="muted">${esc(x)}</span>`).join('')}</div>` : ''}${locs.length ? `<div class="box"><h3>Main device</h3><span class="muted">The device whose figures Overview shows.</span>${locs.map((l) => { const under = placesUnder(l.id), now = TREE.mains?.[l.id] || ''; const opts = allNodes.filter((d) => under.has(d.place) && (d.virtual || kindOf(d) === 'meter' || d.id === now)).sort(byName); return `<label class="f">${esc(l.name)}<select data-main-for="${l.id}"><option value="">None: add up the top devices</option>${opts.map((d) => `<option value="${d.id}"${d.id === now ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>`; }).join('')}</div>` : ''}${this.priceBox(locs)}`;
     }
   }
+  // Tenant administration stays in the portal. Client administrators never
+  // become Home Assistant administrators and never see another client.
+  class TenantAdminCard extends Base {
+    build() {
+      this._users = null;
+      this._confirmDelete = null;
+      this.shadowRoot.innerHTML = `<style>${BASE}
+.head{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}.head p{margin:4px 0 0;color:var(--muted);font-size:13px}
+.clientbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);font-size:13px;color:var(--muted)}
+.clientbar select{min-width:220px}.users{display:grid;gap:8px}.user{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:10px 12px;display:grid;grid-template-columns:minmax(170px,1.4fr) minmax(130px,.8fr) minmax(150px,1fr) auto;gap:8px;align-items:center}.user.me{border-color:var(--accent)}.who{display:grid;gap:2px;min-width:0}.who b{font-weight:600;overflow-wrap:anywhere}.who small{color:var(--muted);font-size:12px}.user select,.user button,.form input,.form select{font-size:13px;min-width:0}.acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;border-top:1px solid var(--line);padding-top:12px}.form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.form .wide{grid-column:1/-1}.err{color:var(--bad);font-size:13px}.ok{color:var(--ok);font-size:13px}.empty{color:var(--muted);padding:12px 0}
+.newclient{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.newclient label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.newclient input{min-width:220px}
+@media(max-width:760px){.user{grid-template-columns:minmax(0,1fr) auto}.who{grid-column:1/-1}.acts{grid-column:1/-1;justify-content:flex-start}}
+</style><div class="w"><div class="head"><div><h2>People & clients</h2><p>Client administrators can create and disable users for their own client. Only the Home Assistant administrator can create a client or another client administrator.</p></div><button data-reload="1">Refresh</button></div><div id="clientbar"></div><div id="users"></div><div id="newclient"></div><div id="form"></div><span class="err" id="err"></span><span class="ok" id="ok"></span></div>`;
+      const r = this.shadowRoot;
+      r.querySelector('.w').addEventListener('click', (e) => this.onClick(e));
+      r.querySelector('.w').addEventListener('change', (e) => this.onChange(e));
+      this.startTimer();
+    }
+    async refresh() { await this.load(); this.paint(); }
+    async load() {
+      if (!PORTAL.ready) await ensureTree(this._hass);
+      if (!portalCanManageUsers()) { this._users = []; return; }
+      try {
+        this._users = await this._hass.callWS({ type: 'optim_energy/user/list', ...(PORTAL.isRoot && portalClient ? { client: portalClient } : {}) });
+        this._error = '';
+      } catch (e) { this._users = []; this._error = e?.message || String(e); }
+    }
+    locations() { return TREE.places.filter((p) => p.kind === 'location').sort(byName); }
+    async onClick(e) {
+      const q = (a) => e.target.closest(a);
+      let b;
+      if (q('[data-reload]')) { await this.refresh(); return; }
+      if ((b = q('[data-toggle]'))) {
+        const u = this._users?.find((x) => x.id === b.dataset.toggle); if (!u) return;
+        try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: u.id, is_active: !u.is_active }); await this.refresh(); this.flash(`${u.name} ${u.is_active ? 'disabled' : 'enabled'}.`); } catch (x) { this.flash(x?.message || 'Could not update the user.', true); }
+        return;
+      }
+      if ((b = q('[data-delete]'))) {
+        const u = this._users?.find((x) => x.id === b.dataset.delete); if (!u) return;
+        if (this._confirmDelete !== u.id) { this._confirmDelete = u.id; this.paint(); return; }
+        try { await this._hass.callWS({ type: 'optim_energy/user/delete', user_id: u.id }); this._confirmDelete = null; await this.refresh(); this.flash(`${u.name} deleted.`); } catch (x) { this.flash(x?.message || 'Could not delete the user.', true); }
+        return;
+      }
+      if (q('[data-create-client]')) {
+        const i = this.shadowRoot.getElementById('clientName'), name = i?.value.trim(); if (!name) return;
+        try {
+          const made = await this._hass.callWS({ type: 'optim_energy/client/create', name });
+          whoLoad = null; treeLoad = null; portalClient = made.id;
+          try { localStorage.setItem(CLIENT_KEY, made.id); } catch (x) { /* private window */ }
+          resetPortalTree(); whoLoad = null; treeLoad = null; ensureTree(this._hass);
+          i.value = ''; this.flash(`${made.name} created.`); setTimeout(() => this.refresh(), 250);
+        } catch (x) { this.flash(x?.message || 'Could not create the client.', true); }
+        return;
+      }
+      if (q('[data-create-user]')) { await this.createUser(); return; }
+    }
+    async onChange(e) {
+      const t = e.target;
+      if (t.id === 'clientSwitch') { switchPortalClient(this._hass, t.value); setTimeout(() => this.refresh(), 300); return; }
+      if (t.dataset.userLoc) {
+        try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: t.dataset.userLoc, location: t.value }); await this.refresh(); this.flash('Location updated.'); } catch (x) { this.flash(x?.message || 'Could not move the user.', true); }
+      }
+      if (t.dataset.userRole) {
+        try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: t.dataset.userRole, role: t.value, location: t.value === 'client_admin' ? '' : this.locations()[0]?.id || '' }); await this.refresh(); this.flash('Role updated.'); } catch (x) { this.flash(x?.message || 'Could not change the role.', true); this.paint(); }
+      }
+    }
+    async createUser() {
+      const r = this.shadowRoot, val = (id) => r.getElementById(id)?.value.trim() || '';
+      const role = val('newRole') || 'user', location = role === 'client_admin' ? null : (val('newLocation') || null);
+      const payload = { type: 'optim_energy/user/create', client: portalClient, name: val('newName'), username: val('newUsername'), password: r.getElementById('newPassword')?.value || '', role, ...(location ? { location } : {}) };
+      try {
+        await this._hass.callWS(payload);
+        ['newName', 'newUsername', 'newPassword'].forEach((id) => { const el = r.getElementById(id); if (el) el.value = ''; });
+        await this.refresh(); this.flash('User created.');
+      } catch (x) { this.flash(x?.message || 'Could not create the user.', true); }
+    }
+    flash(text, bad = false) { const r = this.shadowRoot; r.getElementById('err').textContent = bad ? text : ''; r.getElementById('ok').textContent = bad ? '' : text; clearTimeout(this._msgT); this._msgT = setTimeout(() => { r.getElementById('err').textContent = ''; r.getElementById('ok').textContent = ''; }, 5000); }
+    paint() {
+      const r = this.shadowRoot; if (!r) return;
+      if (!portalCanManageUsers()) { r.getElementById('users').innerHTML = '<div class="empty">Only a client administrator can change users.</div>'; r.getElementById('clientbar').innerHTML = ''; r.getElementById('newclient').innerHTML = ''; r.getElementById('form').innerHTML = ''; return; }
+      const users = this._users || [], locs = this.locations(), root = PORTAL.isRoot;
+      r.getElementById('clientbar').innerHTML = `${root ? `<label class="clientbar"><span>Client</span><select id="clientSwitch" aria-label="Client">${(PORTAL.clients || []).map((c) => `<option value="${esc(c.id)}"${c.id === portalClient ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>` : `<div class="clientbar"><span>Client · ${esc(PORTAL.clientName || '')}</span></div>`}`;
+      r.getElementById('newclient').innerHTML = root ? `<div class="newclient"><label>Name of new client<input id="clientName" maxlength="80" placeholder="Example Client"></label><button class="gold" data-create-client="1">Create client</button></div>` : '';
+      r.getElementById('users').innerHTML = users.length ? users.map((u) => {
+        const self = u.id === PORTAL.user_id, protectedUser = u.role === 'client_admin' && !root, locOpts = locs.map((p) => `<option value="${esc(p.id)}"${p.id === u.location ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+        return `<div class="user${self ? ' me' : ''}"><div class="who"><b>${esc(u.name || u.username || u.id)}</b><small>${esc(u.username || '')}${self ? ' · you' : ''}${u.is_active ? '' : ' · disabled'}</small></div><div>${root ? `<select data-user-role="${u.id}" aria-label="Role for ${esc(u.name)}"${self ? ' disabled' : ''}><option value="user"${u.role === 'user' ? ' selected' : ''}>User</option><option value="client_admin"${u.role === 'client_admin' ? ' selected' : ''}>Client admin</option></select>` : `<span class="muted">${u.role === 'client_admin' ? 'Client admin' : 'User'}</span>`}</div><div>${u.role === 'client_admin' ? '<span class="muted">All locations</span>' : `<select data-user-loc="${u.id}" aria-label="Location for ${esc(u.name)}"${protectedUser ? ' disabled' : ''}><option value="">Choose location</option>${locOpts}</select>`}</div><div class="acts">${protectedUser ? '' : `<button data-toggle="${u.id}"${self ? ' disabled' : ''}>${u.is_active ? 'Disable' : 'Enable'}</button><button data-delete="${u.id}"${self ? ' disabled' : ''}>${this._confirmDelete === u.id ? 'Confirm delete' : 'Delete'}</button>`}</div></div>`;
+      }).join('') : '<div class="empty">No users assigned to this client yet.</div>';
+      r.getElementById('form').innerHTML = `<div class="form"><div class="wide"><b>Add a user</b><span class="muted" style="display:block;font-size:12.5px;margin-top:3px">The user signs in at this same Home Assistant address and receives a fixed, tenant-only view.</span></div><label>Name<input id="newName" autocomplete="off" maxlength="80"></label><label>Username<input id="newUsername" autocomplete="off" maxlength="80"></label><label>Password<input id="newPassword" type="password" autocomplete="new-password" minlength="8"></label><label>Role<select id="newRole">${root ? '<option value="user">User</option><option value="client_admin">Client admin</option>' : '<option value="user">User</option>'}</select></label><label>Location<select id="newLocation"><option value="">Choose location</option>${locs.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><div class="wide"><button class="gold" data-create-user="1">Create user</button></div></div>`;
+    }
+  }
+
   // The bottom bar on phones and tablets: always at the very bottom, small enough to fit every screen.
   const NAV = [['Overview', 'mdi:view-dashboard-outline', HOME_PATH], ['Groups', 'mdi:floor-plan', '/energy-groups/groups'], ['Controls', 'mdi:tune-variant', '/energy-controls/controls'], ['Devices', 'mdi:power-plug-outline', '/energy-devices/topology'], ['Reports', 'mdi:chart-box-outline', '/energy-reports/report'], ['Alerts', 'mdi:bell-outline', '/energy-alerts/alerts'], ['Setup', 'mdi:cog-outline', SETUP_PATH, true]];
   class NavCard extends HTMLElement {
@@ -2771,7 +2935,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
 nav{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;background:var(--card-background-color);border-top:1px solid var(--divider-color);padding-bottom:env(safe-area-inset-bottom,0px);overflow-x:auto;font-family:var(--ha-font-family-body,Roboto,sans-serif)}
 a{position:relative;flex:1 1 0;min-width:0;display:grid;justify-items:center;gap:2px;padding:7px 0 6px;color:var(--secondary-text-color);font-size:9.5px;line-height:1.1;text-decoration:none;white-space:nowrap;-webkit-tap-highlight-color:transparent}a.on{color:var(--primary-color);font-weight:600}a:focus-visible{outline:2px solid var(--primary-color);outline-offset:-2px}ha-icon{--mdc-icon-size:21px;display:block;height:21px}
 i{position:absolute;top:3px;left:calc(50% + 5px);min-width:14px;height:14px;border-radius:7px;padding:0 3px;box-sizing:border-box;background:var(--error-color);color:#fff;font:600 9px/14px var(--ha-font-family-body,Roboto,sans-serif);text-align:center}i:empty{display:none}
-@media(min-width:871px){:host{display:none}}</style><nav>${NAV.filter((x) => !x[3] || h.user?.is_admin).map(([n, icon, p]) => `<a href="${n === 'Devices' && innerWidth <= 870 ? '/energy-devices/list' : p}" data-p="${n === 'Devices' && innerWidth <= 870 ? '/energy-devices/list' : p}"><ha-icon icon="${icon}"></ha-icon>${n}${n === 'Alerts' ? '<i id="count"></i>' : ''}</a>`).join('')}</nav>`;
+@media(min-width:871px){:host{display:none}}</style><nav>${NAV.filter((x) => !x[3] || portalCanManage()).map(([n, icon, p]) => `<a href="${n === 'Devices' && innerWidth <= 870 ? '/energy-devices/list' : p}" data-p="${n === 'Devices' && innerWidth <= 870 ? '/energy-devices/list' : p}"><ha-icon icon="${icon}"></ha-icon>${n}${n === 'Alerts' ? '<i id="count"></i>' : ''}</a>`).join('')}</nav>`;
         this.shadowRoot.querySelector('nav').addEventListener('click', (e) => { const a = e.target.closest('a'); if (a) { e.preventDefault(); if (a.dataset.p === '/energy-reports/report') openLocationReport(); navigate(a.dataset.p); this.mark(); } });
         this.mark();
       }
@@ -2974,6 +3138,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
   reg('building-location-picker-card', LocationPickerCard, 'Choose a location');
   reg('building-schedules-card', SchedulesCard, 'Automations');
   reg('building-alert-rules-card', AlertRulesCard, 'Alert rules');
+  reg('building-tenant-admin-card', TenantAdminCard, 'People and clients');
   reg('building-controls-card', ControlsCard, 'Controls');
   reg('building-3d-card', Building3dCard, '3D view');
   reg('building-alerts-card', AlertsCard, 'Building alerts');
