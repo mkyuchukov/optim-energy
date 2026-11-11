@@ -26,6 +26,8 @@ BOOT_COMMANDS = {
     "subscribe_bootstrap_integrations",
     "frontend/get_user_data",
     "frontend/set_user_data",
+    "frontend/subscribe_user_data",
+    "frontend/unsubscribe_user_data",
     f"{DOMAIN}/whoami",
 }
 

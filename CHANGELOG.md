@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.8
+
+- Allow the frontend user-data subscription used by theme and profile UI state.
+
 ## 0.2.7
 
 - Return an empty repairs list to tenant frontends instead of leaking global repair issues or blocking startup.
