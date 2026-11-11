@@ -859,7 +859,7 @@ class TenancyManager:
         for device_id, place in (tree.get("placed") or {}).items():
             if place in allowed_places:
                 allowed_devices.add(str(device_id))
-        for device in device_registry:
+        for device in device_registry.devices:
             device_labels = set(getattr(device, "labels", ()) or ())
             device_area = getattr(device, "area_id", None)
             by_area = bool(device_area and device_area in area_ids)
@@ -1265,7 +1265,7 @@ def _registry_list(self: TenancyManager, user: User, kind: str, requested_client
     """Return a tenant-filtered registry list without using admin-only commands."""
     client_id, ctx = self.require_client_value(user, requested_client)
     ar_reg = ar.async_get(self.hass)
-    dr_reg = {entry.id: entry for entry in dr.async_get(self.hass)}
+    dr_reg = {entry.id: entry for entry in dr.async_get(self.hass).devices}
     er_reg = er.async_get(self.hass)
     lr_reg = lr.async_get(self.hass)
     root = self.is_root(user)

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+
+- Iterate the Home Assistant device registry through its supported public iteration path.
+
 ## 0.2.3
 
 - Add explicit client assignment of native location labels and fix the floor registry API.
