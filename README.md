@@ -65,8 +65,17 @@ Back up `.storage/optim_energy.tenancy`, `.storage/auth` and `.storage/lovelace*
 
 ```bash
 make test
+make test-runtime
 ```
 
-The tests cover the package, frontend helpers, tenant tree filtering and websocket policy decisions. The private auth-store and websocket interfaces must also be exercised on the pinned Home Assistant test VM for every supported release.
+`make test` runs the dependency-free Python and JavaScript checks. `make
+test-runtime` starts an isolated official Home Assistant container using the
+exact image tag in `tests/runtime/HA_VERSION`, configures the integration and
+tests the real auth store, registries, REST middleware and websocket dispatch.
+Update that version file when the supported Home Assistant release changes.
+
+The private auth-store and websocket interfaces must also be exercised on the
+pinned Home Assistant test VM for every supported release with
+`tools/vm_smoke.sh`.
 
 This is not an official Home Assistant integration.
