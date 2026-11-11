@@ -18,6 +18,7 @@ from acceptance import (
     client_tree,
     complete_onboarding,
     create_config_entry,
+    create_fixture_entry,
     ensure_area,
     ensure_client,
     ensure_label,
@@ -159,6 +160,7 @@ def run(version: str, *, keep: bool = False) -> None:
         harness.start()
         root_token = complete_onboarding(http)
         entry_id = create_config_entry(http, root_token)
+        fixture_entry_id = create_fixture_entry(http, root_token)
         root = WebSocket(http.host, http.port)
         root.auth(root_token)
         root.command({"type": "optim_runtime_fixture/install_late_command"})
@@ -216,6 +218,7 @@ def run(version: str, *, keep: bool = False) -> None:
         fixture = root.command(
             {
                 "type": "optim_runtime_fixture/create_devices",
+                "config_entry_id": fixture_entry_id,
                 "devices": [
                     {"key": "a_area", "name": "Scale A Area Device", "area_id": areas["a_north"]},
                     {"key": "a_label", "name": "Scale A Label Device", "labels": [labels["a_north"]]},

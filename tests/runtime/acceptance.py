@@ -259,6 +259,25 @@ def create_config_entry(http: Http, token: str) -> str:
     return str(entry["entry_id"])
 
 
+def create_fixture_entry(http: Http, token: str) -> str:
+    """Create the runtime fixture config entry used to own test devices."""
+    _, flow = http.request(
+        "POST",
+        "/api/config/config_entries/flow",
+        {"handler": "optim_runtime_fixture", "show_advanced_options": False},
+        token=token,
+    )
+    assert_equal(flow.get("type"), "form", "runtime fixture config flow")
+    _, result = http.request(
+        "POST",
+        f"/api/config/config_entries/flow/{flow['flow_id']}",
+        {},
+        token=token,
+    )
+    assert_equal(result.get("type"), "create_entry", "runtime fixture entry")
+    return str(result["result"]["entry_id"])
+
+
 def wait_until(predicate: Any, message: str, timeout: float = 30.0) -> Any:
     deadline = time.monotonic() + timeout
     last: Any = None
@@ -532,6 +551,7 @@ def run(version: str, *, keep: bool = False) -> None:
         )
 
         entry_id = create_config_entry(http, root_token)
+        fixture_entry_id = create_fixture_entry(http, root_token)
         wait_until(
             lambda: "Optim Energy websocket firewall active"
             in harness.logs()
@@ -614,6 +634,7 @@ def run(version: str, *, keep: bool = False) -> None:
         fixture_devices = root.command(
             {
                 "type": "optim_runtime_fixture/create_devices",
+                "config_entry_id": fixture_entry_id,
                 "devices": [
                     {
                         "key": "client_a_area_device",

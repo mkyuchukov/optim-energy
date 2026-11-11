@@ -43,6 +43,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     @websocket_api.websocket_command(
         {
             probatio.Required("type"): "optim_runtime_fixture/create_devices",
+            probatio.Required("config_entry_id"): str,
             probatio.Required("devices"): [
                 {
                     probatio.Required("key"): str,
@@ -60,10 +61,11 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         msg: dict[str, Any],
     ) -> None:
         registry = dr.async_get(hass)
+        spec_entry_id = msg["config_entry_id"]
         created = []
         for spec in msg["devices"]:
             device = registry.async_get_or_create(
-                config_entry_id=None,
+                config_entry_id=spec_entry_id,
                 identifiers={("optim_runtime_fixture", spec["key"])},
                 name=spec["name"],
                 manufacturer="Optim Energy",
