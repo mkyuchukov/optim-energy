@@ -37,10 +37,13 @@ LEGACY_TREE = {
 class RuntimeHarness:
     """Own one disposable Home Assistant Docker container."""
 
-    def __init__(self, version: str, port: int, *, keep: bool = False) -> None:
+    def __init__(
+        self, version: str, port: int, *, keep: bool = False, profile: str = "base"
+    ) -> None:
         self.version = version
         self.port = port
         self.keep = keep
+        self.profile = profile
         self.image = f"ghcr.io/home-assistant/home-assistant:{version}"
         self.name = f"optim-energy-runtime-{os.getpid()}"
         self.temp_dir = Path(tempfile.mkdtemp(prefix="optim-energy-runtime-"))
@@ -49,8 +52,43 @@ class RuntimeHarness:
         self._write_config()
 
     def _write_config(self) -> None:
+        entities = (
+            [("runtime_a_toggle", "Runtime Client A Toggle"), ("runtime_b_toggle", "Runtime Client B Toggle")]
+            if self.profile == "base"
+            else [
+                (f"runtime_{client}_{index:03d}", f"Runtime {client.upper()} {index:03d}")
+                for client in ("a", "b", "c")
+                for index in range(120)
+            ]
+        )
+        input_boolean = "\n".join(
+            f"  {entity_id}:\n    name: {name}" for entity_id, name in entities
+        )
+        scale_template = (
+            """
+template:
+  - sensor:
+      - name: Runtime A Energy
+        unique_id: runtime_a_energy
+        unit_of_measurement: kWh
+        state_class: total_increasing
+        state: "1"
+      - name: Runtime B Energy
+        unique_id: runtime_b_energy
+        unit_of_measurement: kWh
+        state_class: total_increasing
+        state: "1"
+      - name: Runtime C Energy
+        unique_id: runtime_c_energy
+        unit_of_measurement: kWh
+        state_class: total_increasing
+        state: "1"
+"""
+            if self.profile == "scale"
+            else ""
+        )
         (self.config_dir / "configuration.yaml").write_text(
-            """\
+            f"""\
 homeassistant:
   name: Runtime Test
   latitude: 42.6977
@@ -60,16 +98,15 @@ homeassistant:
   country: BG
   time_zone: Europe/Sofia
 http:
+  ip_ban_enabled: false
 frontend:
 lovelace:
 recorder:
   db_url: sqlite:////config/recorder.db
   purge_keep_days: 1
 input_boolean:
-  runtime_a_toggle:
-    name: Runtime Client A Toggle
-  runtime_b_toggle:
-    name: Runtime Client B Toggle
+{input_boolean}
+{scale_template}optim_runtime_fixture:
 logger:
   default: warning
   logs:
@@ -102,6 +139,8 @@ logger:
             f"{self.config_dir}:/config",
             "-v",
             f"{COMPONENT}:/config/custom_components/optim_energy:ro",
+            "-v",
+            f"{Path(__file__).with_name('fixture_component')}:/config/custom_components/optim_runtime_fixture:ro",
             self.image,
             timeout=300,
         )
@@ -123,6 +162,12 @@ logger:
             text=True,
         )
         return result.stdout + result.stderr
+
+    def restart(self) -> None:
+        self._docker("restart", self.name, timeout=180)
+
+    def file_size(self, path: str) -> int:
+        return int(self._docker("exec", self.name, "stat", "-c", "%s", path))
 
     def storage(self, key: str) -> dict[str, Any]:
         try:
@@ -215,6 +260,25 @@ def create_config_entry(http: Http, token: str) -> str:
     return str(entry["entry_id"])
 
 
+def create_fixture_entry(http: Http, token: str) -> str:
+    """Create the runtime fixture config entry used to own test devices."""
+    _, flow = http.request(
+        "POST",
+        "/api/config/config_entries/flow",
+        {"handler": "optim_runtime_fixture", "show_advanced_options": False},
+        token=token,
+    )
+    assert_equal(flow.get("type"), "form", "runtime fixture config flow")
+    _, result = http.request(
+        "POST",
+        f"/api/config/config_entries/flow/{flow['flow_id']}",
+        {},
+        token=token,
+    )
+    assert_equal(result.get("type"), "create_entry", "runtime fixture entry")
+    return str(result["result"]["entry_id"])
+
+
 def wait_until(predicate: Any, message: str, timeout: float = 30.0) -> Any:
     deadline = time.monotonic() + timeout
     last: Any = None
@@ -244,11 +308,11 @@ def ensure_label(root: WebSocket, label_id: str, name: str) -> None:
     )
 
 
-def ensure_area(root: WebSocket, area_id: str, name: str, label_id: str) -> None:
+def ensure_area(root: WebSocket, area_id: str, name: str, label_id: str) -> str:
     areas = root.command({"type": "config/area_registry/list"})
     existing = next((area for area in areas if area["area_id"] == area_id), None)
     if existing is None:
-        root.command(
+        created = root.command(
             {
                 "type": "config/area_registry/create",
                 "name": name,
@@ -256,14 +320,16 @@ def ensure_area(root: WebSocket, area_id: str, name: str, label_id: str) -> None
                 "aliases": [],
             }
         )
+        return str(created["area_id"])
     else:
-        root.command(
+        updated = root.command(
             {
                 "type": "config/area_registry/update",
                 "area_id": area_id,
                 "labels": sorted(set(existing.get("labels", [])) | {label_id}),
             }
         )
+        return str(updated["area_id"])
 
 
 def set_entity_place(
@@ -352,19 +418,22 @@ def assert_tenant_rest(http: Http, token: str) -> None:
     )
 
 
-def assert_tenant_ws(http: Http, token: str) -> None:
+def assert_tenant_ws(
+    http: Http,
+    token: str,
+    *,
+    expected_entities: set[str],
+    expected_devices: set[str],
+    expected_areas: set[str],
+) -> None:
     tenant = WebSocket(http.host, http.port)
     try:
         tenant.auth(token)
         states = tenant.command({"type": "get_states"})
         entity_ids = {state["entity_id"] for state in states}
         assert_true(
-            "input_boolean.runtime_a_toggle" in entity_ids,
-            "Client A state missing",
-        )
-        assert_true(
-            "input_boolean.runtime_b_toggle" not in entity_ids,
-            "Client B state leaked to Client A",
+            expected_entities <= entity_ids,
+            "tenant-owned states are missing",
         )
         registry = tenant.command(
             {"type": "config/entity_registry/list_for_display"}
@@ -372,8 +441,24 @@ def assert_tenant_ws(http: Http, token: str) -> None:
         registry_ids = {entry["entity_id"] for entry in registry}
         assert_equal(
             registry_ids,
-            {"input_boolean.runtime_a_toggle"},
+            expected_entities,
             "tenant-filtered entity registry",
+        )
+        devices = tenant.command(
+            {"type": "optim_energy/registry/list", "kind": "device"}
+        )
+        assert_equal(
+            {device["id"] for device in devices},
+            expected_devices,
+            "tenant-filtered device registry",
+        )
+        areas = tenant.command(
+            {"type": "optim_energy/registry/list", "kind": "area"}
+        )
+        assert_equal(
+            {area["area_id"] for area in areas},
+            expected_areas,
+            "tenant-filtered area registry",
         )
         assert_equal(
             tenant.command({"type": "repairs/list_issues"}),
@@ -403,6 +488,9 @@ def assert_tenant_ws(http: Http, token: str) -> None:
             },
             {"type": "config/entity_registry/list"},
             {"type": "config/auth/list"},
+            {
+                "type": "optim_runtime_fixture/late_probe",
+            },
         ):
             try:
                 tenant.command(payload)
@@ -464,6 +552,7 @@ def run(version: str, *, keep: bool = False) -> None:
         )
 
         entry_id = create_config_entry(http, root_token)
+        fixture_entry_id = create_fixture_entry(http, root_token)
         wait_until(
             lambda: "Optim Energy websocket firewall active"
             in harness.logs()
@@ -488,6 +577,12 @@ def run(version: str, *, keep: bool = False) -> None:
         )
         root = WebSocket(http.host, http.port)
         root.auth(root_token)
+        root.command({"type": "optim_runtime_fixture/install_late_command"})
+        assert_equal(
+            root.command({"type": "optim_runtime_fixture/late_probe"}),
+            {"late": True},
+            "late-registered fixture command",
+        )
         saved_dashboard = root.command(
             {"type": "lovelace/config", "url_path": "energy-home"}
         )
@@ -537,6 +632,25 @@ def run(version: str, *, keep: bool = False) -> None:
             "kitchen",
             "runtime_client_b",
         )
+        fixture_devices = root.command(
+            {
+                "type": "optim_runtime_fixture/create_devices",
+                "config_entry_id": fixture_entry_id,
+                "devices": [
+                    {
+                        "key": "client_a_area_device",
+                        "name": "Runtime Client A Area Device",
+                        "area_id": "living_room",
+                    },
+                    {
+                        "key": "client_b_label_device",
+                        "name": "Runtime Client B Label Device",
+                        "labels": ["runtime_client_b"],
+                    },
+                ],
+            }
+        )
+        devices_by_name = {device["name"]: device for device in fixture_devices}
         client_a, _ = ensure_client(root, "Runtime Client A")
         client_b, _ = ensure_client(root, "Runtime Client B")
         root.command(
@@ -621,7 +735,13 @@ def run(version: str, *, keep: bool = False) -> None:
 
         token_a = http.login(*CLIENT_A_USER)["access_token"]
         assert_tenant_rest(http, token_a)
-        assert_tenant_ws(http, token_a)
+        assert_tenant_ws(
+            http,
+            token_a,
+            expected_entities={"input_boolean.runtime_a_toggle"},
+            expected_devices={devices_by_name["Runtime Client A Area Device"]["id"]},
+            expected_areas={"living_room"},
+        )
         token_b = http.login(*CLIENT_B_USER)["access_token"]
         b = WebSocket(http.host, http.port)
         try:
@@ -635,6 +755,14 @@ def run(version: str, *, keep: bool = False) -> None:
                 b_ids,
                 {"input_boolean.runtime_b_toggle"},
                 "Client B state isolation",
+            )
+            b_devices = b.command(
+                {"type": "optim_energy/registry/list", "kind": "device"}
+            )
+            assert_equal(
+                {device["id"] for device in b_devices},
+                {devices_by_name["Runtime Client B Label Device"]["id"]},
+                "label-only device isolation",
             )
         finally:
             b.close()

@@ -213,6 +213,20 @@ def wait_ready(http: Http, timeout: float = 180.0) -> list[dict[str, Any]]:
     raise RuntimeError("Home Assistant did not become ready")
 
 
+def wait_server(http: Http, timeout: float = 180.0) -> None:
+    """Wait until the HTTP frontend answers after a restart."""
+    deadline = time.monotonic() + timeout
+    last: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            http.request("GET", "/", expected=(200,))
+            return
+        except Exception as err:  # pragma: no cover - diagnostic path
+            last = err
+        time.sleep(1)
+    raise RuntimeError(f"Home Assistant HTTP server did not return after restart: {last}")
+
+
 def onboard(http: Http, username: str, password: str) -> str:
     _, steps = wait_ready(http)
     client_id = http.base_url + "/"

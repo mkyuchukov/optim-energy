@@ -66,12 +66,14 @@ Back up `.storage/optim_energy.tenancy`, `.storage/auth` and `.storage/lovelace*
 ```bash
 make test
 make test-runtime
+make test-scale
 ```
 
 `make test` runs the dependency-free Python and JavaScript checks. `make
 test-runtime` starts an isolated official Home Assistant container using the
 exact image tag in `tests/runtime/HA_VERSION`, configures the integration and
 tests the real auth store, registries, REST middleware and websocket dispatch.
+`make test-scale` runs the three-client, 360-entity lifecycle profile.
 Update that version file when the supported Home Assistant release changes.
 
 The private auth-store and websocket interfaces must also be exercised on the

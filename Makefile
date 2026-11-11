@@ -1,4 +1,4 @@
-.PHONY: test test-js test-python test-runtime
+.PHONY: test test-js test-python test-runtime test-scale
 
 test: test-js test-python
 
@@ -13,3 +13,6 @@ test-python:
 
 test-runtime:
 	python3 tests/runtime/acceptance.py
+
+test-scale:
+	python3 tests/runtime/scale_acceptance.py
