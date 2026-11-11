@@ -83,3 +83,113 @@ Use the same test VM after creating A and B client trees and fixture devices.
 10. Restore the integration and confirm the portal tree, users and navigation survive.
 
 Capture `.storage/auth` and `.storage/optim_energy.tenancy` only on the isolated VM. Do not copy them to production.
+
+## Direct-network REST, webhook and ingress acceptance
+
+The public reverse proxy intentionally rejects most `/api/*` routes with `404`
+before Home Assistant receives them. Run this check against the VM's internal
+address as well; a public `404` alone does not prove that the REST guard works.
+
+Keep tokens in shell variables or a mode-`0600` temporary file. Do not paste
+tokens into shell history, CI logs or test output.
+
+```bash
+export HA_DIRECT_URL='http://192.168.66.225'
+export HA_PUBLIC_URL='https://ha2.int.optim-al.app'
+export TENANT_TOKEN='<client-admin-or-user-token>'
+export ROOT_TOKEN='<root-user-token>'
+```
+
+Tenant bearer tokens must be rejected on direct/internal access:
+
+```bash
+for path in \
+  /api/states \
+  /api/history/period/2026-11-11T00:00:00+00:00 \
+  /api/logbook/2026-11-11T00:00:00+00:00 \
+  /api/services \
+  /api/config/config_entries/entry \
+  /api/error_log
+do
+  printf '%s ' "$path"
+  curl -sS -o /dev/null -w '%{http_code}\n' \
+    "$HA_DIRECT_URL$path" -H "Authorization: Bearer $TENANT_TOKEN"
+done
+```
+
+Every status above must be `403`. The non-mutating template check must also
+return `403`:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -X POST "$HA_DIRECT_URL/api/template" \
+  -H "Authorization: Bearer $TENANT_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data '{"template":"1"}'
+```
+
+Webhook and ingress surfaces have no tenant identity, so they require a root
+bearer token. Anonymous and tenant requests must return `403` even when the
+webhook ID is deliberately nonexistent:
+
+```bash
+for path in \
+  /api/webhook/acceptance-does-not-exist \
+  /api/hassio_ingress/acceptance-does-not-exist
+do
+  printf 'anonymous %s ' "$path"
+  curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$HA_DIRECT_URL$path"
+  printf 'tenant %s ' "$path"
+  curl -sS -o /dev/null -w '%{http_code}\n' -X POST \
+    "$HA_DIRECT_URL$path" -H "Authorization: Bearer $TENANT_TOKEN"
+done
+```
+
+Root REST access and the bootstrap allowlist must remain functional:
+
+```bash
+for path in /api/ /api/config /api/states; do
+  printf '%s ' "$path"
+  curl -sS -o /dev/null -w '%{http_code}\n' \
+    "$HA_DIRECT_URL$path" -H "Authorization: Bearer $ROOT_TOKEN"
+done
+```
+
+Authentication fallbacks must not create a bypass:
+
+```bash
+printf 'no token '
+curl -sS -o /dev/null -w '%{http_code}\n' "$HA_DIRECT_URL/api/states"
+printf 'invalid token '
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  "$HA_DIRECT_URL/api/states" -H 'Authorization: Bearer invalid'
+printf 'cookie token '
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  "$HA_DIRECT_URL/api/states" -H "Cookie: access_token=$TENANT_TOKEN"
+printf 'query token '
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  "$HA_DIRECT_URL/api/states?access_token=$TENANT_TOKEN"
+```
+
+Expected statuses are `401, 401, 401, 401`. Finally confirm the public proxy is
+still fail-closed ahead of Home Assistant:
+
+```bash
+for path in /api/states /api/services /api/hassio_ingress/fake; do
+  printf '%s ' "$path"
+  curl -sS -o /dev/null -w '%{http_code}\n' \
+    "$HA_PUBLIC_URL$path" -H "Authorization: Bearer $TENANT_TOKEN"
+done
+```
+
+Expected statuses are `404, 404, 404` while `/api/config` remains available for
+frontend bootstrap. Record the exact date, Home Assistant version and observed
+statuses in the release acceptance record below.
+
+### HA2 verification record
+
+<!-- Update this table after each supported HA upgrade. -->
+
+| Date | Home Assistant | Route check | Result |
+| --- | --- | --- | --- |
+| _pending release deployment_ | 2026.11.1 | Direct REST/webhook/ingress matrix | Not yet run with this guard |
