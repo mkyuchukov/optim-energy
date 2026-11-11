@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.18
+
+- Combine checked client-administrator operations with the awaited client-switch context fix for release validation.
+
+## 0.2.17
+
+- Make client switching await the complete tenant context and discard stale user-list responses.
+
 ## 0.2.16
 
 - Allow server-created schedule and helper entities to be placed before their new permission group refreshes.

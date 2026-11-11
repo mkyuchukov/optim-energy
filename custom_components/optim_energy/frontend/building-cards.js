@@ -474,15 +474,18 @@ function resetPortalTree() {
   totalsCache = null;
   setTree({ places: [], placed: {}, mains: {}, parents: {}, virtual: [], known: [] });
 }
-function switchPortalClient(hass, client) {
-  if (!PORTAL.isRoot || !client || client === portalClient) return;
+let portalContextSeq = 0;
+async function switchPortalClient(hass, client) {
+  if (!PORTAL.isRoot || !client || client === portalClient) return treeLoad;
+  const seq = ++portalContextSeq;
   portalClient = client;
   try { localStorage.setItem(CLIENT_KEY, client); } catch (e) { /* private window */ }
   treeLoad = null;
   whoLoad = null;
   resetPortalTree();
-  announceTree();
-  ensureTree(hass);
+  await ensureTree(hass);
+  if (seq === portalContextSeq) announceTree();
+  return treeLoad;
 }
 function ensureTree(hass) {
   portalUser = hass.user?.id || null;
@@ -2920,11 +2923,21 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     async load() {
       if (!PORTAL.ready) await ensureTree(this._hass);
       if (!portalCanManageUsers()) { this._users = []; return; }
+      const seq = (this._loadSeq || 0) + 1;
+      this._loadSeq = seq;
+      const client = portalClient;
       try {
-        this._users = await this._hass.callWS({ type: 'optim_energy/user/list', ...(PORTAL.isRoot && portalClient ? { client: portalClient } : {}) });
-        this._catalog = PORTAL.isRoot ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }) : [];
+        const users = await this._hass.callWS({ type: 'optim_energy/user/list', ...(PORTAL.isRoot && client ? { client } : {}) });
+        const catalog = PORTAL.isRoot ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }) : [];
+        if (seq !== this._loadSeq || client !== portalClient) return;
+        this._users = users;
+        this._catalog = catalog;
         this._error = '';
-      } catch (e) { this._users = []; this._error = e?.message || String(e); }
+      } catch (e) {
+        if (seq !== this._loadSeq || client !== portalClient) return;
+        this._users = [];
+        this._error = e?.message || String(e);
+      }
     }
     locations() { return TREE.places.filter((p) => p.kind === 'location').sort(byName); }
     async onClick(e) {
@@ -2948,8 +2961,9 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
           const made = await this._hass.callWS({ type: 'optim_energy/client/create', name });
           whoLoad = null; treeLoad = null; portalClient = made.id;
           try { localStorage.setItem(CLIENT_KEY, made.id); } catch (x) { /* private window */ }
-          resetPortalTree(); whoLoad = null; treeLoad = null; ensureTree(this._hass);
-          i.value = ''; this.flash(`${made.name} created.`); setTimeout(() => this.refresh(), 250);
+          resetPortalTree();
+          await ensureTree(this._hass);
+          i.value = ''; this.flash(`${made.name} created.`); await this.refresh();
         } catch (x) { this.flash(x?.message || 'Could not create the client.', true); }
         return;
       }
@@ -2957,7 +2971,13 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     }
     async onChange(e) {
       const t = e.target;
-      if (t.id === 'clientSwitch') { switchPortalClient(this._hass, t.value); setTimeout(() => this.refresh(), 300); return; }
+      if (t.id === 'clientSwitch') {
+        this._users = null;
+        this.paint();
+        await switchPortalClient(this._hass, t.value);
+        await this.refresh();
+        return;
+      }
       if (t.dataset.clientLabel) {
         const chosen = [...this.shadowRoot.querySelectorAll('[data-client-label]')].filter((x) => x.checked).map((x) => x.dataset.clientLabel);
         try {
