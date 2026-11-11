@@ -12,7 +12,32 @@ from homeassistant.helpers import device_registry as dr, label_registry as lr
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
-    """Register a device-creation command after Optim Energy has started."""
+    """Register device and late-command fixtures."""
+
+    @websocket_api.require_admin
+    @websocket_api.websocket_command(
+        {probatio.Required("type"): "optim_runtime_fixture/install_late_command"}
+    )
+    @callback
+    def websocket_install_late_command(
+        hass: HomeAssistant,
+        connection: ActiveConnection,
+        msg: dict[str, Any],
+    ) -> None:
+        @websocket_api.require_admin
+        @websocket_api.websocket_command(
+            {probatio.Required("type"): "optim_runtime_fixture/late_probe"}
+        )
+        @callback
+        def websocket_late_probe(
+            hass: HomeAssistant,
+            connection: ActiveConnection,
+            msg: dict[str, Any],
+        ) -> None:
+            connection.send_result(msg["id"], {"late": True})
+
+        websocket_api.async_register_command(hass, websocket_late_probe)
+        connection.send_result(msg["id"], {"installed": True})
 
     @websocket_api.require_admin
     @websocket_api.websocket_command(
@@ -62,4 +87,6 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             )
         connection.send_result(msg["id"], created)
 
+    websocket_api.async_register_command(hass, websocket_create_devices)
+    websocket_api.async_register_command(hass, websocket_install_late_command)
     return True

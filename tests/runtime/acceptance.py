@@ -469,8 +469,7 @@ def assert_tenant_ws(
             {"type": "config/entity_registry/list"},
             {"type": "config/auth/list"},
             {
-                "type": "optim_runtime_fixture/create_devices",
-                "devices": [{"key": "foreign", "name": "Foreign probe"}],
+                "type": "optim_runtime_fixture/late_probe",
             },
         ):
             try:
@@ -557,6 +556,12 @@ def run(version: str, *, keep: bool = False) -> None:
         )
         root = WebSocket(http.host, http.port)
         root.auth(root_token)
+        root.command({"type": "optim_runtime_fixture/install_late_command"})
+        assert_equal(
+            root.command({"type": "optim_runtime_fixture/late_probe"}),
+            {"late": True},
+            "late-registered fixture command",
+        )
         saved_dashboard = root.command(
             {"type": "lovelace/config", "url_path": "energy-home"}
         )

@@ -161,6 +161,12 @@ def run(version: str, *, keep: bool = False) -> None:
         entry_id = create_config_entry(http, root_token)
         root = WebSocket(http.host, http.port)
         root.auth(root_token)
+        root.command({"type": "optim_runtime_fixture/install_late_command"})
+        assert_equal(
+            root.command({"type": "optim_runtime_fixture/late_probe"}),
+            {"late": True},
+            "late-registered fixture command",
+        )
 
         label_specs = {
             "a_north": ("Scale A North", "scale_a_north"),

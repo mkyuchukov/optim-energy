@@ -1,7 +1,6 @@
 {
   "domain": "optim_runtime_fixture",
   "name": "Optim Energy Runtime Fixture",
-  "after_dependencies": ["optim_energy"],
   "codeowners": [],
   "documentation": "https://github.com/mkyuchukov/optim-energy",
   "integration_type": "service",
