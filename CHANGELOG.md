@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.11
+
+- Allow read-only frontend theme, translation, panel and UI event commands.
+
 ## 0.2.10
 
 - Return current user and tenant-filtered entity registry data used by frontend bootstrap.
