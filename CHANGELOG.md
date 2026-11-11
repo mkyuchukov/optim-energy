@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.14
+
+- Allow the frontend panel, theme and translation bootstrap commands.
+
 ## 0.2.13
 
 - Allow the frontend system-state subscription required for portal startup.
