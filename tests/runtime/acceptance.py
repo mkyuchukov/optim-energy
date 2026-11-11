@@ -98,6 +98,7 @@ homeassistant:
   country: BG
   time_zone: Europe/Sofia
 http:
+  ip_ban_enabled: false
 frontend:
 lovelace:
 recorder:
