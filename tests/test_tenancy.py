@@ -28,7 +28,11 @@ def _install_ha_stubs() -> None:
         "homeassistant.auth.permissions.const": ModuleType("homeassistant.auth.permissions.const"),
         "homeassistant.components": ModuleType("homeassistant.components"),
         "homeassistant.components.websocket_api": ModuleType("homeassistant.components.websocket_api"),
+        "homeassistant.components.automation": ModuleType("homeassistant.components.automation"),
+        "homeassistant.components.automation.config": ModuleType("homeassistant.components.automation.config"),
+        "homeassistant.config": ModuleType("homeassistant.config"),
         "homeassistant.core": ModuleType("homeassistant.core"),
+        "homeassistant.data_entry_flow": ModuleType("homeassistant.data_entry_flow"),
         "homeassistant.exceptions": ModuleType("homeassistant.exceptions"),
         "homeassistant.helpers": ModuleType("homeassistant.helpers"),
         "homeassistant.helpers.area_registry": ModuleType("homeassistant.helpers.area_registry"),
@@ -38,6 +42,9 @@ def _install_ha_stubs() -> None:
         "homeassistant.helpers.label_registry": ModuleType("homeassistant.helpers.label_registry"),
         "homeassistant.helpers.event": ModuleType("homeassistant.helpers.event"),
         "homeassistant.helpers.storage": ModuleType("homeassistant.helpers.storage"),
+        "homeassistant.util": ModuleType("homeassistant.util"),
+        "homeassistant.util.file": ModuleType("homeassistant.util.file"),
+        "homeassistant.util.yaml": ModuleType("homeassistant.util.yaml"),
     }
     modules["homeassistant.auth.models"].Group = type("Group", (), {})
     modules["homeassistant.auth.models"].User = type("User", (), {})
@@ -46,11 +53,24 @@ def _install_ha_stubs() -> None:
     const.POLICY_EDIT = "edit"
     const.POLICY_READ = "read"
     modules["homeassistant.components"].websocket_api = modules["homeassistant.components.websocket_api"]
+    modules["homeassistant.components"].automation = modules["homeassistant.components.automation"]
+    modules["homeassistant.components.automation"].DATA_COMPONENT = "automation"
+    modules["homeassistant.components.automation"].DOMAIN = "automation"
+    modules["homeassistant.components.automation.config"].async_validate_config_item = MagicMock()
+    modules["homeassistant.config"].AUTOMATION_CONFIG_PATH = "automations.yaml"
     ws = modules["homeassistant.components.websocket_api"]
     ws.ActiveConnection = type("ActiveConnection", (), {})
     ws.ERR_UNAUTHORIZED = "unauthorized"
     modules["homeassistant.core"].HomeAssistant = type("HomeAssistant", (), {})
     modules["homeassistant.core"].callback = lambda fn: fn
+    class FlowResultType:
+        MENU = "menu"
+        FORM = "form"
+        CREATE_ENTRY = "create_entry"
+    modules["homeassistant.data_entry_flow"].FlowResultType = FlowResultType
+    modules["homeassistant.util.file"].write_utf8_file_atomic = MagicMock()
+    modules["homeassistant.util.yaml"].dump = lambda value: str(value)
+    modules["homeassistant.util.yaml"].load_yaml = MagicMock(return_value=[])
     modules["homeassistant.exceptions"].HomeAssistantError = RuntimeError
     modules["homeassistant.helpers.event"].async_call_later = MagicMock()
     modules["homeassistant.helpers.storage"].Store = type("Store", (), {})
@@ -73,6 +93,7 @@ _PACKAGE.__path__ = [str(COMPONENT)]
 sys.modules[_PACKAGE.__name__] = _PACKAGE
 tenancy = _load("optim_energy_test.tenancy", COMPONENT / "tenancy.py")
 firewall = _load("optim_energy_test.firewall", COMPONENT / "firewall.py")
+portal_ops = _load("optim_energy_test.portal_ops", COMPONENT / "portal_ops.py")
 
 
 def test_location_filter_does_not_expose_another_location() -> None:
@@ -188,3 +209,29 @@ class TenancyTests(unittest.TestCase):
 
     def test_tree_shape(self) -> None:
         test_tree_payload_rejects_wrong_shapes()
+
+    def test_schedule_builder_is_fixed_schema(self) -> None:
+        config = portal_ops.build_schedule_config(
+            "portal_1", "Evening", "off", "18:30", ["mon", "fri"], ["switch.a"]
+        )
+        assert config["triggers"] == [{"trigger": "time", "at": "18:30:00"}]
+        assert config["actions"][0]["action"] == "switch.turn_off"
+        assert config["actions"][0]["target"]["entity_id"] == ["switch.a"]
+        assert config["conditions"][0]["weekday"] == ["mon", "fri"]
+
+    def test_schedule_builder_rejects_foreign_domains(self) -> None:
+        try:
+            portal_ops.build_schedule_config(
+                "portal_1", "Bad", "on", "18:30", ["mon"], ["automation.a"]
+            )
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("schedule builder accepted an unsupported target domain")
+
+    def test_automation_reference_walker(self) -> None:
+        refs = set()
+        portal_ops._walk_entity_references(
+            {"actions": [{"target": {"entity_id": ["switch.a", "light.b"]}}]}, refs
+        )
+        assert refs == {"switch.a", "light.b"}

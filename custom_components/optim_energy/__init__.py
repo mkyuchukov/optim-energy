@@ -25,6 +25,7 @@ from .const import (
 )
 from .dashboards import DASHBOARD_SPECS, build_dashboard_configs
 from .firewall import RestFirewall, WebsocketFirewall
+from .portal_ops import async_register_portal_commands
 from .tenancy import TenancyManager, async_register_commands, async_setup_tenancy
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     initial_tree = await _async_existing_device_tree(hass)
     manager = await async_setup_tenancy(hass, entry.data[CONF_SITE_NAME], initial_tree)
     async_register_commands(hass, manager)
+    async_register_portal_commands(hass, manager)
 
     audit = bool(entry.options.get("audit", False))
     websocket_firewall = WebsocketFirewall(hass, manager, audit=audit)

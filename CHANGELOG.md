@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.15
+
+- Add checked client-admin commands for entity/device updates and portal-owned schedules.
+- Add server-owned threshold, Sum and alert automation commands.
+
 ## 0.2.14
 
 - Allow the frontend panel, theme and translation bootstrap commands.
