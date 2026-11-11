@@ -613,11 +613,36 @@ async function groupMembers(hass, entry, members) {
 }
 let sumsBusy = false, sumsAgain = false;
 async function syncSums(hass) {
-  if (!portalCanManageHA()) return;
+  if (!portalCanManage()) return;
   if (sumsBusy) { sumsAgain = true; return; }
   sumsBusy = true;
   try {
     const { want, drop } = sumPlan(TREE, DEVICES, readingsOf), sums = JSON.parse(JSON.stringify(TREE.sums || {}));
+    if (!portalCanManageHA()) {
+      let changed = false;
+      for (const [id, helpers] of Object.entries(sums)) {
+        if (TREE.virtual.some((v) => v.id === id)) continue;
+        for (const kind of ['energy', 'power']) if (helpers[kind]?.entry) {
+          await hass.callWS({ type: 'optim_energy/helper/sum/delete', virtual_id: id, kind }).catch(() => {});
+          changed = true;
+        }
+      }
+      for (const [id, wanted] of Object.entries(want)) for (const kind of ['energy', 'power']) {
+        const now = sums[id]?.[kind], members = wanted[kind];
+        if (now && now.members.join() === members.join()) continue;
+        if (!members.length) {
+          if (now?.entry) { await hass.callWS({ type: 'optim_energy/helper/sum/delete', virtual_id: id, kind }).catch(() => {}); changed = true; }
+          continue;
+        }
+        const saved = await hass.callWS({ type: 'optim_energy/helper/sum/save', virtual_id: id, kind, name: `${wanted.name} ${kind}`, members, ...(now?.entry ? { entry_id: now.entry } : {}) });
+        sums[id] = { ...(sums[id] || {}), [kind]: { entry: saved.entry_id, entity: saved.entity_id, members } };
+        changed = true;
+      }
+      if (changed) { treeLoad = null; await ensureTree(hass); }
+      sumsBusy = false;
+      if (sumsAgain) { sumsAgain = false; syncSums(hass); }
+      return;
+    }
     let changed = false;
     for (const entry of drop) { await hass.callApi('DELETE', `config/config_entries/entry/${entry}`).catch(() => {}); changed = true; }
     for (const id of Object.keys(sums)) if (!TREE.virtual.some((v) => v.id === id)) delete sums[id];
@@ -2092,7 +2117,7 @@ ${SHEET_CSS}</style><div class="w"><div class="chead"><h2>Automations</h2><butto
     async refresh() {
       // What each automation switches, so the list can say so and the form can change it. Only an admin can read it.
       this._cfgs = AUTO_CFG;
-      if (portalCanManageHA()) for (const a of automationsIn(resolveSpace())) { try { this._cfgs[a.entity] = (await this._hass.callWS({ type: 'automation/config', entity_id: a.entity })).config; } catch (e) { /* listed without its devices */ } }
+      for (const a of automationsIn(resolveSpace())) { try { this._cfgs[a.entity] = portalCanManageHA() ? (await this._hass.callWS({ type: 'automation/config', entity_id: a.entity })).config : (await this._hass.callWS({ type: 'optim_energy/automation/get', entity_id: a.entity })).config; } catch (e) { /* listed without its devices */ } }
       this.paint();
     }
     // Lights are ticked; sockets, relays and the rest are left out unless someone ticks them.
@@ -2111,7 +2136,7 @@ ${SHEET_CSS}</style><div class="w"><div class="chead"><h2>Automations</h2><butto
     async openForm({ entity, place } = {}) {
       const a = entity && portalAutomations().find((x) => x.entity === entity);
       // Its devices come from its own settings, read fresh, so what shows is what it does.
-      if (a) { try { AUTO_CFG[entity] = (await this._hass.callWS({ type: 'automation/config', entity_id: entity })).config; } catch (e) { /* shows what was read before */ } }
+      if (a) { try { AUTO_CFG[entity] = (portalCanManageHA() ? await this._hass.callWS({ type: 'automation/config', entity_id: entity }) : await this._hass.callWS({ type: 'optim_energy/automation/get', entity_id: entity })).config; } catch (e) { /* shows what was read before */ } }
       this._form = a ? { entity, name: autoTitle(a), place: a.place, how: a.how || 'off', at: a.at, days: a.days || [...DAY_KEY] } : { name: '', target: 'group', place: place || this.groupsWithSwitches()[0]?.id, how: 'off', at: '18:00', days: [...DAY_KEY] };
       this.devicesFor(this._form);
       this.paintForm();
@@ -2169,19 +2194,29 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
       const id = old ? h.states[old.entity]?.attributes?.id : `portal_${Date.now().toString(36)}`;
       try {
         if (!id) throw new Error('no id');
-        const base = old ? (await h.callWS({ type: 'automation/config', entity_id: old.entity })).config : null;
         const alias = `${placeById(currentLocation)?.name}: ${name}`;
-        const made = scheduleConfig(base, { alias, how: f.how, at: f.at, days: f.days, switches });
-        await h.callApi('POST', `config/automation/config/${id}`, made);
-        AUTO_CFG[old?.entity || ''] = made;
         let entity = old?.entity;
-        for (let i = 0; i < 30 && !entity; i += 1) { await new Promise((res) => setTimeout(res, 500)); entity = Object.values(this._hass.states).find((s) => s.entity_id.startsWith('automation.') && s.attributes.id === id)?.entity_id; }
-        if (!entity) { await h.callApi('DELETE', `config/automation/config/${id}`).catch(() => {}); throw new Error('not started'); }
-        AUTO_CFG[entity] = made;
-        // Its group's area, or its location's 📍 label, in Home Assistant: that is what places it.
-        if (NATIVE && (!old || old.place !== f.place)) await h.callWS({ type: 'config/entity_registry/update', entity_id: entity, ...(f.place.startsWith('area:') ? { area_id: f.place.slice(5) } : { area_id: null, labels: [...new Set([...(h.entities[entity]?.labels || []).filter((x) => !NATIVE.locIds.has(x)), f.place.slice(4)])] }) });
-        await saveTree(h, { ...TREE, automations: [...TREE.automations.filter((a) => a.entity !== entity), { entity, name: alias, at: f.at, place: f.place, devices: switches.length, how: f.how, days: f.days }] });
-        this._form = null; this.paintForm(); this.paint();
+        if (!portalCanManageHA()) {
+          const saved = await h.callWS({ type: 'optim_energy/automation/save_schedule', ...(old?.entity ? { entity_id: old.entity } : {}), name: alias, place: f.place, how: f.how, at: f.at, days: f.days, switches });
+          entity = saved.entity_id;
+          AUTO_CFG[entity] = saved.config;
+          treeLoad = null;
+          await ensureTree(h);
+        } else {
+          const base = old ? (await h.callWS({ type: 'automation/config', entity_id: old.entity })).config : null;
+          const made = scheduleConfig(base, { alias, how: f.how, at: f.at, days: f.days, switches });
+          await h.callApi('POST', `config/automation/config/${id}`, made);
+          AUTO_CFG[old?.entity || ''] = made;
+          for (let i = 0; i < 30 && !entity; i += 1) { await new Promise((res) => setTimeout(res, 500)); entity = Object.values(this._hass.states).find((s) => s.entity_id.startsWith('automation.') && s.attributes.id === id)?.entity_id; }
+          if (!entity) { await h.callApi('DELETE', `config/automation/config/${id}`).catch(() => {}); throw new Error('not started'); }
+          AUTO_CFG[entity] = made;
+          // Its group's area, or its location's 📍 label, in Home Assistant: that is what places it.
+          if (NATIVE && (!old || old.place !== f.place)) await h.callWS({ type: 'config/entity_registry/update', entity_id: entity, ...(f.place.startsWith('area:') ? { area_id: f.place.slice(5) } : { area_id: null, labels: [...new Set([...(h.entities[entity]?.labels || []).filter((x) => !NATIVE.locIds.has(x)), f.place.slice(4)])] }) });
+          await saveTree(h, { ...TREE, automations: [...TREE.automations.filter((a) => a.entity !== entity), { entity, name: alias, at: f.at, place: f.place, devices: switches.length, how: f.how, days: f.days }] });
+        }
+        this._form = null; this.paintForm();
+        treeLoad = null; await ensureTree(h);
+        this.paint();
         showToast(this, 'Automation saved');
       } catch (e) { this.fail('Could not save. Try again.'); }
     }
@@ -2190,15 +2225,22 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
       if (!f.confirm) { f.confirm = true; this.paintForm(); return; }
       f.busy = true; this.paintForm();
       try {
-        await h.callApi('DELETE', `config/automation/config/${h.states[f.entity]?.attributes?.id}`);
-        await saveTree(h, { ...TREE, automations: TREE.automations.filter((a) => a.entity !== f.entity) });
-        this._form = null; this.paintForm(); this.paint();
+        if (portalCanManageHA()) {
+          await h.callApi('DELETE', `config/automation/config/${h.states[f.entity]?.attributes?.id}`);
+          await saveTree(h, { ...TREE, automations: TREE.automations.filter((a) => a.entity !== f.entity) });
+        } else {
+          await h.callWS({ type: 'optim_energy/automation/delete', entity_id: f.entity });
+          treeLoad = null; await ensureTree(h);
+        }
+        this._form = null; this.paintForm();
+        treeLoad = null; await ensureTree(h);
+        this.paint();
         showToast(this, 'Automation deleted');
       } catch (e) { f.confirm = false; this.fail('Could not delete. Try again.'); }
     }
     paint() {
       if (!this._cfgs) return;
-      const r = this.shadowRoot, st = this._hass.states, whole = resolveSpace(), admin = portalCanManageHA() && this._c?.manage;
+      const r = this.shadowRoot, st = this._hass.states, whole = resolveSpace(), admin = portalCanManage() && this._c?.manage;
       r.getElementById('new').hidden = !admin || !this.groupsWithSwitches().length;
       const list = schedulesSorted(automationsIn(whole));
       const note = (a) => { const ids = cfgSwitches(this._cfgs?.[a.entity]); if (!ids.length) return ''; const odd = ids.map((id) => switchInfo(this._hass, id)).filter((x) => x.kind !== 'lights'); return ` · ${ids.length} device${ids.length === 1 ? '' : 's'}${odd.length ? `<span class="warnx"> · also ${odd.map((x) => `${esc(x.name)} (${KIND_LABEL[x.kind]})`).join(', ')}</span>` : ''}`; };
@@ -2254,7 +2296,13 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
       }
       this.paintForm();
       // A rule being changed shows who it tells now, read from its automation. One that tells no one yet starts with HA notifications on.
-      if (entity) this._hass.callApi('GET', `config/automation/config/${ruleAutoId(entity)}`).then((c) => ruleTargets(c), () => notifyTargets(this._hass).map(([k]) => k)).then((t) => { if (this._form?.entity === entity) { this._form.notify = new Set(t); this.paintForm(); } });
+      if (entity) {
+        const automationEntity = `automation.${ruleAutoId(entity)}`;
+        const read = portalCanManageHA()
+          ? this._hass.callApi('GET', `config/automation/config/${ruleAutoId(entity)}`)
+          : this._hass.callWS({ type: 'optim_energy/automation/get', entity_id: automationEntity }).then((r) => r.config);
+        read.then((c) => ruleTargets(c), () => notifyTargets(this._hass).map(([k]) => k)).then((t) => { if (this._form?.entity === entity) { this._form.notify = new Set(t); this.paintForm(); } });
+      }
     }
     // The name follows the choices until someone types their own.
     autoName(f) {
@@ -2295,7 +2343,7 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
       if (q('[data-del]')) this.remove();
     }
     fail(t) { this._form.err = t; this._form.busy = false; this.paintForm(); }
-    async entryOf(entity) { return (await this._hass.callWS({ type: 'config/entity_registry/get', entity_id: entity })).config_entry_id; }
+    async entryOf(entity) { return portalCanManageHA() ? (await this._hass.callWS({ type: 'config/entity_registry/get', entity_id: entity })).config_entry_id : null; }
     async save() {
       const f = this._form, h = this._hass, d = DEVICES.find((x) => x.id === f.dev), rd = this.readings(f.dev).find(([, e]) => e === f.sensor), n = Number(f.value);
       if (!d || !rd) { this.fail('Choose a device and a reading.'); return; }
@@ -2308,24 +2356,37 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
       f.busy = true; f.err = ''; this.paintForm();
       try {
         let entity = f.entity;
-        if (entity) {
-          const fl = await h.callApi('POST', 'config/config_entries/options/flow', { handler: await this.entryOf(entity) });
-          const r2 = await h.callApi('POST', `config/config_entries/options/flow/${fl.flow_id}`, { entity_id: f.sensor, hysteresis: 0, ...bound });
-          if (r2.type !== 'create_entry') throw new Error('not changed');
-        } else {
-          const fl = await h.callApi('POST', 'config/config_entries/flow', { handler: 'threshold' });
-          const r2 = await h.callApi('POST', `config/config_entries/flow/${fl.flow_id}`, { name, entity_id: f.sensor, hysteresis: 0, ...bound });
-          if (r2.type !== 'create_entry') throw new Error('not created');
-          for (let i = 0; i < 20 && !entity; i += 1) { await new Promise((res) => setTimeout(res, 300)); entity = (await h.callWS({ type: 'config/entity_registry/list' })).find((x) => x.config_entry_id === r2.result.entry_id)?.entity_id; }
-          if (!entity) throw new Error('no entity');
-        }
-        // Where it shows: the device's group, or its location. And how it shows: the Portal alert label, Critical for red.
         const keep = (h.entities[entity]?.labels || []).filter((x) => x !== alert && x !== crit && !NATIVE?.locIds.has(x)), loc = placePath(d.place)[0]?.id;
-        await h.callWS({ type: 'config/entity_registry/update', entity_id: entity, name, area_id: d.place?.startsWith('area:') ? d.place.slice(5) : null, labels: [...keep, alert, ...(f.sev === 'critical' && crit ? [crit] : []), ...(!d.place?.startsWith('area:') && loc?.startsWith('loc:') ? [loc.slice(4)] : [])] });
-        const allowed = notifyTargets(h).map(([k]) => k), id = ruleAutoId(entity), targets = [...(f.notify || [])].filter((k) => allowed.includes(k));
-        if (targets.length) await h.callApi('POST', `config/automation/config/${id}`, ruleAutomation(entity, this.devName(f.sensor) ? `${this.devName(f.sensor)} ${name}` : name, f.sensor, rd[2], f.sev, targets));
-        else await h.callApi('DELETE', `config/automation/config/${id}`).catch(() => {});
+        const labels = [...keep, alert, ...(f.sev === 'critical' && crit ? [crit] : []), ...(!d.place?.startsWith('area:') && loc?.startsWith('loc:') ? [loc.slice(4)] : [])];
+        const allowed = notifyTargets(h).map(([k]) => k), targets = [...(f.notify || [])].filter((k) => allowed.includes(k));
+        const autoName = this.devName(f.sensor) ? `${this.devName(f.sensor)} ${name}` : name;
+        if (!portalCanManageHA()) {
+          const saved = await h.callWS({ type: 'optim_energy/helper/threshold/save', ...(f.entity ? { entity_id: f.entity } : {}), name, sensor: f.sensor, hysteresis: 0, ...bound, place: d.place || currentLocation, labels });
+          entity = saved.entity_id;
+          const id = ruleAutoId(entity);
+          if (targets.length) await h.callWS({ type: 'optim_energy/automation/save_alert', rule_entity: entity, name: autoName, sensor: f.sensor, unit: rd[2], severity: f.sev, targets });
+          else await h.callWS({ type: 'optim_energy/automation/delete', entity_id: `automation.${id}` }).catch(() => {});
+          treeLoad = null; await ensureTree(h);
+        } else {
+          if (entity) {
+            const fl = await h.callApi('POST', 'config/config_entries/options/flow', { handler: await this.entryOf(entity) });
+            const r2 = await h.callApi('POST', `config/config_entries/options/flow/${fl.flow_id}`, { entity_id: f.sensor, hysteresis: 0, ...bound });
+            if (r2.type !== 'create_entry') throw new Error('not changed');
+          } else {
+            const fl = await h.callApi('POST', 'config/config_entries/flow', { handler: 'threshold' });
+            const r2 = await h.callApi('POST', `config/config_entries/flow/${fl.flow_id}`, { name, entity_id: f.sensor, hysteresis: 0, ...bound });
+            if (r2.type !== 'create_entry') throw new Error('not created');
+            for (let i = 0; i < 20 && !entity; i += 1) { await new Promise((res) => setTimeout(res, 300)); entity = (await h.callWS({ type: 'config/entity_registry/list' })).find((x) => x.config_entry_id === r2.result.entry_id)?.entity_id; }
+            if (!entity) throw new Error('no entity');
+          }
+          // Where it shows: the device's group, or its location. And how it shows: the Portal alert label, Critical for red.
+          await h.callWS({ type: 'config/entity_registry/update', entity_id: entity, name, area_id: d.place?.startsWith('area:') ? d.place.slice(5) : null, labels });
+          const id = ruleAutoId(entity);
+          if (targets.length) await h.callApi('POST', `config/automation/config/${id}`, ruleAutomation(entity, autoName, f.sensor, rd[2], f.sev, targets));
+          else await h.callApi('DELETE', `config/automation/config/${id}`).catch(() => {});
+        }
         this._form = null; this.paintForm();
+        treeLoad = null; await ensureTree(h);
         showToast(this, 'Alert rule saved');
       } catch (err) { this.fail('Could not save. Try again.'); }
     }
@@ -2335,9 +2396,17 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
       f.busy = true; this.paintForm();
       try {
         const h = this._hass, id = ruleAutoId(f.entity);
-        await h.callApi('DELETE', `config/automation/config/${id}`).catch(() => {});
-        await h.callService('persistent_notification', 'dismiss', { notification_id: id }).catch(() => {});
-        await h.callApi('DELETE', `config/config_entries/entry/${await this.entryOf(f.entity)}`); this._form = null; this.paintForm(); showToast(this, 'Alert rule deleted');
+        if (portalCanManageHA()) {
+          await h.callApi('DELETE', `config/automation/config/${id}`).catch(() => {});
+          await h.callService('persistent_notification', 'dismiss', { notification_id: id }).catch(() => {});
+          await h.callApi('DELETE', `config/config_entries/entry/${await this.entryOf(f.entity)}`);
+        } else {
+          await h.callWS({ type: 'optim_energy/automation/delete', entity_id: `automation.${id}` }).catch(() => {});
+          await h.callService('persistent_notification', 'dismiss', { notification_id: id }).catch(() => {});
+          await h.callWS({ type: 'optim_energy/helper/delete', entity_id: f.entity });
+          treeLoad = null; await ensureTree(h);
+        }
+        this._form = null; this.paintForm(); showToast(this, 'Alert rule deleted');
       } catch (err) { f.confirm = false; this.fail('Could not delete. Try again.'); }
     }
     paint() {
@@ -2413,7 +2482,7 @@ button:disabled{opacity:.45;cursor:default}
       this.paint();
     }
     paint() {
-      const r = this.shadowRoot, admin = portalCanManageHA(), active = computeActive(this._hass.states, Date.now()).filter((a) => a.sev !== 'info').length;
+      const r = this.shadowRoot, admin = portalCanManage(), active = computeActive(this._hass.states, Date.now()).filter((a) => a.sev !== 'info').length;
       const tabs = [['now', active ? `Now (${active})` : 'Now'], ['history', 'Last 7 days'], ['runs', 'Automations']];
       const bar = tabs.map(([k, n]) => `<button class="tab${this._tab === k ? ' on' : ''}" role="tab" aria-selected="${this._tab === k}" data-tab="${k}">${n}</button>`).join('');
       if (r.getElementById('tabs').innerHTML !== bar) r.getElementById('tabs').innerHTML = bar;
@@ -2471,7 +2540,9 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
         if (t.dataset.rename) this._hl = null;
         if (t.dataset.rename && t.value.trim()) {
           if (TREE.virtual.some((v) => v.id === t.dataset.rename)) this.commit({ ...TREE, virtual: TREE.virtual.map((v) => (v.id === t.dataset.rename ? { ...v, name: t.value.trim() } : v)) });
-          else this._hass.callWS({ type: 'config/device_registry/update', device_id: t.dataset.rename, name_by_user: t.value.trim() }).catch(() => { r.getElementById('err').textContent = 'Could not rename the device. Try again.'; });
+          else (portalCanManageHA()
+            ? this._hass.callWS({ type: 'config/device_registry/update', device_id: t.dataset.rename, name_by_user: t.value.trim() })
+            : this._hass.callWS({ type: 'optim_energy/device/update', device_id: t.dataset.rename, name: t.value.trim() })).catch(() => { r.getElementById('err').textContent = 'Could not rename the device. Try again.'; });
         }
       });
       this.startTimer();
@@ -2498,7 +2569,7 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
     paint() {
       const r = this.shadowRoot, active = r.activeElement;
       if (active && (active.tagName === 'SELECT' || (active.tagName === 'INPUT' && active.type !== 'checkbox'))) return;
-      const st = this._hass.states, now = Date.now(), admin = this._c?.manage && portalCanManage(), canName = portalCanManageHA(), t = this._totals, main = mainDevice();
+      const st = this._hass.states, now = Date.now(), admin = this._c?.manage && portalCanManage(), canName = portalCanManage(), t = this._totals, main = mainDevice();
       const tops = topNodes(), others = main ? tops.filter((d) => d.id !== main.id) : tops;
       const energy = (key) => { const out = new Map(); const flat = (n) => { out.set(n.id, n); n.kids.forEach(flat); }; if (t) tops.forEach((d) => flat(nodeEnergy(d.id, (id) => t.devices[id]?.[key] ?? null, t.stale))); return out; };
       const today = energy('today'), month = energy('month');

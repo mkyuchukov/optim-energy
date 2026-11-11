@@ -1,8 +1,21 @@
 # Changelog
 
+## 0.2.18
+
+- Combine checked client-administrator operations with the awaited client-switch context fix for release validation.
+
 ## 0.2.17
 
 - Make client switching await the complete tenant context and discard stale user-list responses.
+
+## 0.2.16
+
+- Allow server-created schedule and helper entities to be placed before their new permission group refreshes.
+
+## 0.2.15
+
+- Add checked client-admin commands for entity/device updates and portal-owned schedules.
+- Add server-owned threshold, Sum and alert automation commands.
 
 ## 0.2.14
 
