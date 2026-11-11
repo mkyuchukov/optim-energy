@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.9
+
+- Allow Home Assistant's default-dashboard config command so tenant panels render.
+
 ## 0.2.8
 
 - Allow the frontend user-data subscription used by theme and profile UI state.
