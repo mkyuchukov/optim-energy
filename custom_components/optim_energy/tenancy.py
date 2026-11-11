@@ -324,8 +324,6 @@ class TenancyManager:
         area_registry = ar.async_get(self.hass)
         floor_registry = fr.async_get(self.hass)
         assigned = set(self.data.get("clients", {}).get(client_id, {}).get("labels", []))
-        if not assigned:
-            return tree
         labels = {x.label_id: x for x in label_registry.async_list_labels()}
         areas = list(area_registry.async_list_areas())
         floors = {x.floor_id: x for x in floor_registry.async_list_floors()}
