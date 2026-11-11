@@ -90,6 +90,22 @@ The public reverse proxy intentionally rejects most `/api/*` routes with `404`
 before Home Assistant receives them. Run this check against the VM's internal
 address as well; a public `404` alone does not prove that the REST guard works.
 
+The repository also contains the equivalent automated smoke test:
+
+```bash
+HA_DIRECT_URL='http://192.168.66.225' \
+HA_PUBLIC_URL='https://ha2.int.optim-al.app' \
+TENANT_TOKEN="$TENANT_TOKEN" \
+ROOT_TOKEN="$ROOT_TOKEN" \
+EXPECTED_HA_VERSION='2026.11.1' \
+./tools/vm_smoke.sh
+```
+
+For local or CI acceptance, `make test-runtime` runs the same integration
+surface against one disposable official HA container. Its pinned image version
+lives in `tests/runtime/HA_VERSION` and is independent of the HA version
+currently installed on HA2.
+
 Keep tokens in shell variables or a mode-`0600` temporary file. Do not paste
 tokens into shell history, CI logs or test output.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from homeassistant.components import frontend
@@ -15,6 +16,7 @@ from homeassistant.components.lovelace.dashboard import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_SITE_NAME,
@@ -34,12 +36,16 @@ _FRONTEND_READY_KEY = f"{DOMAIN}_frontend_ready"
 _TENANCY_KEY = f"{DOMAIN}_tenancy"
 _FIREWALL_KEY = f"{DOMAIN}_firewall"
 _REST_FIREWALL_KEY = f"{DOMAIN}_rest_firewall"
+_MIGRATION_BACKUP_KEY = f"{DOMAIN}.migration_backup"
+_MIGRATION_BACKUP_VERSION = 1
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Optim Energy tenancy, its API, and its bundled portal."""
     await _async_register_frontend(hass)
-    initial_tree = await _async_existing_device_tree(hass)
+    initial_tree, legacy_dashboard = await _async_existing_device_tree(hass)
+    if initial_tree is not None and legacy_dashboard is not None:
+        await _async_backup_legacy_dashboard(hass, legacy_dashboard)
     manager = await async_setup_tenancy(hass, entry.data[CONF_SITE_NAME], initial_tree)
     async_register_commands(hass, manager)
     async_register_portal_commands(hass, manager)
@@ -99,27 +105,56 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     hass.data[_FRONTEND_KEY] = urls
 
 
-async def _async_existing_device_tree(hass: HomeAssistant) -> dict[str, Any] | None:
-    """Read the old tree before replacing the dashboard storage document."""
+async def _async_existing_device_tree(
+    hass: HomeAssistant,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Read the old dashboard and tree before replacing its storage document."""
     collection = DashboardsCollection(hass)
     await collection.async_load()
     existing = {item["url_path"]: item for item in collection.async_items()}
     old_home = existing.get("energy-home")
     if old_home is None:
-        return None
+        return None, None
     old_dashboard = _dashboard_storage(hass, old_home)
     try:
         old_config = await old_dashboard.async_load(False)
     except HomeAssistantError:
-        return None
+        return None, None
     tree = old_config.get("device_tree") if isinstance(old_config, dict) else None
-    return tree if isinstance(tree, dict) and tree else None
+    if not isinstance(tree, dict) or not tree:
+        return None, None
+    return tree, old_config
+
+
+async def _async_backup_legacy_dashboard(
+    hass: HomeAssistant, dashboard: dict[str, Any]
+) -> None:
+    """Preserve the legacy dashboard before the first destructive migration."""
+    store: Store[dict[str, Any]] = Store(
+        hass,
+        _MIGRATION_BACKUP_VERSION,
+        _MIGRATION_BACKUP_KEY,
+        private=True,
+        atomic_writes=True,
+    )
+    existing = await store.async_load()
+    if isinstance(existing, dict) and isinstance(existing.get("dashboard"), dict):
+        return
+    await store.async_save(
+        {
+            "created_at": time.time(),
+            "source": "lovelace.energy-home",
+            "dashboard": dashboard,
+        }
+    )
+    _LOGGER.info("Optim Energy backed up the legacy energy-home dashboard")
 
 
 async def _async_replace_dashboards(hass: HomeAssistant, site_name: str) -> None:
     """Replace the known portal dashboards with the bundled versions."""
     collection = DashboardsCollection(hass)
     await collection.async_load()
+    lovelace_data = hass.data[LOVELACE_DATA]
     existing = {
         item["url_path"]: item for item in collection.async_items()
     }
@@ -137,13 +172,29 @@ async def _async_replace_dashboards(hass: HomeAssistant, site_name: str) -> None
             "require_admin": spec["require_admin"],
         }
 
-        if item is None:
+        dashboard = lovelace_data.dashboards.get(url_path)
+        if item is None and dashboard is not None:
+            # A just-created dashboard can still be waiting for Home
+            # Assistant's delayed collection save. The live panel exists even
+            # though a newly loaded collection cannot see the item yet.
+            if isinstance(dashboard.config, dict):
+                dashboard.config.update(metadata)
+            item = dashboard.config
+        elif item is None and url_path in lovelace_data.yaml_dashboards:
+            _LOGGER.warning(
+                "Optim Energy cannot replace YAML dashboard %s; use storage mode",
+                url_path,
+            )
+            continue
+        elif item is None:
             item = await collection.async_create_item(
                 {"url_path": url_path, **metadata}
             )
         else:
             item = await collection.async_update_item(item["id"], metadata)
 
+        if not isinstance(item, dict):
+            raise HomeAssistantError(f"Dashboard {url_path} has no storage metadata")
         dashboard = _dashboard_storage(hass, item)
         await dashboard.async_save(configs[url_path])
 
