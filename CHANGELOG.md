@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0-rc.1
+
+- Combined release candidate for shared-instance multitenancy, checked client-admin operations and the client-switch context fix.
+
 ## 0.2.18
 
 - Combine checked client-administrator operations with the awaited client-switch context fix for release validation.
