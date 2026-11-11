@@ -106,6 +106,11 @@ surface against one disposable official HA container. Its pinned image version
 lives in `tests/runtime/HA_VERSION` and is independent of the HA version
 currently installed on HA2.
 
+`make test-scale` runs the larger three-client lifecycle profile in a separate
+disposable container. It covers five locations, 360 entities, multiple users
+per client, area and label-only devices, bulk reassignment, session revocation,
+restart recovery and client deletion.
+
 Keep tokens in shell variables or a mode-`0600` temporary file. Do not paste
 tokens into shell history, CI logs or test output.
 
@@ -221,3 +226,21 @@ and restarting Optim Energy 0.3.0-rc.2:
 - public `/api/states`, `/api/services`, ingress and webhook routes: proxy `404`
 - public `/api/config` bootstrap route: `200`
 - root browser session and the Client A administrator portal loaded after restart; Client A saw no Client B data
+
+### Three-client scale verification record
+
+The CI scale acceptance job passed on 2026-11-11 against Home Assistant
+2026.11.1:
+
+| Measure | Result |
+| --- | --- |
+| Clients / locations / entities / users | 3 / 5 / 360 / 12 |
+| Nine repeated location-sync operations | 0.028 seconds total |
+| `.storage/optim_energy.tenancy` size | 6,718 bytes |
+| `.storage/auth` size | 127,221 bytes |
+| Portal dashboards for every tested role | PASS |
+| Area, label-only and entity-without-device scopes | PASS |
+| Bulk move and client-label reassignment | PASS |
+| User disable/delete and session revocation | PASS |
+| Restart during queued permission synchronization | PASS |
+| Client deletion with user revocation | PASS |
