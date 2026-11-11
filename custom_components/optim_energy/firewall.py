@@ -157,6 +157,13 @@ class WebsocketFirewall:
 
         @callback
         def guarded_handle(connection: ActiveConnection, msg: dict[str, Any]) -> None:
+            if (
+                isinstance(msg, dict)
+                and msg.get("type") == "repairs/list_issues"
+                and not self.manager.is_root(connection.user)
+            ):
+                connection.send_result(msg.get("id"), {"issues": []})
+                return
             allowed, reason = self.decision(connection, msg)
             if not allowed:
                 if self.audit:

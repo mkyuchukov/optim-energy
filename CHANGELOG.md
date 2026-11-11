@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.7
+
+- Return an empty repairs list to tenant frontends instead of leaking global repair issues or blocking startup.
+
 ## 0.2.6
 
 - Allow the read-only recorder metadata command required by the frontend bootstrap.
