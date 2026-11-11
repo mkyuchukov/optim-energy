@@ -261,9 +261,9 @@ REST_ALLOWLIST = {
 class RestFirewall:
     """Block raw REST API access for authenticated tenant accounts.
 
-    Home Assistant's own views remain authoritative for authentication. This
-    guard only adds a fail-closed tenant policy around the REST surface that
-    bypasses websocket command checks.
+    Home Assistant starts aiohttp before custom integrations are set up, so the
+    frozen middleware chain must be extended in place. The startup self-test
+    verifies that the exact guard callable is in the active handler chain.
     """
 
     def __init__(self, hass: HomeAssistant, manager: TenancyManager, *, audit: bool = False) -> None:
@@ -271,17 +271,15 @@ class RestFirewall:
         self.manager = manager
         self.audit = audit
         self._middleware: Any = None
+        self._original_handlers: Any = None
 
     async def install(self) -> None:
-        """Install an aiohttp middleware and verify it is present."""
+        """Install aiohttp middleware into the active application chain."""
         from aiohttp import web
 
         if not hasattr(self.hass, "http") or self.hass.http is None:
             raise RuntimeError("Home Assistant HTTP server is not initialized")
         app = self.hass.http.app
-        state = getattr(app, "_state", None)
-        if state is not None and getattr(state, "name", "") not in ("PREPARING", "UNKNOWN"):
-            raise RuntimeError("Home Assistant HTTP app is already frozen; REST guard cannot install")
 
         @web.middleware
         async def tenant_rest_guard(request: Any, handler: Any) -> Any:
@@ -293,8 +291,8 @@ class RestFirewall:
             auth = request.headers.get("Authorization", "")
             if not auth.lower().startswith("bearer "):
                 # Let Home Assistant's auth layer answer unauthenticated
-                # requests. This also keeps login and signed webhook flows
-                # outside this tenant-specific guard.
+                # requests. Login and signed webhook flows stay outside this
+                # bearer-token tenant guard.
                 return await handler(request)
             token = self.hass.auth.async_validate_access_token(auth[7:].strip())
             user = token.user if token is not None else None
@@ -314,9 +312,21 @@ class RestFirewall:
             )
 
         tenant_rest_guard.__optim_energy_rest__ = True  # type: ignore[attr-defined]
-        app.middlewares.insert(0, tenant_rest_guard)
         self._middleware = tenant_rest_guard
-        if not any(getattr(m, "__optim_energy_rest__", False) for m in app.middlewares):
+        handlers = getattr(app, "_middlewares_handlers", None)
+        if handlers is not None:
+            # Application.pre_freeze() has already run. Appending a new-style
+            # middleware makes it the outermost wrapper while preserving all
+            # Home Assistant middleware.
+            self._original_handlers = handlers
+            app._middlewares_handlers = (*handlers, (tenant_rest_guard, True))
+            app._run_middlewares = True  # type: ignore[attr-defined]
+        else:
+            app.middlewares.insert(0, tenant_rest_guard)
+        if not any(
+            middleware is tenant_rest_guard
+            for middleware, _new_style in (getattr(app, "_middlewares_handlers", None) or ())
+        ) and tenant_rest_guard not in app.middlewares:
             raise RuntimeError("Optim Energy REST guard did not install")
         _LOGGER.info(
             "Optim Energy REST guard active%s",
@@ -324,11 +334,13 @@ class RestFirewall:
         )
 
     def uninstall(self) -> None:
-        """Remove the middleware if this integration installed it."""
+        """Remove the guard from the active middleware chain."""
         if self._middleware is None or not hasattr(self.hass, "http") or self.hass.http is None:
             return
-        try:
-            self.hass.http.app.middlewares.remove(self._middleware)
-        except ValueError:
-            pass
+        app = self.hass.http.app
+        if self._original_handlers is not None:
+            app._middlewares_handlers = self._original_handlers  # type: ignore[attr-defined]
+            self._original_handlers = None
+        elif self._middleware in app.middlewares:
+            app.middlewares.remove(self._middleware)
         self._middleware = None

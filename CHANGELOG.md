@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Install the REST guard into Home Assistant's already-frozen aiohttp middleware chain.
+
 ## 0.2.0
 
 - Add a persistent multi-client tenant store and migrate `device_tree` out of Lovelace.
