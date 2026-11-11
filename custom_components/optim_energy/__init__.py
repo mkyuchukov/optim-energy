@@ -171,13 +171,29 @@ async def _async_replace_dashboards(hass: HomeAssistant, site_name: str) -> None
             "require_admin": spec["require_admin"],
         }
 
-        if item is None:
+        dashboard = lovelace_data.dashboards.get(url_path)
+        if item is None and dashboard is not None:
+            # A just-created dashboard can still be waiting for Home
+            # Assistant's delayed collection save. The live panel exists even
+            # though a newly loaded collection cannot see the item yet.
+            if isinstance(dashboard.config, dict):
+                dashboard.config.update(metadata)
+            item = dashboard.config
+        elif item is None and url_path in lovelace_data.yaml_dashboards:
+            _LOGGER.warning(
+                "Optim Energy cannot replace YAML dashboard %s; use storage mode",
+                url_path,
+            )
+            continue
+        elif item is None:
             item = await collection.async_create_item(
                 {"url_path": url_path, **metadata}
             )
         else:
             item = await collection.async_update_item(item["id"], metadata)
 
+        if not isinstance(item, dict):
+            raise HomeAssistantError(f"Dashboard {url_path} has no storage metadata")
         dashboard = _dashboard_storage(hass, item)
         await dashboard.async_save(configs[url_path])
 
