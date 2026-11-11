@@ -43,16 +43,25 @@ class Http:
         if token:
             headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(self.base_url + path, data=data, headers=headers, method=method)
+
+        def decode(payload: bytes) -> Any:
+            if not payload:
+                return None
+            try:
+                return json.loads(payload)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return payload.decode("utf-8", "replace")
+
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 payload = resp.read()
-                parsed = json.loads(payload) if payload else None
+                parsed = decode(payload)
                 if resp.status not in expected:
                     raise AssertionError((resp.status, path, parsed))
                 return resp.status, parsed
         except urllib.error.HTTPError as exc:
             payload = exc.read()
-            parsed = json.loads(payload) if payload else None
+            parsed = decode(payload)
             if exc.code in expected:
                 return exc.code, parsed
             raise AssertionError((exc.code, path, parsed)) from exc
