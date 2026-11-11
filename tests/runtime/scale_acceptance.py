@@ -363,6 +363,11 @@ def run(version: str, *, keep: bool = False) -> None:
             assert_dashboards(ws)
 
         for spec, ws, _token in tenant_sessions:
+            client_key = {
+                client_a: "A",
+                client_b: "B",
+                client_c: "C",
+            }[spec["client"]]
             if spec["client"] == client_a and spec["role"] == "client_admin":
                 expected_entities = set().union(
                     entity_scopes["a_north"],
@@ -387,7 +392,7 @@ def run(version: str, *, keep: bool = False) -> None:
                 if spec["client"] == client_a and scope != "a_north":
                     expected_devices = set()
                 else:
-                    prefix = "A" if spec["client"] == client_a else spec["client"].upper()
+                    prefix = client_key
                     expected_devices = {
                         device_ids[f"Scale {prefix} Area Device"],
                         device_ids[f"Scale {prefix} Label Device"],

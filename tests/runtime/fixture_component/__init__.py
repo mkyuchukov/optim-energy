@@ -7,6 +7,7 @@ from typing import Any
 import probatio
 from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, label_registry as lr
 
@@ -91,4 +92,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
     websocket_api.async_register_command(hass, websocket_create_devices)
     websocket_api.async_register_command(hass, websocket_install_late_command)
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Load the fixture entry that owns test devices."""
     return True
