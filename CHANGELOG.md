@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.16
+
+- Allow server-created schedule and helper entities to be placed before their new permission group refreshes.
+
 ## 0.2.15
 
 - Add checked client-admin commands for entity/device updates and portal-owned schedules.

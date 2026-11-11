@@ -637,6 +637,7 @@ async function syncSums(hass) {
       }
       if (changed) { treeLoad = null; await ensureTree(hass); }
       sumsBusy = false;
+      if (sumsAgain) { sumsAgain = false; syncSums(hass); }
       return;
     }
     let changed = false;

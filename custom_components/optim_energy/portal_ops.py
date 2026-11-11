@@ -207,9 +207,10 @@ class PortalOperations:
         area_id: str | None = None,
         labels: list[str] | None = None,
         place: str | None = None,
+        trusted: bool = False,
     ) -> Any:
         """Update a permitted entity and, optionally, place it in a portal group."""
-        if not self._entity_allowed(user, entity_id):
+        if not trusted and not self._entity_allowed(user, entity_id):
             raise HomeAssistantError("Entity belongs to another client")
         self._validate_area(tree, area_id)
         if place:
@@ -383,6 +384,7 @@ class PortalOperations:
             name=name.strip(),
             labels=labels,
             place=place,
+            trusted=not bool(entity_id),
         )
         return {"entity_id": helper_entity, "entry_id": entry_id}
 
@@ -681,7 +683,7 @@ class PortalOperations:
         await self._async_write_automations(config_id, config)
         automation_entity = await self._async_find_automation(config_id)
         await self._async_update_entity_placement(
-            user, tree, automation_entity, name=name, place=place
+            user, tree, automation_entity, name=name, place=place, trusted=not bool(entity_id)
         )
 
         entries = [
