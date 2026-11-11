@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Correctly map the server root identity into the portal frontend.
+
 ## 0.2.1
 
 - Install the REST guard into Home Assistant's already-frozen aiohttp middleware chain.

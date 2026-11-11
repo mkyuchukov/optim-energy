@@ -488,7 +488,7 @@ function ensureTree(hass) {
   portalUser = hass.user?.id || null;
   if (!whoLoad) {
     whoLoad = hass.callWS({ type: 'optim_energy/whoami' }).then((ctx) => {
-      Object.assign(PORTAL, ctx || {}, { ready: true, error: '' });
+      Object.assign(PORTAL, ctx || {}, { ready: true, isRoot: !!ctx?.is_root, error: '' });
       if (PORTAL.isRoot) {
         const ids = (PORTAL.clients || []).map((c) => c.id);
         if (!ids.includes(portalClient)) portalClient = ids[0] || null;
