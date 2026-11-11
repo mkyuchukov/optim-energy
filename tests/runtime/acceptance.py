@@ -125,10 +125,11 @@ logger:
         return result.stdout + result.stderr
 
     def storage(self, key: str) -> dict[str, Any]:
-        path = self.config_dir / ".storage" / key
-        if not path.exists():
-            raise AssertionError(f"missing storage file: {key}")
-        return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            raw = self._docker("exec", self.name, "cat", f"/config/.storage/{key}")
+        except subprocess.CalledProcessError as err:
+            raise AssertionError(f"missing storage file: {key}") from err
+        return json.loads(raw)
 
 
 def free_port() -> int:
