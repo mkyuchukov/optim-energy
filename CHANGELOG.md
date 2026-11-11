@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-rc.2
+
+- Block webhook and Supervisor ingress routes unless the caller presents a root bearer token.
+- Add direct-network REST isolation acceptance checks and the HA2 verification record.
+
 ## 0.3.0-rc.1
 
 - Combined release candidate for shared-instance multitenancy, checked client-admin operations and the client-switch context fix.
