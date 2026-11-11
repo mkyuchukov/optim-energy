@@ -192,4 +192,16 @@ statuses in the release acceptance record below.
 
 | Date | Home Assistant | Route check | Result |
 | --- | --- | --- | --- |
-| _pending release deployment_ | 2026.11.1 | Direct REST/webhook/ingress matrix | Not yet run with this guard |
+| 2026-11-11 | 2026.11.1 / Optim Energy 0.3.0-rc.2 | Direct REST/webhook/ingress matrix | PASS |
+
+HA2 (`opt-vm-ha-02`, direct address `192.168.66.225`) passed after installing
+and restarting Optim Energy 0.3.0-rc.2:
+
+- tenant `/api/states`, history, logbook, template, services, config entries and error log: `403`
+- anonymous and tenant webhook routes: `403`
+- anonymous and tenant Supervisor ingress routes: `403`
+- no token, invalid token, cookie token and query-string token: `401`
+- encoded and dot-normalized API paths: `403`
+- public `/api/states`, `/api/services`, ingress and webhook routes: proxy `404`
+- public `/api/config` bootstrap route: `200`
+- root browser session and the Client A administrator portal loaded after restart; Client A saw no Client B data
