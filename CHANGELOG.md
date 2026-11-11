@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.13
+
+- Allow the frontend system-state subscription required for portal startup.
+
 ## 0.2.12
 
 - Allow the read-only service catalog used by frontend controls.

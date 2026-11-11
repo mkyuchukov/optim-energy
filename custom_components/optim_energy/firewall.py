@@ -32,6 +32,8 @@ BOOT_COMMANDS = {
     "frontend/get_translations",
     "frontend/get_panels",
     "frontend/log_ui_action",
+    "frontend/subscribe_system_data",
+    "frontend/unsubscribe_system_data",
     "auth/current_user",
     f"{DOMAIN}/whoami",
 }
