@@ -253,7 +253,9 @@ class WebsocketFirewall:
 
         if command == "lovelace/config":
             url_path = msg.get("url_path")
-            if url_path in PORTAL_DASHBOARDS:
+            # Home Assistant sends no url_path for the instance default panel.
+            # The integration sets that default to the tenant Locations page.
+            if url_path in PORTAL_DASHBOARDS or url_path is None:
                 return True, ""
             return False, "only the bundled portal dashboards are available"
 
