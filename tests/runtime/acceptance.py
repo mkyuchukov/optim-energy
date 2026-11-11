@@ -416,7 +416,10 @@ def assert_tenant_ws(http: Http, token: str) -> None:
 
 def read_policy_group(harness: RuntimeHarness, group_id: str) -> dict[str, Any]:
     auth = harness.storage("auth")["data"]
-    return auth["groups"][group_id]
+    groups = auth["groups"]
+    if isinstance(groups, dict):
+        return groups[group_id]
+    return next(group for group in groups if group["id"] == group_id)
 
 
 def run(version: str, *, keep: bool = False) -> None:
