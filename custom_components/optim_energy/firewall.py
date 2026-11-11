@@ -28,6 +28,7 @@ BOOT_COMMANDS = {
     "frontend/set_user_data",
     "frontend/subscribe_user_data",
     "frontend/unsubscribe_user_data",
+    "auth/current_user",
     f"{DOMAIN}/whoami",
 }
 
@@ -159,13 +160,20 @@ class WebsocketFirewall:
 
         @callback
         def guarded_handle(connection: ActiveConnection, msg: dict[str, Any]) -> None:
-            if (
-                isinstance(msg, dict)
-                and msg.get("type") == "repairs/list_issues"
-                and not self.manager.is_root(connection.user)
-            ):
-                connection.send_result(msg.get("id"), {"issues": []})
-                return
+            if isinstance(msg, dict) and not self.manager.is_root(connection.user):
+                command = msg.get("type")
+                if command == "repairs/list_issues":
+                    connection.send_result(msg.get("id"), {"issues": []})
+                    return
+                if command == "config/entity_registry/list_for_display":
+                    try:
+                        entities = self.manager.registry_list(connection.user, "entity", None)
+                    except Exception:
+                        entities = []
+                    connection.send_result(
+                        msg.get("id"), {"entity_categories": {}, "entities": entities}
+                    )
+                    return
             allowed, reason = self.decision(connection, msg)
             if not allowed:
                 if self.audit:

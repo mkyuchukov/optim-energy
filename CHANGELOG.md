@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.10
+
+- Return current user and tenant-filtered entity registry data used by frontend bootstrap.
+
 ## 0.2.9
 
 - Allow Home Assistant's default-dashboard config command so tenant panels render.
