@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.17
+
+- Make client switching await the complete tenant context and discard stale user-list responses.
+
 ## 0.2.14
 
 - Allow the frontend panel, theme and translation bootstrap commands.
