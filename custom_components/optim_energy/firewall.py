@@ -166,6 +166,12 @@ class WebsocketFirewall:
                         reason,
                     )
                 else:
+                    _LOGGER.warning(
+                        "Optim Energy denied websocket command %s for %s: %s",
+                        msg.get("type"),
+                        connection.user.name,
+                        reason,
+                    )
                     _deny(connection, msg, reason)
                     return
             original(connection, msg)

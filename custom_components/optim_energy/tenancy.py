@@ -1320,7 +1320,12 @@ def _registry_list(self: TenancyManager, user: User, kind: str, requested_client
     if kind == "label":
         return [_registry_entry_dict(x) for x in label_items]
     if kind == "area":
-        return [_registry_entry_dict(x) for x in area_items]
+        result = []
+        for entry in area_items:
+            value = _registry_entry_dict(entry)
+            value["area_id"] = str(getattr(entry, "id", value.get("area_id")))
+            result.append(value)
+        return result
     if kind == "floor":
         return [_registry_entry_dict(x) for x in floor_items]
     if kind == "device":

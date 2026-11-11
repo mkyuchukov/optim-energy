@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.5
+
+- Return area ids in filtered registry responses and log denied websocket commands for tenant UI tuning.
+
 ## 0.2.4
 
 - Iterate the Home Assistant device registry through its supported public iteration path.
