@@ -388,11 +388,9 @@ def run(version: str, *, keep: bool = False) -> None:
                 scope = spec["scope"]
                 expected_entities = entity_scopes[scope]
                 expected_areas = {areas[scope]}
-                expected_labels = (
-                    {labels["a_north"], labels["a_south"], labels["a_west"]}
-                    if spec["client"] == client_a
-                    else {labels[scope]}
-                )
+                # Ordinary users must only receive labels for their own
+                # assigned location, even when their client owns more.
+                expected_labels = {labels[scope]}
                 if spec["client"] == client_a and scope != "a_north":
                     expected_devices = set()
                 else:

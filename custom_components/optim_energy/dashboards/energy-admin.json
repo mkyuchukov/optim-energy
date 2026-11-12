@@ -2,41 +2,6 @@
   "title": "Administration",
   "views": [
     {
-      "title": "Overview",
-      "path": "overview",
-      "icon": "mdi:view-dashboard-outline",
-      "type": "sections",
-      "max_columns": 4,
-      "footer": {
-        "card": {
-          "type": "custom:energy-nav-card",
-          "visibility": [
-            {
-              "condition": "screen",
-              "media_query": "(max-width: 870px)"
-            }
-          ]
-        },
-        "max_width": 870
-      },
-      "sections": [
-        {
-          "type": "grid",
-          "column_span": 4,
-          "cards": [
-            {
-              "type": "custom:building-admin-card",
-              "section": "overview",
-              "grid_options": {
-                "columns": "full",
-                "rows": "auto"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
       "title": "Clients",
       "path": "clients",
       "icon": "mdi:account-group-outline",
@@ -60,7 +25,7 @@
           "column_span": 4,
           "cards": [
             {
-              "type": "custom:building-admin-card",
+              "type": "custom:building-admin-table-card",
               "section": "clients",
               "grid_options": {
                 "columns": "full",
@@ -95,7 +60,7 @@
           "column_span": 4,
           "cards": [
             {
-              "type": "custom:building-admin-card",
+              "type": "custom:building-admin-table-card",
               "section": "locations",
               "grid_options": {
                 "columns": "full",
@@ -130,8 +95,43 @@
           "column_span": 4,
           "cards": [
             {
-              "type": "custom:building-admin-card",
+              "type": "custom:building-admin-table-card",
               "section": "people",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Devices",
+      "path": "devices",
+      "icon": "mdi:power-plug-outline",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-admin-table-card",
+              "section": "devices",
               "grid_options": {
                 "columns": "full",
                 "rows": "auto"

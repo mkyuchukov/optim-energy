@@ -121,6 +121,17 @@ def _place_name(tree: dict[str, Any], place_id: str) -> str:
     return place_id
 
 
+def _record_locations(record: dict[str, Any] | None) -> list[str]:
+    """Return all assigned locations, accepting the legacy single value."""
+    if not isinstance(record, dict):
+        return []
+    raw = record.get("locations")
+    if isinstance(raw, list):
+        return list(dict.fromkeys(str(x) for x in raw if str(x)))
+    location = record.get("location")
+    return [str(location)] if location else []
+
+
 def _filter_tree_for_location(tree: dict[str, Any], location: str) -> dict[str, Any]:
     """Return only the location a client user is allowed to see."""
     scoped = _copy_tree({}, _place_name(tree, location))
@@ -186,6 +197,55 @@ def _filter_tree_for_location(tree: dict[str, Any], location: str) -> dict[str, 
             },
         }
     )
+    return scoped
+
+
+def _filter_tree_for_locations(tree: dict[str, Any], locations: list[str]) -> dict[str, Any]:
+    """Return the union of all locations assigned to a client user."""
+    locations = list(dict.fromkeys(str(loc) for loc in locations if loc))
+    if not locations:
+        return _copy_tree({}, "No location assigned")
+    if len(locations) == 1:
+        return _filter_tree_for_location(tree, locations[0])
+
+    scoped = _copy_tree({}, "Optim Energy")
+    parts = [_filter_tree_for_location(tree, loc) for loc in locations]
+
+    def merge_list(key: str, identity: str) -> list[Any]:
+        out: list[Any] = []
+        seen: set[str] = set()
+        for part in parts:
+            for item in part.get(key) or []:
+                if not isinstance(item, dict):
+                    continue
+                marker = str(item.get(identity) or item.get("id") or item.get("entity") or "")
+                if marker and marker in seen:
+                    continue
+                if marker:
+                    seen.add(marker)
+                out.append(copy.deepcopy(item))
+        return out
+
+    for key in ("placed", "parents", "mains", "prices", "kinds", "notify", "sums"):
+        merged: dict[str, Any] = {}
+        for part in parts:
+            value = part.get(key)
+            if isinstance(value, dict):
+                merged.update(copy.deepcopy(value))
+        scoped[key] = merged
+    scoped.update(
+        {
+            "places": merge_list("places", "id"),
+            "virtual": merge_list("virtual", "id"),
+            "known": [x for part in parts for x in (part.get("known") or [])],
+            "kept": [x for part in parts for x in (part.get("kept") or [])],
+            "automations": merge_list("automations", "entity"),
+            "alarms": merge_list("alarms", "id"),
+            "main": None,
+        }
+    )
+    for key in ("known", "kept"):
+        scoped[key] = list(dict.fromkeys(str(x) for x in scoped[key])) if scoped[key] else scoped[key]
     return scoped
 
 
@@ -397,6 +457,7 @@ class TenancyManager:
         if root and not client_id:
             client_id = next(iter(self.data.get("clients", {})), DEFAULT_CLIENT)
         client = self.data.get("clients", {}).get(client_id, {}) if client_id else {}
+        assigned_locations = [] if root else _record_locations(record)
         return {
             "user_id": user.id,
             "user_name": user.name,
@@ -404,7 +465,8 @@ class TenancyManager:
             "role": role,
             "client": client_id,
             "client_name": client.get("name"),
-            "location": None if root else record.get("location"),
+            "location": assigned_locations[0] if assigned_locations else None,
+            "locations": assigned_locations,
         }
 
     def require_client(self, connection: ActiveConnection, requested: str | None = None) -> tuple[str, dict[str, Any]]:
@@ -428,10 +490,10 @@ class TenancyManager:
         )
         if ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN:
             return {"client": client_id, "client_name": ctx["client_name"], "role": ctx["role"], "tree": copy.deepcopy(tree)}
-        location = ctx.get("location")
-        if not location:
+        locations = ctx.get("locations") or []
+        if not locations:
             return {"client": client_id, "client_name": ctx["client_name"], "role": ctx["role"], "tree": _copy_tree({}, "No location assigned")}
-        return {"client": client_id, "client_name": ctx["client_name"], "role": ctx["role"], "tree": _filter_tree_for_location(tree, location)}
+        return {"client": client_id, "client_name": ctx["client_name"], "role": ctx["role"], "tree": _filter_tree_for_locations(tree, locations)}
 
     def require_client_value(self, user: User, requested: str | None = None) -> tuple[str, dict[str, Any]]:
         """Resolve a client without a websocket connection."""
@@ -502,6 +564,20 @@ class TenancyManager:
         await self.async_save()
         await self.async_sync_groups()
         return {"id": client_id, "name": name, "slug": client_id}
+
+    async def async_update_client(self, user: User, client_id: str, name: str) -> dict[str, Any]:
+        """Rename one client workspace. Only a Home Assistant administrator may call this."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can change clients")
+        client = self.data.get("clients", {}).get(client_id)
+        if client is None:
+            raise HomeAssistantError("Client not found")
+        clean = name.strip()
+        if not clean or len(clean) > 80:
+            raise HomeAssistantError("Enter a client name of up to 80 characters")
+        client["name"] = clean
+        await self.async_save()
+        return {"id": client_id, "name": clean}
 
     async def async_set_client_labels(self, user: User, client_id: str, label_ids: list[str]) -> dict[str, Any]:
         """Assign native location labels to one client. Root only."""
@@ -609,7 +685,8 @@ class TenancyManager:
             "is_active": ha_user.is_active,
             "role": record.get("role"),
             "client": record.get("client"),
-            "location": record.get("location"),
+            "location": (_record_locations(record)[0] if _record_locations(record) else None),
+            "locations": _record_locations(record),
             "system_generated": ha_user.system_generated,
         }
 
@@ -625,7 +702,8 @@ class TenancyManager:
         username: str,
         password: str,
         role: str,
-        location: str | None,
+        location: str | None = None,
+        locations: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create a non-admin HA user and attach it to one tenant."""
         actor_client, ctx = self.require_client_value(actor, client_id)
@@ -637,20 +715,28 @@ class TenancyManager:
             raise HomeAssistantError("Invalid portal role")
         if role == ROLE_CLIENT_ADMIN and not ctx["is_root"]:
             raise HomeAssistantError("Only the global administrator can create client administrators")
-        if role == ROLE_USER and not location:
-            raise HomeAssistantError("Choose a location for an ordinary user")
-        if location and location not in self.data.get("locations", {}):
-            raise HomeAssistantError("Location not found")
-        if location and self.data["locations"][location].get("client") != client_id:
-            raise HomeAssistantError("Location belongs to another client")
+        chosen = list(dict.fromkeys(str(x) for x in (locations or ([] if not location else [location])) if str(x)))
+        if role == ROLE_USER and not chosen:
+            raise HomeAssistantError("Choose at least one location for an ordinary user")
+        for location_id in chosen:
+            if location_id not in self.data.get("locations", {}):
+                raise HomeAssistantError("Location not found")
+            if self.data["locations"][location_id].get("client") != client_id:
+                raise HomeAssistantError("Location belongs to another client")
+        if role == ROLE_CLIENT_ADMIN:
+            chosen = []
         name = name.strip()
         username = username.strip().casefold()
         if not name or not username or len(password) < 8:
             raise HomeAssistantError("Name, username and a password of at least 8 characters are required")
         await self.async_sync_groups()
-        group_id = self._group_id_for(client_id, role, location)
-        if await self.hass.auth.async_get_group(group_id) is None:
-            raise HomeAssistantError("Could not create the tenant permission group")
+        group_ids = [
+            self._group_id_for(client_id, role, loc)
+            for loc in (chosen if role == ROLE_USER else [None])
+        ]
+        for group_id in group_ids:
+            if await self.hass.auth.async_get_group(group_id) is None:
+                raise HomeAssistantError("Could not create the tenant permission group")
         provider = next((p for p in self.hass.auth.auth_providers if p.type == "homeassistant"), None)
         if provider is None:
             raise HomeAssistantError("The local Home Assistant login provider is not configured")
@@ -658,14 +744,15 @@ class TenancyManager:
         # add_auth validates duplicate usernames before the user is created.
         await provider.async_add_auth(username, password)
         try:
-            ha_user = await self.hass.auth.async_create_user(name, group_ids=[group_id])
+            ha_user = await self.hass.auth.async_create_user(name, group_ids=group_ids)
             await self.hass.auth.async_link_user(ha_user, credential)
         except Exception:
             await provider.async_remove_auth(username)
             raise
         self.data["users"][ha_user.id] = {
             "client": client_id,
-            "location": location,
+            "location": chosen[0] if chosen else None,
+            "locations": chosen,
             "role": role,
         }
         await self.async_save()
@@ -681,6 +768,7 @@ class TenancyManager:
         is_active: bool | None = None,
         role: str | None = None,
         location: str | None = None,
+        locations: list[str] | None = None,
     ) -> dict[str, Any]:
         """Update a user while keeping the target inside the actor's client."""
         target = await self.hass.auth.async_get_user(user_id)
@@ -696,20 +784,29 @@ class TenancyManager:
             raise HomeAssistantError("User belongs to another client")
         if not ctx["is_root"] and record.get("role") == ROLE_CLIENT_ADMIN:
             raise HomeAssistantError("Only the global administrator can change a client administrator")
-        if role is not None:
-            if role not in (ROLE_CLIENT_ADMIN, ROLE_USER):
-                raise HomeAssistantError("Invalid portal role")
-            if role == ROLE_CLIENT_ADMIN and not ctx["is_root"]:
-                raise HomeAssistantError("Only the global administrator can create client administrators")
-            if role == ROLE_USER and not (location or record.get("location")):
-                raise HomeAssistantError("An ordinary user needs a location")
-            record["role"] = role
-        if location is not None:
-            if location and (location not in self.data.get("locations", {}) or self.data["locations"][location].get("client") != actor_client):
+        target_role = role if role is not None else record.get("role")
+        if target_role not in (ROLE_CLIENT_ADMIN, ROLE_USER):
+            raise HomeAssistantError("Invalid portal role")
+        if target_role == ROLE_CLIENT_ADMIN and not ctx["is_root"]:
+            raise HomeAssistantError("Only the global administrator can create client administrators")
+        if locations is not None:
+            chosen = list(dict.fromkeys(str(x) for x in locations if str(x)))
+        elif location is not None:
+            chosen = [location] if location else []
+        else:
+            chosen = _record_locations(record)
+        if target_role == ROLE_CLIENT_ADMIN:
+            chosen = []
+        if target_role == ROLE_USER and not chosen:
+            raise HomeAssistantError("An ordinary user needs at least one location")
+        for location_id in chosen:
+            if location_id not in self.data.get("locations", {}) or self.data["locations"][location_id].get("client") != actor_client:
                 raise HomeAssistantError("Location not found for this client")
-            if record.get("role") == ROLE_USER and not location:
-                raise HomeAssistantError("An ordinary user needs a location")
-            record["location"] = location or None
+        if role is not None:
+            record["role"] = target_role
+        if locations is not None or location is not None or role is not None:
+            record["locations"] = chosen
+            record["location"] = chosen[0] if chosen else None
         if name is not None and name.strip():
             await self.hass.auth.async_update_user(target, name=name.strip())
         if is_active is not None:
@@ -813,15 +910,22 @@ class TenancyManager:
                 role = record.get("role")
                 candidate = None
                 if role == ROLE_CLIENT_ADMIN:
-                    candidate = self._group_id_for(record["client"], ROLE_CLIENT_ADMIN, None)
-                elif role == ROLE_USER and record.get("location"):
-                    candidate = self._group_id_for(record["client"], ROLE_USER, record["location"])
-                if candidate in group_ids:
-                    target = candidate
-            # Always reassign the group object. Replacing a group in the
+                    candidates = [self._group_id_for(record["client"], ROLE_CLIENT_ADMIN, None)]
+                elif role == ROLE_USER:
+                    candidates = [
+                        self._group_id_for(record["client"], ROLE_USER, loc)
+                        for loc in _record_locations(record)
+                    ]
+                else:
+                    candidates = []
+                targets = [candidate for candidate in candidates if candidate in group_ids]
+                if targets:
+                    target = targets
+            # Always reassign the group objects. Replacing a group in the
             # private auth store does not invalidate a User's cached
             # permissions until its group list changes.
-            await self.hass.auth.async_update_user(ha_user, group_ids=[target])
+            target_ids = target if isinstance(target, list) else [target]
+            await self.hass.auth.async_update_user(ha_user, group_ids=target_ids)
             # Drop managed groups that no longer have a user. Keep the
             # deterministic group definitions available for future accounts.
         for group_id in list(auth_store._groups):
@@ -1071,6 +1175,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
             probatio.Required("password"): str,
             probatio.Required("role"): str,
             probatio.Optional("location"): str,
+            probatio.Optional("locations"): [str],
         }
     )
     @websocket_api.async_response
@@ -1086,6 +1191,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
                     msg["password"],
                     msg["role"],
                     msg.get("location"),
+                    msg.get("locations"),
                 ),
             )
         except (HomeAssistantError, ValueError) as err:
@@ -1099,6 +1205,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
             probatio.Optional("is_active"): bool,
             probatio.Optional("role"): str,
             probatio.Optional("location"): str,
+            probatio.Optional("locations"): [str],
         }
     )
     @websocket_api.async_response
@@ -1113,6 +1220,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
                     is_active=msg.get("is_active"),
                     role=msg.get("role"),
                     location=msg.get("location"),
+                    locations=msg.get("locations"),
                 ),
             )
         except (HomeAssistantError, ValueError) as err:
@@ -1152,6 +1260,25 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
         try:
             connection.send_result(msg["id"], await manager.async_create_client(connection.user, msg["name"]))
         except HomeAssistantError as err:
+            _error(connection, msg, str(err))
+
+    @websocket_api.websocket_command(
+        {
+            probatio.Required("type"): f"{DOMAIN}/client/update",
+            probatio.Required("client"): str,
+            probatio.Required("name"): str,
+        }
+    )
+    @websocket_api.async_response
+    async def ws_client_update(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+        try:
+            connection.send_result(
+                msg["id"],
+                await manager.async_update_client(
+                    connection.user, msg["client"], msg["name"]
+                ),
+            )
+        except (HomeAssistantError, ValueError) as err:
             _error(connection, msg, str(err))
 
     @websocket_api.websocket_command(
@@ -1270,6 +1397,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
         ws_user_delete,
         ws_client_list,
         ws_client_create,
+        ws_client_update,
         ws_client_delete,
         ws_client_set_locations,
         ws_location_catalog,
@@ -1346,13 +1474,13 @@ def _registry_list(self: TenancyManager, user: User, kind: str, requested_client
     else:
         tree = self.data.get("trees", {}).get(client_id, {})
         record = self.user_record(user) or {}
-        if root or ctx.get("role") == ROLE_CLIENT_ADMIN:
+        client_admin = ctx.get("role") == ROLE_CLIENT_ADMIN or record.get("role") == ROLE_CLIENT_ADMIN
+        if root or client_admin:
             locations = _place_locations(tree)
         else:
+            assigned = set(ctx.get("locations") or _record_locations(record))
             locations = [
-                place
-                for place in _place_locations(tree)
-                if place.get("id") == record.get("location")
+                place for place in _place_locations(tree) if place.get("id") in assigned
             ]
         tree_device_ids: set[str] = set()
         allowed_area_ids: set[str] = set()
@@ -1411,7 +1539,19 @@ def _registry_list(self: TenancyManager, user: User, kind: str, requested_client
     label_ids = set(self.data.get("clients", {}).get(client_id, {}).get("labels", []))
     label_items = list(lr_reg.async_list_labels())
     if not (root and not scoped_root):
-        label_items = [x for x in label_items if x.label_id in allowed_labels or x.label_id in label_ids]
+        if root or client_admin:
+            visible_location_labels = label_ids
+        else:
+            visible_location_labels = {
+                location[4:]
+                for location in (ctx.get("locations") or _record_locations(self.user_record(user)))
+                if location.startswith("loc:")
+            }
+        label_items = [
+            x
+            for x in label_items
+            if x.label_id in allowed_labels or x.label_id in visible_location_labels
+        ]
     device_items = list(dr_reg.values())
     if not (root and not scoped_root):
         device_items = [x for x in device_items if x.id in allowed_device_ids]

@@ -238,6 +238,25 @@ def test_rest_guard_allows_root_and_non_api_paths() -> None:
     assert firewall._rest_request_decision("/optim_energy_static/app.js", authenticated=False, root=False)[0]
 
 
+def test_multi_location_tree_filter_and_legacy_assignment() -> None:
+    tree = {
+        "places": [
+            {"id": "loc:a", "name": "A", "kind": "location", "parent": None},
+            {"id": "area:a", "name": "A room", "kind": "group", "parent": "loc:a"},
+            {"id": "loc:b", "name": "B", "kind": "location", "parent": None},
+            {"id": "area:b", "name": "B room", "kind": "group", "parent": "loc:b"},
+        ],
+        "placed": {"d:a": "area:a", "d:b": "area:b"},
+        "mains": {"loc:a": "d:a", "loc:b": "d:b"},
+        "virtual": [],
+    }
+    assert tenancy._record_locations({"location": "loc:a"}) == ["loc:a"]
+    assert tenancy._record_locations({"location": "loc:a", "locations": ["loc:a", "loc:b"]}) == ["loc:a", "loc:b"]
+    scoped = tenancy._filter_tree_for_locations(tree, ["loc:a", "loc:b"])
+    assert {p["id"] for p in scoped["places"]} == {"loc:a", "area:a", "loc:b", "area:b"}
+    assert set(scoped["placed"]) == {"d:a", "d:b"}
+
+
 def test_tree_payload_rejects_wrong_shapes() -> None:
     try:
         tenancy._guard_tree({"places": "not a list"})
@@ -299,6 +318,9 @@ class TenancyTests(unittest.TestCase):
 
     def test_tree_shape(self) -> None:
         test_tree_payload_rejects_wrong_shapes()
+
+    def test_multi_location_assignment(self) -> None:
+        test_multi_location_tree_filter_and_legacy_assignment()
 
     def test_registry_device_name(self) -> None:
         test_registry_entry_preserves_user_device_name_and_metadata()
