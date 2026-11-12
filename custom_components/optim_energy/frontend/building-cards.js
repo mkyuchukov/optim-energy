@@ -461,7 +461,7 @@ async function syncSidebar(hass) {
   try {
     const now = (await hass.callWS({ type: 'frontend/get_user_data', key: 'sidebar' }))?.value;
     const hidden = new Set(now?.hiddenPanels || []);
-    for (const id of ['energy-admin', ...CLIENT_PANELS]) hidden.delete(id);
+    for (const id of ['energy-admin', ...CLIENT_PANELS, ...ADMIN_PANELS]) hidden.delete(id);
     if (PORTAL.isRoot) {
       // Keep the normal HA tools visible, but do not put the client portal in
       // an administrator's sidebar. The admin console has an explicit preview.
