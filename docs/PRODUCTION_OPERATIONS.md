@@ -220,6 +220,7 @@ check is reproduced and fixed.
 - [x] Repository licensed under Apache License 2.0
 - [x] Initial zero-client production deployment completed; no maintenance window required
 - [x] Stable `0.3.x` release published as `v0.3.0`
+- [x] Patch `v0.3.1` restores tenant registry names and device types; production verified
 
 ## Maintenance record template
 
@@ -250,6 +251,21 @@ check is reproduced and fixed.
 | Client verification | `Sofia Cleverpine` and `Sofia Optimal` preserved with live readings |
 | Rollback checkpoint | Restore the manual backup above |
 | Incidents / follow-up | Non-admin HA user moved to fail-closed unassigned group; assign explicitly when a client account is needed |
+
+### 2026-11-12 v0.3.1 tenant registry patch
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 12:27–12:31 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.3.0 / 0.3.1 |
+| Backup/snapshot | `before-optim-energy-v0.3.1-2026-11-12` (slug `24072c5a`), plus the previous integration directory |
+| Runtime suites | Unit, HA runtime, three-client scale, browser, hassfest and HACS: PASS |
+| VM smoke result | N/A; live portal verified after restart |
+| Client verification | `Sofia Cleverpine` and `Sofia Optimal` preserved; friendly names, Light/Relay/Energy meter types and live readings visible |
+| Rollback checkpoint | Restore the backup above or copy back `/mnt/data/optim-energy-backups/optim_energy-pre-2026-11-12-v0.3.1` |
+| Incidents / follow-up | Registry serializer now preserves `name_by_user`, model metadata and `via_device_id`; no HA or tenant data loss observed |
 
 ## Repository protection
 
