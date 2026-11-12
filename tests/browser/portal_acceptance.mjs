@@ -226,6 +226,39 @@ try {
     await annex().locator('[data-delete-location]').dispatchEvent('click');
     await annex().locator('[data-delete-location]').dispatchEvent('click');
     await annex().waitFor({ state: 'detached', timeout: 20000 });
+
+    // The device inbox: a device no client has is listed, assigned, removed and ignored from one screen.
+    await root.goto(`${base}/energy-admin/devices`, { waitUntil: 'domcontentloaded' });
+    const devs = await waitCard(root, 'building-admin-table-card');
+    await devs.getByRole('heading', { level: 1, name: 'Devices' }).waitFor({ timeout: 30000 });
+    await root.locator('dialog-http-pending-config').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+    const spare = () => devs.locator('#inbox tbody tr').filter({ hasText: 'Browser Spare Meter' }).first();
+    const show = (filter) => devs.locator('#inboxFilter').selectOption(filter);
+    await spare().waitFor({ timeout: 30000 });
+    assert.match(await spare().innerText(), /Energy meter[\s\S]*power sensor[\s\S]*Not assigned yet/, 'inbox row does not say what the device is and that it is unassigned');
+    await typeInto(devs.locator('#inboxSearch'), 'no such device');
+    await devs.getByText('No device matches the search.').waitFor({ timeout: 10000 });
+    await typeInto(devs.locator('#inboxSearch'), 'spare');
+    await spare().waitFor({ timeout: 10000 });
+    await spare().locator('[data-inbox-assign]').dispatchEvent('click');
+    await devs.locator('#assignClient').selectOption(state.client_a);
+    await devs.locator('#assignLocation').selectOption(state.location_a_north);
+    await devs.locator('[data-save-editor]').dispatchEvent('click');
+    await spare().waitFor({ state: 'detached', timeout: 20000 });
+    await show('assigned');
+    await spare().waitFor({ timeout: 20000 });
+    assert.match(await spare().innerText(), /Browser Client A[\s\S]*Browser A North/, 'assigned device does not show its client and location');
+    await spare().locator('[data-inbox-remove]').dispatchEvent('click');
+    await spare().locator('[data-inbox-remove]').dispatchEvent('click');
+    await spare().waitFor({ state: 'detached', timeout: 20000 });
+    await show('unassigned');
+    await spare().locator('[data-inbox-ignore]').dispatchEvent('click');
+    await spare().waitFor({ state: 'detached', timeout: 20000 });
+    await show('ignored');
+    await spare().locator('[data-inbox-unignore]').dispatchEvent('click');
+    await spare().waitFor({ state: 'detached', timeout: 20000 });
+    await devs.locator('[data-device-view="wiring"]').dispatchEvent('click');
+    await devs.locator('[data-add-device]').first().waitFor({ timeout: 10000 });
   }
 
   assert.deepEqual(pageErrors, [], `browser page errors: ${pageErrors.join('; ')}`);

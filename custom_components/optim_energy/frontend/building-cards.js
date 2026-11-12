@@ -1555,7 +1555,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}bu
 const ADMIN_TABLE_CSS = `
 .admin-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;padding:4px 0 2px}.admin-head h1{margin:0;font-size:clamp(24px,3vw,32px);letter-spacing:-.03em}.admin-head p{margin:5px 0 0;color:var(--muted);font-size:13px;max-width:760px;line-height:1.45}.admin-kicker{display:block;color:var(--accent);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
 .admin-toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.admin-toolbar.compact{padding:8px 10px}.admin-toolbar .sp{flex:1}.admin-control{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.admin-control select{min-width:220px}.toolbar-label{font-size:12px;color:var(--muted)}.toolbar-label b{color:var(--fg)}.toolbar-count{font-size:12px;color:var(--muted);margin:auto 0}.admin-actions{display:flex;gap:6px;flex-wrap:wrap}.admin-actions button,.admin-toolbar .table-action{font-size:12.5px;padding:6px 10px}
-.admin-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.admin-table{width:100%;border-collapse:collapse;font-size:13px}.admin-table th{text-align:left;color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.admin-table td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);vertical-align:middle}.admin-table tr:last-child td{border-bottom:0}.admin-table tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}.table-name{all:unset;cursor:pointer;display:grid;gap:2px;font-weight:600;color:var(--fg)}.table-name small,.table-sub{display:block;font-weight:400;color:var(--muted);font-size:11px}.table-name:hover{color:var(--accent)}.table-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.table-action{all:unset;cursor:pointer;padding:5px 8px;border:1px solid var(--line);border-radius:6px;color:var(--fg);font-size:11.5px;white-space:nowrap}.table-action:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}.table-action.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}.table-select{min-width:110px;padding:5px 7px;font-size:12px}.admin-empty{text-align:center;color:var(--muted);padding:24px !important}.admin-note{color:var(--muted);font-size:12px;line-height:1.45;margin:0}
+.admin-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.admin-table{width:100%;border-collapse:collapse;font-size:13px}.admin-table th{text-align:left;color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.admin-table td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);vertical-align:middle}.admin-table tr:last-child td{border-bottom:0}.admin-table tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}.table-name{all:unset;cursor:pointer;display:grid;gap:2px;font-weight:600;color:var(--fg)}.table-name small,.table-sub{display:block;font-weight:400;color:var(--muted);font-size:11px}.table-name:hover{color:var(--accent)}.table-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.table-action{all:unset;cursor:pointer;padding:5px 8px;border:1px solid var(--line);border-radius:6px;color:var(--fg);font-size:11.5px;white-space:nowrap}.table-action:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}.table-action.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}.table-action.on{background:color-mix(in srgb,var(--fg) 12%,transparent);font-weight:600}.admin-table input[type=checkbox]{width:16px;height:16px;margin:0}.table-select{min-width:110px;padding:5px 7px;font-size:12px}.admin-empty{text-align:center;color:var(--muted);padding:24px !important}.admin-note{color:var(--muted);font-size:12px;line-height:1.45;margin:0}
 .admin-editor{border:1px solid color-mix(in srgb,var(--accent) 38%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--accent) 5%,var(--panel));padding:13px 14px;display:grid;gap:10px}.admin-editor-head h3{margin:2px 0 0;font-size:16px}.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}.form-grid .wide{grid-column:1/-1}.form-grid .field{display:grid;gap:4px;color:var(--muted);font-size:11.5px}.form-grid input,.form-grid select{width:100%;box-sizing:border-box}.form-grid select[multiple]{min-height:90px}.form-actions{display:flex;justify-content:flex-end;gap:7px}
 @media(max-width:700px){.admin-head h1{font-size:25px}.admin-table th,.admin-table td{padding:8px}.admin-table th:nth-child(3),.admin-table td:nth-child(3){display:none}.admin-toolbar .admin-control{width:100%}.admin-toolbar .admin-control select{flex:1;min-width:0}.admin-actions{width:100%}.admin-actions button{flex:1}.table-actions{justify-content:flex-start}}
 `;
@@ -3041,6 +3041,11 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       this._confirmClientDelete = false;
       this._confirmLocationDelete = null;
       this._error = '';
+      this._inbox = null;
+      this._inboxFilter = 'unassigned';
+      this._inboxSearch = '';
+      this._picked = new Set();
+      this._deviceView = 'inbox';
       this.shadowRoot.innerHTML = `<style>${BASE}${ADMIN_CSS}${ADMIN_TABLE_CSS}</style><div class="w admin"><div id="admin"></div><div class="flash" id="flash" role="status"></div></div>`;
       const w = this.shadowRoot.querySelector('.w');
       w.addEventListener('click', (e) => this.onClick(e));
@@ -3071,6 +3076,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const catalog = root
           ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }).catch(() => [])
           : [];
+        // Every Home Assistant device with where it is. Only exists once locations are areas.
+        const inbox = root ? await this._hass.callWS({ type: 'optim_energy/device/inbox' }).catch(() => null) : null;
         let summaries = [];
         if (root) {
           summaries = await Promise.all((PORTAL.clients || []).map(async (item) => {
@@ -3083,6 +3090,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
               const places = Array.isArray(tree.places) ? tree.places : [];
               return {
                 ...item,
+                places,
                 locations: places.filter((p) => p.kind === 'location').length,
                 groups: places.filter((p) => p.kind === 'group').length,
                 devices: Object.keys(tree.placed || {}).length,
@@ -3098,6 +3106,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         this._users = Array.isArray(users) ? users : [];
         this._catalog = Array.isArray(catalog) ? catalog : [];
         this._summaries = summaries;
+        this._inbox = Array.isArray(inbox) ? inbox : null;
+        this._picked = new Set([...this._picked].filter((id) => (this._inbox || []).some((d) => d.id === id)));
         this._adminDevices = root ? Object.fromEntries(adminDeviceCatalog(allDevices, allEntities, TREE.placed).map((d) => [d.id, d])) : {};
         this._error = '';
       } catch (e) {
@@ -3173,6 +3183,15 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         title = current ? 'Edit person' : 'New person';
         const selected = current?.locations || (current?.location ? [current.location] : []);
         fields = `<label class="field">Name<input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field">Username<input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label>${current ? '' : '<label class="field">Password<input id="editorPassword" type="password" minlength="8" autocomplete="new-password"></label>'}<label class="field">Role<select id="editorRole">${PORTAL.isRoot ? `<option value="user">User</option><option value="client_admin"${current?.role === 'client_admin' ? ' selected' : ''}>Client admin</option>` : '<option value="user">User</option>'}</select></label><label class="field wide">Locations<select id="editorLocations" multiple size="${Math.max(2, Math.min(5, locations.length))}">${locations.map((p) => `<option value="${esc(p.id)}"${selected.includes(p.id) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join('')}</select></label>`;
+      } else if (e.kind === 'assign') {
+        const names = e.devices.map((id) => (this._inbox || []).find((d) => d.id === id)?.name || id);
+        title = names.length === 1 ? `Assign ${names[0]}` : `Assign ${names.length} devices`;
+        save = 'Assign';
+        const client = e.client || portalClient, places = this.clientPlaces(client), sites = places.filter((p) => p.kind === 'location');
+        const location = sites.some((p) => p.id === e.location) ? e.location : sites[0]?.id || '';
+        const under = (id) => places.filter((p) => p.parent === id).flatMap((p) => [p, ...under(p.id)]);
+        const groups = location ? under(location) : [];
+        fields = `<label class="field">Client<select id="assignClient">${clients.map((x) => `<option value="${esc(x.id)}"${x.id === client ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label><label class="field">Location<select id="assignLocation">${sites.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label><label class="field">Group<select id="assignGroup"><option value="">No group</option>${groups.map((p) => `<option value="${esc(p.id)}"${p.id === e.group ? ' selected' : ''}>${esc(this.placeNameIn(places, p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}</select></label>${sites.length ? '' : '<p class="admin-note">This client has no location yet. Add one under Locations first.</p>'}${names.length > 1 ? `<p class="admin-note">${esc(names.join(', '))}</p>` : ''}`;
       } else if (e.kind === 'group') {
         title = e.id ? 'Rename group' : 'New group';
         const inside = [...placesUnder(e.location)].filter((id) => id !== e.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean);
@@ -3223,8 +3242,36 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
       const devices = selected ? `${groups}<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Devices</span><h2>${esc(selected.name)}</h2><p>Assign devices here, set the main device and maintain the parent tree.</p></div><div class="admin-actions">${this.action('Add device', `data-add-device="${esc(selected.id)}"`)}${this.action('Virtual device', 'data-new-virtual="1"')}</div></div>${this.deviceRowsHtml(selected.id)}</section>` : '<p class="admin-note">Select a location to manage its devices.</p>';
       return `${this.renderEditor()}${this.table(['Location', 'Groups', 'Devices', 'Main device', 'Actions'], rows)}${devices}`;
     }
+    hasInbox() { return PORTAL.isRoot && areasModel() && Array.isArray(this._inbox); }
+    // Places of any client, not only the active one, for the assign dialog.
+    clientPlaces(client) { return (this._summaries || []).find((x) => x.id === client)?.places || []; }
+    placeNameIn(places, id) { const out = []; const seen = new Set(); let p = places.find((x) => x.id === id); while (p && !seen.has(p.id)) { seen.add(p.id); out.unshift(p.name); p = places.find((x) => x.id === p.parent); } return out.join(' › '); }
+    inboxRows() {
+      const q = this._inboxSearch.trim().toLowerCase(), f = this._inboxFilter;
+      return (this._inbox || []).filter((d) => (f === 'all' || d.status === f) && (!q || [d.name, d.model, (d.integrations || []).join(' '), d.client_name, d.location_name, d.group_name].some((x) => String(x || '').toLowerCase().includes(q))));
+    }
+    renderInbox() {
+      const all = this._inbox || [], count = (st) => all.filter((d) => d.status === st).length, rows = this.inboxRows();
+      const kind = { meter: 'Energy meter', relay: 'Relay', socket: 'Socket', light: 'Light', ac: 'AC' };
+      const filters = [['unassigned', 'Not assigned yet'], ['assigned', 'Assigned'], ['ignored', 'Ignored'], ['other', 'Not portal devices'], ['all', 'All devices']];
+      const where = (d) => d.status === 'assigned' ? `<b>${esc(d.client_name)}</b><small class="table-sub">${esc([d.location_name, d.group_name].filter(Boolean).join(' › '))}</small>`
+        : d.status === 'ignored' ? 'Ignored' : d.status === 'unassigned' ? '<b>Not assigned yet</b>' : '—';
+      const html = rows.map((d) => {
+        const acts = d.status === 'assigned'
+          ? `${this.action('Move', `data-inbox-assign="${esc(d.id)}"`)}${this.action(this._confirmUnassign === d.id ? 'Confirm remove' : 'Remove from client', `data-inbox-remove="${esc(d.id)}"`, 'table-action danger')}`
+          : d.status === 'ignored' ? this.action('Stop ignoring', `data-inbox-unignore="${esc(d.id)}"`)
+            : `${this.action('Assign', `data-inbox-assign="${esc(d.id)}"`)}${this.action('Ignore', `data-inbox-ignore="${esc(d.id)}"`)}`;
+        return `<td><input type="checkbox" data-pick="${esc(d.id)}" aria-label="Select ${esc(d.name)}"${this._picked.has(d.id) ? ' checked' : ''}${d.status === 'ignored' ? ' disabled' : ''}></td><td><b>${esc(d.name)}</b><small class="table-sub">${esc([d.model, (d.integrations || []).join(', ')].filter(Boolean).join(' · '))}</small></td><td>${esc(kind[d.kind] || '—')}<small class="table-sub">${esc(d.why || '')}</small></td><td>${where(d)}</td><td><div class="table-actions">${acts}</div></td>`;
+      });
+      const empty = { unassigned: 'Every recognised device is assigned to a client. New devices appear here as soon as Home Assistant knows them.', ignored: 'No ignored devices.', assigned: 'No device is assigned to a client yet.', other: 'Nothing here.', all: 'Home Assistant has no devices.' }[this._inboxFilter];
+      const table = html.length ? this.table(['', 'Device', 'Looks like', 'Client and place', 'Actions'], html, 'inbox') : `<p class="admin-note" id="inbox">${esc(this._inboxSearch ? 'No device matches the search.' : empty)}</p>`;
+      const picked = this._picked.size;
+      return `${this.renderEditor()}<div class="admin-toolbar compact">${this.action('All devices', 'data-device-view="inbox"', 'table-action on')}${this.action('Wiring and main devices', 'data-device-view="wiring"')}<span class="sp"></span><span class="toolbar-count">${count('unassigned')} not assigned · ${count('assigned')} assigned · ${count('ignored')} ignored</span></div><div class="admin-toolbar compact"><label class="field">Search<input id="inboxSearch" type="search" value="${esc(this._inboxSearch)}" placeholder="Name, model, integration, client"></label><label class="field">Show<select id="inboxFilter">${filters.map(([v, l]) => `<option value="${v}"${this._inboxFilter === v ? ' selected' : ''}>${esc(l)} (${v === 'all' ? all.length : count(v)})</option>`).join('')}</select></label><span class="sp"></span>${picked ? this.action(`Assign ${picked} selected`, 'data-assign-picked="1"', 'primary') : ''}</div>${table}<p class="admin-note">A device that gets a location's area in Home Assistant itself shows here as assigned, with no group.</p>`;
+    }
     renderDevices() {
-      return `${this.renderEditor()}<div class="admin-toolbar compact"><span class="toolbar-count">${this.deviceRows().length} devices in ${esc(this.selectedClient().name)}</span><span class="sp"></span>${this.action('Add device', `data-add-device="${esc(this._selectedLocation || '')}"`)}${this.action('Virtual device', 'data-new-virtual="1"')}</div>${this.deviceRowsHtml(this._selectedLocation)}`;
+      if (this.hasInbox() && this._deviceView !== 'wiring') return this.renderInbox();
+      const views = this.hasInbox() ? `<div class="admin-toolbar compact">${this.action('All devices', 'data-device-view="inbox"')}${this.action('Wiring and main devices', 'data-device-view="wiring"', 'table-action on')}</div>` : '';
+      return `${this.renderEditor()}${views}<div class="admin-toolbar compact"><span class="toolbar-count">${this.deviceRows().length} devices in ${esc(this.selectedClient().name)}</span><span class="sp"></span>${this.action('Add device', `data-add-device="${esc(this._selectedLocation || '')}"`)}${this.action('Virtual device', 'data-new-virtual="1"')}</div>${this.deviceRowsHtml(this._selectedLocation)}`;
     }
     shell(title, lede, actions, body) {
       const clients = PORTAL.clients || [];
@@ -3337,6 +3384,16 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
             await this.setClientLabels(portalClient, [...new Set([...(this.selectedClient().labels || []), made.label_id])]);
           }
           await this.afterChange(e.id ? 'Location updated.' : 'Location created.');
+        } else if (e.kind === 'assign') {
+          const client = value('assignClient'), location = value('assignLocation'), place = value('assignGroup') || location;
+          if (!client || !location) { this.flash('Choose a client and a location.', true); return; }
+          const failed = [];
+          for (const id of e.devices) {
+            try { await this._hass.callWS({ type: 'optim_energy/device/assign', client, device_id: id, place }); } catch (x) { failed.push(x?.message || 'Could not assign a device.'); }
+          }
+          this._picked = new Set();
+          await this.afterChange(failed.length ? '' : (e.devices.length === 1 ? 'Device assigned.' : `${e.devices.length} devices assigned.`));
+          if (failed.length) this.flash(`${failed.length} of ${e.devices.length} not assigned. ${failed[0]}`, true);
         } else if (e.kind === 'group') {
           const name = value('editorName');
           if (!name) return;
@@ -3409,6 +3466,22 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
       if ((b = q('[data-select-location]'))) { this._selectedLocation = b.dataset.selectLocation; this.paint(true); return; }
       if ((b = q('[data-new-person]'))) { this._editor = { kind: 'person' }; this.paint(true); return; }
       if ((b = q('[data-edit-person]'))) { this._editor = { kind: 'person', user: (this._users || []).find((x) => x.id === b.dataset.editPerson) }; this.paint(true); return; }
+      if ((b = q('[data-device-view]'))) { this._deviceView = b.dataset.deviceView; this._editor = null; this.paint(true); return; }
+      if ((b = q('[data-inbox-assign]'))) { const d = (this._inbox || []).find((x) => x.id === b.dataset.inboxAssign); if (d) { this._editor = { kind: 'assign', devices: [d.id], client: d.client || portalClient, location: d.location, group: d.group || '' }; this.paint(true); } return; }
+      if (q('[data-assign-picked]')) { if (this._picked.size) { this._editor = { kind: 'assign', devices: [...this._picked], client: portalClient, location: null, group: '' }; this.paint(true); } return; }
+      if ((b = q('[data-inbox-ignore], [data-inbox-unignore]'))) {
+        const ignored = 'inboxIgnore' in b.dataset, id = b.dataset.inboxIgnore || b.dataset.inboxUnignore;
+        try { await this._hass.callWS({ type: 'optim_energy/device/ignore', device_id: id, ignored }); await this.afterChange(ignored ? 'Device ignored. It stays out of the list of devices to assign.' : 'Device is no longer ignored.'); } catch (x) { this.flash(x?.message || 'Could not change the device.', true); }
+        return;
+      }
+      if ((b = q('[data-inbox-remove]'))) {
+        const d = (this._inbox || []).find((x) => x.id === b.dataset.inboxRemove);
+        if (!d) return;
+        if (this._confirmUnassign !== d.id) { this._confirmUnassign = d.id; this.paint(true); return; }
+        this._confirmUnassign = null;
+        try { await this._hass.callWS({ type: 'optim_energy/device/assign', client: d.client, device_id: d.id }); await this.afterChange('Device removed from the client.'); } catch (x) { this.paint(true); this.flash(x?.message || 'Could not remove the device.', true); }
+        return;
+      }
       if ((b = q('[data-new-group]'))) { this._editor = { kind: 'group', location: b.dataset.newGroup }; this.paint(true); return; }
       if ((b = q('[data-edit-group]'))) { this._editor = { kind: 'group', id: b.dataset.editGroup, name: b.dataset.name, location: this._selectedLocation }; this.paint(true); return; }
       if ((b = q('[data-delete-group]'))) {
@@ -3492,6 +3565,12 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
       if (t.id === 'clientSwitch') { await this.selectClient(t.value); return; }
       if (t.id === 'peopleRole') { this._role = t.value; this.paint(true); return; }
       if (t.id === 'peopleSearch') { this._search = t.value; this.paint(true); return; }
+      if (t.id === 'inboxFilter') { this._inboxFilter = t.value; this.paint(true); return; }
+      if (t.dataset.pick) { if (t.checked) this._picked.add(t.dataset.pick); else this._picked.delete(t.dataset.pick); this.paint(true); return; }
+      // The assign dialog narrows as you go: the client decides the locations, the location its groups.
+      if (t.id === 'assignClient' && this._editor) { Object.assign(this._editor, { client: t.value, location: null, group: '' }); this.paint(true); return; }
+      if (t.id === 'assignLocation' && this._editor) { Object.assign(this._editor, { location: t.value, group: '' }); this.paint(true); return; }
+      if (t.id === 'assignGroup' && this._editor) { this._editor.group = t.value; return; }
       if (t.dataset.deviceParent) {
         const parent = t.value || null;
         if (parent && wouldLoop(t.dataset.deviceParent, parent)) { this.flash('That parent would create a loop.', true); this.paint(true); return; }
@@ -3499,9 +3578,14 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
       }
     }
     onInput(e) {
-      if (e.target.id !== 'peopleSearch') return;
-      this._search = e.target.value;
+      const id = e.target.id;
+      if (id !== 'peopleSearch' && id !== 'inboxSearch') return;
+      if (id === 'peopleSearch') this._search = e.target.value; else this._inboxSearch = e.target.value;
+      const at = e.target.selectionStart;
       this.paint(true);
+      // Repainting replaces the box being typed in; put the cursor back where it was.
+      const box = this.shadowRoot.getElementById(id);
+      if (box) { box.focus(); try { box.setSelectionRange(at, at); } catch (x) { /* search boxes may refuse */ } }
       const input = this.shadowRoot.getElementById('peopleSearch');
       if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
     }
