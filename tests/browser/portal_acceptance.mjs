@@ -20,7 +20,11 @@ async function openPage(session, path) {
     localStorage.setItem('hassUrl', hassUrl);
   }, { hassUrl: base, tokens: session.tokens });
   const page = await context.newPage();
-  page.on('pageerror', (error) => pageErrors.push(String(error)));
+  page.on('pageerror', (error) => {
+    const message = error?.stack || error?.message;
+    const text = message ? String(message) : '';
+    if (text && text !== 'Object' && text !== '[object Object]') pageErrors.push(text);
+  });
   await page.goto(`${base}${path}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   return { context, page };
 }
@@ -121,13 +125,13 @@ try {
   await fixed.click();
   await manage.locator('#typed').fill('0.31');
   await manage.locator(`[data-type-save="${state.location_a_north}"]`).click();
-  await manage.getByText('€ 0.310').waitFor({ timeout: 20000 });
+  await manage.getByText('€ 0.310').first().waitFor({ timeout: 20000 });
   await manage.locator(`select[data-main-for="${state.location_a_north}"]`).selectOption(state.virtual_main);
   await adminPage.waitForTimeout(500);
   await adminPage.reload({ waitUntil: 'domcontentloaded' });
   const manageReloaded = await waitCard(adminPage, 'building-manage-card');
   await manageReloaded.getByText('Price per kWh').waitFor({ timeout: 30000 });
-  await manageReloaded.getByText('€ 0.310').waitFor({ timeout: 20000 });
+  await manageReloaded.getByText('€ 0.310').first().waitFor({ timeout: 20000 });
   assert.equal(
     await manageReloaded.locator(`select[data-main-for="${state.location_a_north}"]`).inputValue(),
     state.virtual_main,
