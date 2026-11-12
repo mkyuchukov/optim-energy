@@ -482,13 +482,23 @@ class TenancyManager:
         return bool(ctx.get("is_root") or ctx.get("role") == ROLE_CLIENT_ADMIN)
 
     async def async_sync_sidebar(self, user: User) -> None:
-        """Apply the account's sidebar before its next frontend load."""
-        if user.system_generated or self.is_root(user):
+        """Apply the account's landing page and sidebar before its next load."""
+        if user.system_generated:
             return
         ctx = self.context(user)
-        from .sidebar import async_sync_user_sidebar
+        from .sidebar import async_sync_default_panel, async_sync_user_sidebar
 
         try:
+            # A per-account default is required because Home Assistant always
+            # keeps the default panel in the sidebar. Administrators therefore
+            # land on Administration without a client Home tab being pinned.
+            await async_sync_default_panel(
+                self.hass,
+                user.id,
+                "energy-admin" if ctx["is_root"] else "energy-start",
+            )
+            if ctx["is_root"]:
+                return
             await async_sync_user_sidebar(
                 self.hass,
                 user.id,
@@ -497,10 +507,10 @@ class TenancyManager:
                 manage_tree=self.can_manage_tree(ctx),
             )
         except Exception:
-            # Sidebar presentation must never break account creation, role
-            # changes or integration startup.
+            # Presentation must never break account creation, role changes or
+            # integration startup.
             _LOGGER.warning(
-                "Could not update Optim Energy sidebar preferences for %s",
+                "Could not update Optim Energy frontend preferences for %s",
                 user.id,
                 exc_info=True,
             )

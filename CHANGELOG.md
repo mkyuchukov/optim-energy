@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.7
+
+- Set the default dashboard per account: Home Assistant administrators land on Administration and no longer see the client Home tab, while tenant accounts keep their Home landing page.
+
 ## 0.5.6
 
 - Fix Administration location device counts for real MQTT meters that sit below a bridge; only Shelly meter channels are folded into their parent device.

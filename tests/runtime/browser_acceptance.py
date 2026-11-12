@@ -150,15 +150,30 @@ def run(version: str, *, keep: bool = False) -> None:
             user_a_sidebar = user_a_ws.command(
                 {"type": "frontend/get_user_data", "key": "sidebar"}
             )["value"]
+            user_a_default = user_a_ws.command(
+                {"type": "frontend/get_user_data", "key": "core"}
+            )["value"]["default_panel"]
             assert user_a_sidebar["panelOrder"][0] == "energy-start"
+            assert user_a_default == "energy-start"
             assert "energy-locations" in user_a_sidebar["hiddenPanels"]
             assert "energy-admin" in user_a_sidebar["hiddenPanels"]
         finally:
             user_a_ws.close()
 
+        root_state = {"username": "runtime_owner", "tokens": http.login("runtime_owner", "Runtime-Owner-2026!")}
+        root_ws = WebSocket(http.host, http.port)
+        root_ws.auth(root_state["tokens"]["access_token"])
+        try:
+            root_default = root_ws.command(
+                {"type": "frontend/get_user_data", "key": "core"}
+            )["value"]["default_panel"]
+            assert root_default == "energy-admin"
+        finally:
+            root_ws.close()
+
         state = {
             "base_url": http.base_url,
-            "root": {"username": "runtime_owner", "tokens": http.login("runtime_owner", "Runtime-Owner-2026!")},
+            "root": root_state,
             "admin_a": session(http, *CLIENT_ADMIN_A),
             "admin_b": session(http, *ADMIN_B),
             "user_a": user_a_state,
