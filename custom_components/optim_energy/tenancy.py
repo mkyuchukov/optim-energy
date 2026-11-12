@@ -486,7 +486,11 @@ class TenancyManager:
         if user.system_generated:
             return
         ctx = self.context(user)
-        from .sidebar import async_sync_default_panel, async_sync_user_sidebar
+        from .sidebar import (
+            async_sync_admin_sidebar,
+            async_sync_default_panel,
+            async_sync_user_sidebar,
+        )
 
         try:
             # A per-account default is required because Home Assistant always
@@ -498,6 +502,7 @@ class TenancyManager:
                 "energy-admin" if ctx["is_root"] else "energy-start",
             )
             if ctx["is_root"]:
+                await async_sync_admin_sidebar(self.hass, user.id)
                 return
             await async_sync_user_sidebar(
                 self.hass,
