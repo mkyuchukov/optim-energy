@@ -11,7 +11,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -233,6 +233,28 @@ def test_tree_payload_rejects_wrong_shapes() -> None:
         raise AssertionError("invalid tree payload was accepted")
 
 
+def test_registry_entry_preserves_user_device_name_and_metadata() -> None:
+    entry = SimpleNamespace(
+        id="device-id",
+        name="shelly3em63g3-9c9e6e3fda60",
+        name_by_user="T18 Main",
+        original_name=None,
+        manufacturer="Shelly",
+        model="Shelly 1PM Gen4",
+        model_id="S4SW-001P16EU",
+        configuration_url="http://192.168.40.52:80",
+        via_device_id="parent-device",
+    )
+    payload = tenancy._registry_entry_dict(entry)
+    assert payload["name"] == "shelly3em63g3-9c9e6e3fda60"
+    assert payload["name_by_user"] == "T18 Main"
+    assert payload["manufacturer"] == "Shelly"
+    assert payload["model"] == "Shelly 1PM Gen4"
+    assert payload["model_id"] == "S4SW-001P16EU"
+    assert payload["configuration_url"] == "http://192.168.40.52:80"
+    assert payload["via_device_id"] == "parent-device"
+
+
 class TenancyTests(unittest.TestCase):
     """Run the module-level checks under unittest discovery."""
 
@@ -262,6 +284,9 @@ class TenancyTests(unittest.TestCase):
 
     def test_tree_shape(self) -> None:
         test_tree_payload_rejects_wrong_shapes()
+
+    def test_registry_device_name(self) -> None:
+        test_registry_entry_preserves_user_device_name_and_metadata()
 
     def test_schedule_builder_is_fixed_schema(self) -> None:
         config = portal_ops.build_schedule_config(

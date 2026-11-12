@@ -1298,6 +1298,7 @@ def _registry_entry_dict(entry: Any) -> dict[str, Any]:
         "area_id",
         "categories",
         "config_entry_id",
+        "configuration_url",
         "description",
         "device_id",
         "disabled_by",
@@ -1309,9 +1310,15 @@ def _registry_entry_dict(entry: Any) -> dict[str, Any]:
         "label_id",
         "labels",
         "level",
+        "manufacturer",
+        "model",
+        "model_id",
         "name",
+        "name_by_user",
+        "original_name",
         "platform",
         "unique_id",
+        "via_device_id",
     ):
         if hasattr(entry, key):
             value = getattr(entry, key)
