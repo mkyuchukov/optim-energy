@@ -212,8 +212,18 @@ def run(version: str, *, keep: bool = False) -> None:
                 {
                     "type": "optim_runtime_fixture/create_devices",
                     "config_entry_id": create_fixture_entry(http, root_state["tokens"]["access_token"]),
-                    "devices": [{"key": "browser_spare", "name": "Browser Spare Meter", "entity": True}],
+                    "devices": [
+                        {"key": "browser_spare", "name": "Browser Spare Meter", "entity": True},
+                        {"key": "browser_meter_a", "name": "Browser Meter A", "meter": True},
+                    ],
                 }
+            )
+            # A metered device that already belongs to Client A, for the client administrator to manage.
+            meter_a = next(
+                d["id"] for d in migrate.command({"type": "optim_energy/device/inbox"}) if d["name"] == "Browser Meter A"
+            )
+            migrate.command(
+                {"type": "optim_energy/device/assign", "client": client_a, "device_id": meter_a, "place": location_a_north}
             )
             # Undo the price the first pass typed, so the same steps run again.
             fresh = migrate.command({"type": "optim_energy/tree/get", "client": client_a})["tree"]

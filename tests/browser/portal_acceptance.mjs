@@ -134,7 +134,7 @@ try {
   await adminCard.locator('#editorName').fill('Browser Created User');
   await adminCard.locator('#editorUsername').fill(state.created_user.username);
   await adminCard.locator('#editorPassword').fill(state.created_user.password);
-  await adminCard.locator('#editorLocations').selectOption([state.location_a_west]);
+  await adminCard.locator(`[data-loc-check="${state.location_a_west}"]`).check();
   await adminCard.locator('[data-save-editor]').click();
   await waitUsers(adminPage, ['Browser Created User'], []);
   let createdRow = adminCard.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
@@ -150,7 +150,8 @@ try {
   await createdRow.locator('[data-toggle]').filter({ hasText: 'Disable' }).waitFor({ timeout: 20000 });
 
   await createdRow.locator('[data-edit-person]').click();
-  await adminCard.locator('#editorLocations').selectOption([state.location_a_north]);
+  await adminCard.locator(`[data-loc-check="${state.location_a_west}"]`).uncheck();
+  await adminCard.locator(`[data-loc-check="${state.location_a_north}"]`).check();
   await adminCard.locator('[data-save-editor]').click();
   const moveDeadline = Date.now() + 20000;
   while (Date.now() < moveDeadline) {
@@ -196,6 +197,55 @@ try {
   await deleteRow.waitFor({ state: 'detached', timeout: 20000 });
 
   if (state.model === 'areas') {
+    // A client administrator manages its own groups under Setup ...
+    await adminPage.goto(`${base}/energy-setup/structure`, { waitUntil: 'domcontentloaded' });
+    const setup = await waitCard(adminPage, 'building-manage-card');
+    await setup.locator(`[data-group-new="${state.location_a_north}"]`).click();
+    await setup.locator('#gname').fill('Admin Group');
+    await setup.locator('[data-group-save]').click();
+    const adminGroup = () => setup.locator('#tree li').filter({ hasText: 'Admin Group' }).last();
+    await adminGroup().waitFor({ timeout: 20000 });
+    await adminGroup().locator('[data-group-rename]').click();
+    await setup.locator('#gname').fill('Admin Team');
+    await setup.locator('[data-group-save]').click();
+    const adminTeam = () => setup.locator('#tree li').filter({ hasText: 'Admin Team' }).last();
+    await adminTeam().waitFor({ timeout: 20000 });
+    assert.equal(await setup.locator('[data-nav]').count(), 0, 'client administrator is still sent to Home Assistant settings');
+
+    // ... and renames a device and moves it into that group from the device's own page.
+    await adminPage.goto(`${base}/energy-locations/start`, { waitUntil: 'domcontentloaded' });
+    await adminPage.getByText('Browser A North').first().click();
+    await adminPage.waitForURL(`${base}/energy-home/home`, { timeout: 30000 });
+    await adminPage.goto(`${base}/energy-devices/list`, { waitUntil: 'domcontentloaded' });
+    const list = await waitCard(adminPage, 'building-devices-card');
+    await list.locator('[data-device]').filter({ hasText: 'Browser Meter A' }).first().click();
+    await list.locator('#dname').fill('Renamed Meter');
+    await list.locator('#dplace').selectOption({ label: 'Browser A North › Admin Team' });
+    await list.locator('[data-save-device]').click();
+    // The new name arrives first, the new group a moment later; wait for the row to show both.
+    await list.locator('[data-device]').filter({ hasText: 'Renamed Meter' }).filter({ hasText: 'Admin Team' }).first().waitFor({ timeout: 20000 }).catch(async (error) => {
+      throw new Error(`the device was not renamed and moved; the drawer says: ${await list.locator('#dmsg').innerText().catch(() => '')}`, { cause: error });
+    });
+    assert.equal(await list.locator('#dplace option').filter({ hasText: 'Browser Client B' }).count(), 0, 'another client is offered as a place');
+
+    // A password the administrator sets for a person works, and the generator fills the field.
+    await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
+    const people = await waitCard(adminPage, 'building-admin-table-card');
+    const userRow = people.locator('#people tbody tr').filter({ hasText: 'Browser User A' });
+    await userRow.locator('[data-edit-person]').click();
+    await people.locator('[data-generate-password]').click();
+    assert.ok((await people.locator('#editorPassword').inputValue()).length >= 12, 'no password was generated');
+    await people.locator('[data-cancel-editor]').click();
+    const adminRow = people.locator('#people tbody tr').filter({ hasText: 'Browser Admin A' });
+    assert.equal(await adminRow.locator('[data-delete], [data-toggle]').count(), 0, 'buttons the server refuses are still offered');
+
+    // A Home Assistant administrator can now open a client's Setup instead of being sent back to Administration.
+    await root.goto(`${base}/energy-setup/structure`, { waitUntil: 'domcontentloaded' });
+    const rootSetup = await waitCard(root, 'building-manage-card');
+    await rootSetup.getByText('Price per kWh').waitFor({ timeout: 30000 });
+    await rootSetup.getByText('Admin Team').first().waitFor({ timeout: 20000 });
+    assert.match(new URL(root.url()).pathname, /^\/energy-setup/, 'administrator was redirected away from Setup');
+
     // After the move to floors and areas, root manages locations and groups inside Administration.
     await root.goto(`${base}/energy-admin/locations`, { waitUntil: 'domcontentloaded' });
     const locs = await waitCard(root, 'building-admin-table-card');
