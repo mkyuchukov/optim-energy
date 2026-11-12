@@ -61,7 +61,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await _async_replace_dashboards(hass, entry.data[CONF_SITE_NAME])
     await _async_set_portal_default(hass)
+    entry.async_on_unload(entry.add_update_listener(_async_apply_options))
     return True
+
+
+async def _async_apply_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply audit mode in place without stacking a second middleware chain."""
+    audit = bool(entry.options.get("audit", False))
+    websocket_firewall: WebsocketFirewall | None = hass.data.get(_FIREWALL_KEY)
+    rest_firewall: RestFirewall | None = hass.data.get(_REST_FIREWALL_KEY)
+    if websocket_firewall is not None:
+        websocket_firewall.audit = audit
+    if rest_firewall is not None:
+        rest_firewall.audit = audit
+    _LOGGER.warning("Optim Energy audit mode %s", "enabled" if audit else "disabled")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

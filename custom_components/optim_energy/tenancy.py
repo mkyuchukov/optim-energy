@@ -34,6 +34,7 @@ from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
 from .dashboards import default_device_tree
+from .quota import BillReadLimitExceeded, BillReadQuota
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -543,6 +544,8 @@ class TenancyManager:
             raise HomeAssistantError("Only a Home Assistant administrator can delete clients")
         if client_id not in self.data["clients"]:
             raise HomeAssistantError("Client not found")
+        if len(self.data["clients"]) <= 1:
+            raise HomeAssistantError("At least one client must remain")
         assigned_ids = [
             user_id
             for user_id, record in self.data["users"].items()
@@ -997,6 +1000,7 @@ def _error(connection: ActiveConnection, msg: dict[str, Any], message: str) -> N
 def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> None:
     """Register the small, checked websocket API used by the portal."""
     hass.data[f"{DOMAIN}_tenancy"] = manager
+    bill_quota = hass.data.setdefault(f"{DOMAIN}_bill_quota", BillReadQuota())
 
     @websocket_api.websocket_command({probatio.Required("type"): f"{DOMAIN}/whoami"})
     @websocket_api.async_response
@@ -1235,12 +1239,13 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
     @websocket_api.async_response
     async def ws_bill_read(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
         try:
-            _, ctx = manager.require_client_value(connection.user)
+            client_id, ctx = manager.require_client_value(connection.user)
             if not ctx.get("is_root") and not ctx.get("role"):
                 raise HomeAssistantError("No tenant assignment")
             body = msg["body"]
             if len(body) > 300_000:
                 raise HomeAssistantError("Bill payload is too large")
+            bill_quota.consume(user_id=connection.user.id, client_id=client_id)
             response = await hass.services.async_call(
                 "rest_command",
                 "discretestack_chat",
@@ -1250,6 +1255,8 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
                 context=connection.context(msg),
             )
             connection.send_result(msg["id"], {"response": response})
+        except BillReadLimitExceeded as err:
+            _error(connection, msg, str(err))
         except (HomeAssistantError, ValueError) as err:
             _error(connection, msg, str(err))
 

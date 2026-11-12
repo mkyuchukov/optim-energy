@@ -235,12 +235,13 @@ The CI scale acceptance job passed on 2026-11-11 against Home Assistant
 | Measure | Result |
 | --- | --- |
 | Clients / locations / entities / users | 3 / 5 / 360 / 12 |
-| Nine repeated location-sync operations | 0.028 seconds total |
+| Nine repeated location-sync operations | 0.029 seconds total |
 | `.storage/optim_energy.tenancy` size | 6,718 bytes |
-| `.storage/auth` size | 127,221 bytes |
+| `.storage/auth` size | 127,225 bytes |
 | Portal dashboards for every tested role | PASS |
 | Area, label-only and entity-without-device scopes | PASS |
 | Bulk move and client-label reassignment | PASS |
 | User disable/delete and session revocation | PASS |
 | Restart during queued permission synchronization | PASS |
 | Client deletion with user revocation | PASS |
+| Cold restore of auth, tenancy and Lovelace stores | PASS |

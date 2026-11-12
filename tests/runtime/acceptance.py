@@ -129,7 +129,6 @@ logger:
         subprocess.run(["docker", "rm", "-f", self.name], capture_output=True, text=True)
         self._docker(
             "run",
-            "--rm",
             "-d",
             "--name",
             self.name,
@@ -168,6 +167,42 @@ logger:
 
     def file_size(self, path: str) -> int:
         return int(self._docker("exec", self.name, "stat", "-c", "%s", path))
+
+    def backup_config(self) -> None:
+        """Create the operational backup used by the restore rehearsal."""
+        self._docker(
+            "exec",
+            self.name,
+            "sh",
+            "-c",
+            "rm -rf /config/ops_backup && mkdir -p /config/ops_backup && "
+            "for f in auth optim_energy.tenancy optim_energy.migration_backup; do "
+            "[ -e /config/.storage/$f ] && cp -a /config/.storage/$f /config/ops_backup/; "
+            "done; for f in /config/.storage/lovelace*; do "
+            "[ -e $f ] && cp -a $f /config/ops_backup/; done; true",
+            timeout=180,
+        )
+
+    def stop_container(self) -> None:
+        self._docker("stop", self.name, timeout=180)
+
+    def start_container(self) -> None:
+        self._docker("start", self.name, timeout=180)
+
+    def restore_config(self) -> None:
+        """Restore the operational files into the stopped container's config."""
+        self._docker(
+            "run",
+            "--rm",
+            "--entrypoint",
+            "sh",
+            "-v",
+            f"{self.config_dir}:/config",
+            self.image,
+            "-c",
+            "cp -a /config/ops_backup/. /config/.storage/",
+            timeout=180,
+        )
 
     def storage(self, key: str) -> dict[str, Any]:
         try:
@@ -277,6 +312,24 @@ def create_fixture_entry(http: Http, token: str) -> str:
     )
     assert_equal(result.get("type"), "create_entry", "runtime fixture entry")
     return str(result["result"]["entry_id"])
+
+
+def set_audit_mode(http: Http, token: str, entry_id: str, enabled: bool) -> None:
+    """Toggle Optim Energy audit mode through the real options flow."""
+    _, flow = http.request(
+        "POST",
+        "/api/config/config_entries/options/flow",
+        {"handler": entry_id},
+        token=token,
+    )
+    assert_equal(flow.get("type"), "form", "audit options flow")
+    _, result = http.request(
+        "POST",
+        f"/api/config/config_entries/options/flow/{flow['flow_id']}",
+        {"audit": enabled},
+        token=token,
+    )
+    assert_equal(result.get("type"), "create_entry", "audit options update")
 
 
 def wait_until(predicate: Any, message: str, timeout: float = 30.0) -> Any:
@@ -766,6 +819,20 @@ def run(version: str, *, keep: bool = False) -> None:
             )
         finally:
             b.close()
+
+        set_audit_mode(http, root_token, entry_id, True)
+        wait_until(
+            lambda: http.request("GET", "/api/states", token=token_a)[0] == 200,
+            "audit mode did not reload the REST guard",
+        )
+        set_audit_mode(http, root_token, entry_id, False)
+        wait_until(
+            lambda: http.request(
+                "GET", "/api/states", token=token_a, expected=(403,)
+            )[0]
+            == 403,
+            "audit mode did not restore enforced REST isolation",
+        )
 
         http.request(
             "POST",

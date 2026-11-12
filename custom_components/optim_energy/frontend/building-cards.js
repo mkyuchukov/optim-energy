@@ -2911,9 +2911,10 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
 .clientbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);font-size:13px;color:var(--muted)}
 .clientbar select{min-width:220px}.users{display:grid;gap:8px}.user{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:10px 12px;display:grid;grid-template-columns:minmax(170px,1.4fr) minmax(130px,.8fr) minmax(150px,1fr) auto;gap:8px;align-items:center}.user.me{border-color:var(--accent)}.who{display:grid;gap:2px;min-width:0}.who b{font-weight:600;overflow-wrap:anywhere}.who small{color:var(--muted);font-size:12px}.user select,.user button,.form input,.form select{font-size:13px;min-width:0}.acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;border-top:1px solid var(--line);padding-top:12px}.form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.form .wide{grid-column:1/-1}.err{color:var(--bad);font-size:13px}.ok{color:var(--ok);font-size:13px}.empty{color:var(--muted);padding:12px 0}
 .newclient{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.newclient label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.newclient input{min-width:220px}
+.danger{border:1px solid color-mix(in srgb,var(--bad) 45%,var(--line));border-radius:var(--radius);padding:12px;display:grid;gap:8px;background:color-mix(in srgb,var(--bad) 6%,var(--panel))}.danger b{color:var(--bad)}.danger span{color:var(--muted);font-size:12.5px}.danger button{border-color:var(--bad);color:var(--bad)}
 .locmap{display:grid;gap:7px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:11px 12px}.locmap .labs{display:flex;gap:8px 18px;flex-wrap:wrap}.locmap label{display:flex;gap:7px;align-items:center;font-size:13px}.locmap input{accent-color:var(--accent)}.locmap small{color:var(--muted);font-size:12px}
 @media(max-width:760px){.user{grid-template-columns:minmax(0,1fr) auto}.who{grid-column:1/-1}.acts{grid-column:1/-1;justify-content:flex-start}}
-</style><div class="w"><div class="head"><div><h2>People & clients</h2><p>Client administrators can create and disable users for their own client. Only the Home Assistant administrator can create a client or another client administrator.</p></div><button data-reload="1">Refresh</button></div><div id="clientbar"></div><div id="locationmap"></div><div id="users"></div><div id="newclient"></div><div id="form"></div><span class="err" id="err"></span><span class="ok" id="ok"></span></div>`;
+</style><div class="w"><div class="head"><div><h2>People & clients</h2><p>Client administrators can create and disable users for their own client. Only the Home Assistant administrator can create a client or another client administrator.</p></div><button data-reload="1">Refresh</button></div><div id="clientbar"></div><div id="locationmap"></div><div id="users"></div><div id="newclient"></div><div id="danger"></div><div id="form"></div><span class="err" id="err"></span><span class="ok" id="ok"></span></div>`;
       const r = this.shadowRoot;
       r.querySelector('.w').addEventListener('click', (e) => this.onClick(e));
       r.querySelector('.w').addEventListener('change', (e) => this.onChange(e));
@@ -2967,12 +2968,28 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         } catch (x) { this.flash(x?.message || 'Could not create the client.', true); }
         return;
       }
+      if (q('[data-delete-client]')) {
+        if (!PORTAL.isRoot || !portalClient) return;
+        if (!this._confirmClientDelete) { this._confirmClientDelete = true; this.paint(); return; }
+        const current = (PORTAL.clients || []).find((x) => x.id === portalClient);
+        try {
+          await this._hass.callWS({ type: 'optim_energy/client/delete', client: portalClient, delete_users: true });
+          this._confirmClientDelete = false;
+          whoLoad = null; treeLoad = null; portalClient = null;
+          resetPortalTree();
+          await ensureTree(this._hass);
+          await this.refresh();
+          this.flash(`${current?.name || 'Client'} and its users deleted.`);
+        } catch (x) { this._confirmClientDelete = false; this.paint(); this.flash(x?.message || 'Could not delete the client.', true); }
+        return;
+      }
       if (q('[data-create-user]')) { await this.createUser(); return; }
     }
     async onChange(e) {
       const t = e.target;
       if (t.id === 'clientSwitch') {
         this._users = null;
+        this._confirmClientDelete = false;
         this.paint();
         await switchPortalClient(this._hass, t.value);
         await this.refresh();
@@ -3016,6 +3033,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         : `<div class="locmap"><b>Portal locations</b><small>${locs.map((x) => esc(x.name)).join(' · ') || 'No locations assigned.'}</small></div>`;
       r.getElementById('clientbar').innerHTML = `${root ? `<label class="clientbar"><span>Client</span><select id="clientSwitch" aria-label="Client">${(PORTAL.clients || []).map((c) => `<option value="${esc(c.id)}"${c.id === portalClient ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>` : `<div class="clientbar"><span>Client · ${esc(PORTAL.clientName || '')}</span></div>`}`;
       r.getElementById('newclient').innerHTML = root ? `<div class="newclient"><label>Name of new client<input id="clientName" maxlength="80" placeholder="Example Client"></label><button class="gold" data-create-client="1">Create client</button></div>` : '';
+      r.getElementById('danger').innerHTML = root && (PORTAL.clients || []).length > 1 ? `<div class="danger"><b>Delete the selected client</b><span>This removes ${esc(current.name || portalClient)} and deletes every Home Assistant user assigned to it. Native entities, areas, automation history and recorder data are not deleted.</span><button data-delete-client="1">${this._confirmClientDelete ? 'Confirm delete client and users' : 'Delete client…'}</button></div>` : '';
       r.getElementById('users').innerHTML = users.length ? users.map((u) => {
         const self = u.id === PORTAL.user_id, protectedUser = u.role === 'client_admin' && !root, locOpts = locs.map((p) => `<option value="${esc(p.id)}"${p.id === u.location ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
         return `<div class="user${self ? ' me' : ''}"><div class="who"><b>${esc(u.name || u.username || u.id)}</b><small>${esc(u.username || '')}${self ? ' · you' : ''}${u.is_active ? '' : ' · disabled'}</small></div><div>${root ? `<select data-user-role="${u.id}" aria-label="Role for ${esc(u.name)}"${self ? ' disabled' : ''}><option value="user"${u.role === 'user' ? ' selected' : ''}>User</option><option value="client_admin"${u.role === 'client_admin' ? ' selected' : ''}>Client admin</option></select>` : `<span class="muted">${u.role === 'client_admin' ? 'Client admin' : 'User'}</span>`}</div><div>${u.role === 'client_admin' ? '<span class="muted">All locations</span>' : `<select data-user-loc="${u.id}" aria-label="Location for ${esc(u.name)}"${protectedUser ? ' disabled' : ''}><option value="">Choose location</option>${locOpts}</select>`}</div><div class="acts">${protectedUser ? '' : `<button data-toggle="${u.id}"${self ? ' disabled' : ''}>${u.is_active ? 'Disable' : 'Enable'}</button><button data-delete="${u.id}"${self ? ' disabled' : ''}>${this._confirmDelete === u.id ? 'Confirm delete' : 'Delete'}</button>`}</div></div>`;
