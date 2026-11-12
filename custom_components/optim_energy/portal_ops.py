@@ -99,7 +99,8 @@ def build_schedule_config(
         "conditions": [],
         "actions": [
             {
-                "action": f"switch.turn_{how}",
+                # One service for every domain a schedule may target.
+                "action": f"homeassistant.turn_{how}",
                 "target": {"entity_id": clean_switches},
             }
         ],

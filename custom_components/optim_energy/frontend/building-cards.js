@@ -570,7 +570,7 @@ function ensureTree(hass) {
         hass.callWS({ type: 'optim_energy/tree/get', ...(client ? { client } : {}) }),
         reg('label'), reg('floor'), reg('area'), reg('device'), reg('entity'),
       ]);
-      if (payload) { PORTAL.client = payload.client; PORTAL.clientName = payload.client_name || ''; }
+      if (payload) { PORTAL.client = payload.client; PORTAL.clientName = payload.client_name || ''; PORTAL.model = payload.model || 'labels'; }
       NATIVE = payload?.model === 'areas' ? areasNative(payload.tree, Array.isArray(labels) ? labels : []) : nativePlaces(labels, floors, areas);
       LABELS = Array.isArray(labels) ? labels : [];
       // Home Assistant only ships the device/entity registry to admins. The
@@ -3219,13 +3219,11 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       if (labels.includes('relay')) return 'Relay';
       if (labels.includes('ac')) return 'AC';
       if (labels.includes('energy_meter')) return 'Energy meter';
+      // The same recognition the inbox uses, so both tables call a device the same thing.
+      const seen = (this._inbox || []).find((d) => d.id === device.id)?.kind;
+      if (seen) return { meter: 'Energy meter', relay: 'Relay', socket: 'Socket', light: 'Light', ac: 'AC' }[seen];
       if (/1PM/i.test(device.model || '')) return 'Relay';
       return 'Energy meter';
-    }
-    placeFor(device) {
-      if (device.virtual) return TREE.placed[device.id] || null;
-      const native = NATIVE ? nativePlaced(HASS?.devices || {}, NATIVE) : {};
-      return TREE.placed[device.id] || native[device.id] || (NATIVE?.areaLoc?.[device.area_id] ? `area:${device.area_id}` : null);
     }
     deviceRows(locationId = null) {
       const devices = PORTAL.isRoot && Object.keys(this._adminDevices || {}).length ? this._adminDevices : (HASS?.devices || {});
@@ -3359,6 +3357,10 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
         ? `<label class="admin-control"><span>Active client</span><select id="clientSwitch">${clients.map((x) => `<option value="${esc(x.id)}"${x.id === portalClient ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`
         : `<span class="toolbar-label">Client · <b>${esc(this.selectedClient().name)}</b></span>`;
       const setup = this._scope === 'setup';
+      // An installation that has not moved to "floor = client, area = location" yet is offered the switch here.
+      const m = this._migration, changes = m?.changes || {};
+      const upgrade = !setup && PORTAL.isRoot && PORTAL.model === 'labels' ? `<div class="admin-toolbar"><div><b>This installation still places devices by label.</b><p class="admin-note">The current model makes each client a floor and each location an area in Home Assistant, so a device gets its client and location from its area. ${m ? (m.report.blockers.length ? `It cannot switch yet: ${esc(m.report.blockers.join('; '))}` : `Switching would create ${changes.create_floor} floor(s) and ${changes.create_area} area(s) and move ${changes.set_device_area} device(s). Nothing is deleted. Take a backup first.`) : ''}</p></div><span class="sp"></span>${m && !m.report.blockers.length ? this.action(this._confirmMigration ? 'Confirm switch' : 'Switch now', 'data-migration-apply="1"', 'primary') : this.action('See what would change', 'data-migration-plan="1"')}</div>` : '';
+      body = `${upgrade}${body}`;
       return `<div class="admin-head"><div><span class="admin-kicker">Optim Energy / Administration</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${actions || ''}</div></div><div class="admin-toolbar">${picker}<span class="sp"></span>${setup ? '' : this.action('Refresh', 'data-refresh="1"')}</div>${body}`;
     }
     paint(force = false) {
@@ -3553,6 +3555,16 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
         if (box && this._editor) { this._editor.shown = true; box.type = 'text'; box.value = [...bytes].map((x) => alphabet[x % alphabet.length]).join(''); box.select(); }
         return;
       }
+      if (q('[data-migration-plan]')) {
+        try { this._migration = await this._hass.callWS({ type: 'optim_energy/migration/plan' }); this.paint(true); } catch (x) { this.flash(x?.message || 'Could not read the plan.', true); }
+        return;
+      }
+      if (q('[data-migration-apply]')) {
+        if (!this._confirmMigration) { this._confirmMigration = true; this.paint(true); return; }
+        this._confirmMigration = false;
+        try { await this._hass.callWS({ type: 'optim_energy/migration/apply' }); this._migration = null; await this.afterChange('Switched. Locations are areas now.'); } catch (x) { this.flash(x?.message || 'Could not switch.', true); }
+        return;
+      }
       if ((b = q('[data-device-view]'))) { this._deviceView = b.dataset.deviceView; this._editor = null; this.paint(true); return; }
       if ((b = q('[data-inbox-assign]'))) { const d = (this._inbox || []).find((x) => x.id === b.dataset.inboxAssign); if (d) { this._editor = { kind: 'assign', devices: [d.id], client: d.client || portalClient, location: d.location, group: d.group || '' }; this.paint(true); } return; }
       if (q('[data-assign-picked]')) { if (this._picked.size) { this._editor = { kind: 'assign', devices: [...this._picked], client: portalClient, location: null, group: '' }; this.paint(true); } return; }
@@ -3680,152 +3692,11 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
     }
   }
 
-  // Tenant administration stays in the portal. Client administrators never
-  // become Home Assistant administrators and never see another client.
-  class TenantAdminCard extends Base {
-    build() {
-      this._users = null;
-      this._confirmDelete = null;
-      this.shadowRoot.innerHTML = `<style>${BASE}
-.head{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}.head p{margin:4px 0 0;color:var(--muted);font-size:13px}
-.clientbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);font-size:13px;color:var(--muted)}
-.clientbar select{min-width:220px}.users{display:grid;gap:8px}.user{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:10px 12px;display:grid;grid-template-columns:minmax(170px,1.4fr) minmax(130px,.8fr) minmax(150px,1fr) auto;gap:8px;align-items:center}.user.me{border-color:var(--accent)}.who{display:grid;gap:2px;min-width:0}.who b{font-weight:600;overflow-wrap:anywhere}.who small{color:var(--muted);font-size:12px}.user select,.user button,.form input,.form select{font-size:13px;min-width:0}.acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;border-top:1px solid var(--line);padding-top:12px}.form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.form .wide{grid-column:1/-1}.err{color:var(--bad);font-size:13px}.ok{color:var(--ok);font-size:13px}.empty{color:var(--muted);padding:12px 0}
-.newclient{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.newclient label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}.newclient input{min-width:220px}
-.danger{border:1px solid color-mix(in srgb,var(--bad) 45%,var(--line));border-radius:var(--radius);padding:12px;display:grid;gap:8px;background:color-mix(in srgb,var(--bad) 6%,var(--panel))}.danger b{color:var(--bad)}.danger span{color:var(--muted);font-size:12.5px}.danger button{border-color:var(--bad);color:var(--bad)}
-.locmap{display:grid;gap:7px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:11px 12px}.locmap .labs{display:flex;gap:8px 18px;flex-wrap:wrap}.locmap label{display:flex;gap:7px;align-items:center;font-size:13px}.locmap input{accent-color:var(--accent)}.locmap small{color:var(--muted);font-size:12px}
-@media(max-width:760px){.user{grid-template-columns:minmax(0,1fr) auto}.who{grid-column:1/-1}.acts{grid-column:1/-1;justify-content:flex-start}}
-</style><div class="w"><div class="head"><div><h2>People & clients</h2><p>Client administrators can create and disable users for their own client. Only the Home Assistant administrator can create a client or another client administrator.</p></div><button data-reload="1">Refresh</button></div><div id="clientbar"></div><div id="locationmap"></div><div id="users"></div><div id="newclient"></div><div id="danger"></div><div id="form"></div><span class="err" id="err"></span><span class="ok" id="ok"></span></div>`;
-      const r = this.shadowRoot;
-      r.querySelector('.w').addEventListener('click', (e) => this.onClick(e));
-      r.querySelector('.w').addEventListener('change', (e) => this.onChange(e));
-      this.startTimer();
-    }
-    async refresh() { await this.load(); this.paint(); }
-    async load() {
-      if (!PORTAL.ready) await ensureTree(this._hass);
-      if (!portalCanManageUsers()) { this._users = []; return; }
-      const seq = (this._loadSeq || 0) + 1;
-      this._loadSeq = seq;
-      const client = portalClient;
-      try {
-        const users = await this._hass.callWS({ type: 'optim_energy/user/list', ...(PORTAL.isRoot && client ? { client } : {}) });
-        const catalog = PORTAL.isRoot ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }) : [];
-        if (seq !== this._loadSeq || client !== portalClient) return;
-        this._users = users;
-        this._catalog = catalog;
-        this._error = '';
-      } catch (e) {
-        if (seq !== this._loadSeq || client !== portalClient) return;
-        this._users = [];
-        this._error = e?.message || String(e);
-      }
-    }
-    locations() { return TREE.places.filter((p) => p.kind === 'location').sort(byName); }
-    async onClick(e) {
-      const q = (a) => e.target.closest(a);
-      let b;
-      if (q('[data-reload]')) { await this.refresh(); return; }
-      if ((b = q('[data-toggle]'))) {
-        const u = this._users?.find((x) => x.id === b.dataset.toggle); if (!u) return;
-        try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: u.id, is_active: !u.is_active }); await this.refresh(); this.flash(`${u.name} ${u.is_active ? 'disabled' : 'enabled'}.`); } catch (x) { this.flash(x?.message || 'Could not update the user.', true); }
-        return;
-      }
-      if ((b = q('[data-delete]'))) {
-        const u = this._users?.find((x) => x.id === b.dataset.delete); if (!u) return;
-        if (this._confirmDelete !== u.id) { this._confirmDelete = u.id; this.paint(); return; }
-        try { await this._hass.callWS({ type: 'optim_energy/user/delete', user_id: u.id }); this._confirmDelete = null; await this.refresh(); this.flash(`${u.name} deleted.`); } catch (x) { this.flash(x?.message || 'Could not delete the user.', true); }
-        return;
-      }
-      if (q('[data-create-client]')) {
-        const i = this.shadowRoot.getElementById('clientName'), name = i?.value.trim(); if (!name) return;
-        try {
-          const made = await this._hass.callWS({ type: 'optim_energy/client/create', name });
-          whoLoad = null; treeLoad = null; portalClient = made.id;
-          try { localStorage.setItem(CLIENT_KEY, made.id); } catch (x) { /* private window */ }
-          resetPortalTree();
-          await ensureTree(this._hass);
-          i.value = ''; this.flash(`${made.name} created.`); await this.refresh();
-        } catch (x) { this.flash(x?.message || 'Could not create the client.', true); }
-        return;
-      }
-      if (q('[data-delete-client]')) {
-        if (!PORTAL.isRoot || !portalClient) return;
-        if (!this._confirmClientDelete) { this._confirmClientDelete = true; this.paint(); return; }
-        const current = (PORTAL.clients || []).find((x) => x.id === portalClient);
-        try {
-          await this._hass.callWS({ type: 'optim_energy/client/delete', client: portalClient, delete_users: true });
-          this._confirmClientDelete = false;
-          whoLoad = null; treeLoad = null; portalClient = null;
-          resetPortalTree();
-          await ensureTree(this._hass);
-          await this.refresh();
-          this.flash(`${current?.name || 'Client'} and its users deleted.`);
-        } catch (x) { this._confirmClientDelete = false; this.paint(); this.flash(x?.message || 'Could not delete the client.', true); }
-        return;
-      }
-      if (q('[data-create-user]')) { await this.createUser(); return; }
-    }
-    async onChange(e) {
-      const t = e.target;
-      if (t.id === 'clientSwitch') {
-        this._users = null;
-        this._confirmClientDelete = false;
-        this.paint();
-        await switchPortalClient(this._hass, t.value);
-        await this.refresh();
-        return;
-      }
-      if (t.dataset.clientLabel) {
-        const chosen = [...this.shadowRoot.querySelectorAll('[data-client-label]')].filter((x) => x.checked).map((x) => x.dataset.clientLabel);
-        try {
-          const res = await this._hass.callWS({ type: 'optim_energy/client/set_locations', client: portalClient, labels: chosen });
-          const c = (PORTAL.clients || []).find((x) => x.id === portalClient); if (c) c.labels = res.labels || chosen;
-          whoLoad = null; treeLoad = null; await ensureTree(this._hass); await this.refresh(); this.flash('Client locations updated.');
-        } catch (x) { this.flash(x?.message || 'Could not assign the location.', true); this.paint(); }
-        return;
-      }
-      if (t.dataset.userLoc) {
-        try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: t.dataset.userLoc, location: t.value }); await this.refresh(); this.flash('Location updated.'); } catch (x) { this.flash(x?.message || 'Could not move the user.', true); }
-      }
-      if (t.dataset.userRole) {
-        try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: t.dataset.userRole, role: t.value, location: t.value === 'client_admin' ? '' : this.locations()[0]?.id || '' }); await this.refresh(); this.flash('Role updated.'); } catch (x) { this.flash(x?.message || 'Could not change the role.', true); this.paint(); }
-      }
-    }
-    async createUser() {
-      const r = this.shadowRoot, val = (id) => r.getElementById(id)?.value.trim() || '';
-      const role = val('newRole') || 'user', location = role === 'client_admin' ? null : (val('newLocation') || null);
-      const payload = { type: 'optim_energy/user/create', client: portalClient, name: val('newName'), username: val('newUsername'), password: r.getElementById('newPassword')?.value || '', role, ...(location ? { location } : {}) };
-      try {
-        await this._hass.callWS(payload);
-        ['newName', 'newUsername', 'newPassword'].forEach((id) => { const el = r.getElementById(id); if (el) el.value = ''; });
-        await this.refresh(); this.flash('User created.');
-      } catch (x) { this.flash(x?.message || 'Could not create the user.', true); }
-    }
-    flash(text, bad = false) { const r = this.shadowRoot; r.getElementById('err').textContent = bad ? text : ''; r.getElementById('ok').textContent = bad ? '' : text; clearTimeout(this._msgT); this._msgT = setTimeout(() => { r.getElementById('err').textContent = ''; r.getElementById('ok').textContent = ''; }, 5000); }
-    paint() {
-      const r = this.shadowRoot; if (!r) return;
-      if (!portalCanManageUsers()) { r.getElementById('users').innerHTML = '<div class="empty">Only a client administrator can change users.</div>'; r.getElementById('clientbar').innerHTML = ''; r.getElementById('locationmap').innerHTML = ''; r.getElementById('newclient').innerHTML = ''; r.getElementById('form').innerHTML = ''; return; }
-      const users = this._users || [], locs = this.locations(), root = PORTAL.isRoot;
-      const current = (PORTAL.clients || []).find((x) => x.id === portalClient) || {};
-      const selectedLabels = new Set(current.labels || []);
-      r.getElementById('locationmap').innerHTML = root
-        ? `<div class="locmap"><b>Portal locations</b><small>Choose the 📍 labels that belong to this client. Their areas and floors become groups.</small><div class="labs">${(this._catalog || []).map((x) => `<label><input type="checkbox" data-client-label="${esc(x.id)}"${selectedLabels.has(x.id) ? ' checked' : ''}${x.client && x.client !== portalClient ? ' disabled' : ''}>${esc(x.name)}${x.client && x.client !== portalClient ? ` <small>(${esc(x.client)})</small>` : ''}</label>`).join('') || '<small>No 📍 location labels exist yet.</small>'}</div></div>`
-        : `<div class="locmap"><b>Portal locations</b><small>${locs.map((x) => esc(x.name)).join(' · ') || 'No locations assigned.'}</small></div>`;
-      r.getElementById('clientbar').innerHTML = `${root ? `<label class="clientbar"><span>Client</span><select id="clientSwitch" aria-label="Client">${(PORTAL.clients || []).map((c) => `<option value="${esc(c.id)}"${c.id === portalClient ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>` : `<div class="clientbar"><span>Client · ${esc(PORTAL.clientName || '')}</span></div>`}`;
-      r.getElementById('newclient').innerHTML = root ? `<div class="newclient"><label>Name of new client<input id="clientName" maxlength="80" placeholder="Example Client"></label><button class="gold" data-create-client="1">Create client</button></div>` : '';
-      r.getElementById('danger').innerHTML = root && (PORTAL.clients || []).length > 1 ? `<div class="danger"><b>Delete the selected client</b><span>This removes ${esc(current.name || portalClient)} and deletes every Home Assistant user assigned to it. Native entities, areas, automation history and recorder data are not deleted.</span><button data-delete-client="1">${this._confirmClientDelete ? 'Confirm delete client and users' : 'Delete client…'}</button></div>` : '';
-      r.getElementById('users').innerHTML = users.length ? users.map((u) => {
-        const self = u.id === PORTAL.user_id, protectedUser = u.role === 'client_admin' && !root, locOpts = locs.map((p) => `<option value="${esc(p.id)}"${p.id === u.location ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
-        return `<div class="user${self ? ' me' : ''}"><div class="who"><b>${esc(u.name || u.username || u.id)}</b><small>${esc(u.username || '')}${self ? ' · you' : ''}${u.is_active ? '' : ' · disabled'}</small></div><div>${root ? `<select data-user-role="${u.id}" aria-label="Role for ${esc(u.name)}"${self ? ' disabled' : ''}><option value="user"${u.role === 'user' ? ' selected' : ''}>User</option><option value="client_admin"${u.role === 'client_admin' ? ' selected' : ''}>Client admin</option></select>` : `<span class="muted">${u.role === 'client_admin' ? 'Client admin' : 'User'}</span>`}</div><div>${u.role === 'client_admin' ? '<span class="muted">All locations</span>' : `<select data-user-loc="${u.id}" aria-label="Location for ${esc(u.name)}"${protectedUser ? ' disabled' : ''}><option value="">Choose location</option>${locOpts}</select>`}</div><div class="acts">${protectedUser ? '' : `<button data-toggle="${u.id}"${self ? ' disabled' : ''}>${u.is_active ? 'Disable' : 'Enable'}</button><button data-delete="${u.id}"${self ? ' disabled' : ''}>${this._confirmDelete === u.id ? 'Confirm delete' : 'Delete'}</button>`}</div></div>`;
-      }).join('') : '<div class="empty">No users assigned to this client yet.</div>';
-      r.getElementById('form').innerHTML = `<div class="form"><div class="wide"><b>Add a user</b><span class="muted" style="display:block;font-size:12.5px;margin-top:3px">The user signs in at this same Home Assistant address and receives a fixed, tenant-only view.</span></div><label>Name<input id="newName" autocomplete="off" maxlength="80"></label><label>Username<input id="newUsername" autocomplete="off" maxlength="80"></label><label>Password<input id="newPassword" type="password" autocomplete="new-password" minlength="8"></label><label>Role<select id="newRole">${root ? '<option value="user">User</option><option value="client_admin">Client admin</option>' : '<option value="user">User</option>'}</select></label><label>Location<select id="newLocation"><option value="">Choose location</option>${locs.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><div class="wide"><button class="gold" data-create-user="1">Create user</button></div></div>`;
-    }
-  }
 
-  // The bottom bar on phones and tablets: always at the very bottom, small enough to fit every screen.
+    // The bottom bar on phones and tablets: always at the very bottom, small enough to fit every screen.
   const CLIENT_NAV = [['Overview', 'mdi:view-dashboard-outline', HOME_PATH], ['Groups', 'mdi:floor-plan', '/energy-groups/groups'], ['Controls', 'mdi:tune-variant', '/energy-controls/controls'], ['Devices', 'mdi:power-plug-outline', '/energy-devices/topology'], ['Reports', 'mdi:chart-box-outline', '/energy-reports/report'], ['Alerts', 'mdi:bell-outline', '/energy-alerts/alerts'], ['Setup', 'mdi:cog-outline', SETUP_PATH, true]];
   const ADMIN_NAV = [['Clients', 'mdi:account-group-outline', '/energy-admin/clients'], ['Locations', 'mdi:map-marker-multiple-outline', '/energy-admin/locations'], ['People', 'mdi:account-multiple-outline', '/energy-admin/people'], ['Devices', 'mdi:power-plug-outline', '/energy-admin/devices']];
-  class NavCard extends HTMLElement {
+class NavCard extends HTMLElement {
     setConfig() {}
     getCardSize() { return 1; }
     getGridOptions() { return { columns: 'full', rows: 1 }; }
@@ -4048,7 +3919,6 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
   reg('building-location-picker-card', LocationPickerCard, 'Choose a location');
   reg('building-schedules-card', SchedulesCard, 'Automations');
   reg('building-alert-rules-card', AlertRulesCard, 'Alert rules');
-  reg('building-tenant-admin-card', TenantAdminCard, 'People and clients');
   reg('building-controls-card', ControlsCard, 'Controls');
   reg('building-3d-card', Building3dCard, '3D view');
   reg('building-alerts-card', AlertsCard, 'Building alerts');

@@ -415,7 +415,6 @@ class TenancyManager:
         self._sync_lock = asyncio.Lock()
         self._sync_cancel = None
         self._unsubscribers: list[Any] = []
-        self._group_compat: Any = None
 
     @property
     def areas(self) -> bool:

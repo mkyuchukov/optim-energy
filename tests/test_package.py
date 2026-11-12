@@ -80,7 +80,6 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Object.keys(hass.panels || {})", source)
         self.assertIn("allowed.has(id)", source)
         self.assertIn("optim_energy/whoami", source)
-        self.assertIn("building-tenant-admin-card", source)
 
     def test_server_tenancy_files_are_present(self) -> None:
         for name in ("tenancy.py", "firewall.py", "sidebar.py"):
