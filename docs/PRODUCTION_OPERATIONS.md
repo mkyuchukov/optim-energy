@@ -322,6 +322,21 @@ check is reproduced and fixed.
 | Rollback checkpoint | Copy back the preserved `optim_energy-pre-2026-11-12-v0.4.5` directory |
 | Incidents / follow-up | REST guard now accepts only signed Supervisor ingress-session cookies; proxy passes ingress paths and keeps uploads/WebSocket support |
 
+### 2026-11-12 v0.5.0 table-first administration rollout
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 14:20–14:45 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.4.6 / 0.5.0 |
+| Backup/snapshot | Existing `before-optim-energy-v0.4.0-2026-11-12`; previous integration directory preserved |
+| Runtime suites | Unit, HA runtime, three-client scale, browser, hassfest and HACS: PASS |
+| VM smoke result | N/A; live Administration table views verified |
+| Client verification | Clients, Locations, People and Devices render in table form; one-location user behavior covered by browser acceptance |
+| Rollback checkpoint | Copy back the preserved `optim_energy-pre-2026-11-12-v0.5.0` directory |
+| Incidents / follow-up | v0.5.1 removes the unused legacy admin card implementation; no tenant or registry data loss observed |
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
