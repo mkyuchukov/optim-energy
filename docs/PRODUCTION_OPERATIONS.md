@@ -232,6 +232,7 @@ check is reproduced and fixed.
 - [x] Patch `v0.3.1` restores tenant registry names and device types; production verified
 - [x] Separate Administration console and People workspace implemented; production verified
 - [x] `v0.6.0` closes client-administrator isolation holes and starts fail-closed; production verified
+- [x] `v0.7.0` moves production to floor = client, area = location; migration applied and verified
 
 ## Maintenance record template
 
@@ -352,6 +353,21 @@ check is reproduced and fixed.
 | Client verification | One client with two locations, one portal user, 134 devices, 1,486 entities, 11 automations and the settings tree unchanged after restart; Administration renders. No client-account login was performed |
 | Rollback checkpoint | Restore the manual backup above with Home Assistant stopped, or reinstall `v0.5.8` from the Marketplace |
 | Incidents / follow-up | None. The Marketplace had recorded `v0.3.0` as installed while the files were 0.5.8; it now reads `v0.6.0`. Free disk space on the VM was 5.6 GB of 30.8 GB, which is why the backup excluded the database |
+
+### 2026-11-12 v0.7.0 and the move to floors and areas
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 22:25–22:35 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.6.0 / 0.7.0, installed through the Marketplace update entity; then `optim_energy/migration/apply` at 22:31 |
+| Backup/snapshot | Manual `before-optim-energy-v0.7.0-2026-11-12` before the install; manual `before-optim-energy-areas-migration-2026-11-12` before the migration, copied off the VM. Both configuration only |
+| Runtime suites | Unit, HA runtime (migration, isolation, device moves, client-administrator refusals, restart), three-client scale, browser on both models, hassfest and HACS: PASS |
+| VM smoke result | N/A; migration and rollback rehearsed on an isolated HA 2026.11.0 copy of the configuration. Apply matched the dry run; restoring the backup onto 0.6.0 brought the label model back |
+| Client verification | 63 changes as planned: 1 floor, 2 areas, 46 devices and 14 device-less entities moved, nothing deleted. One client with two locations (43 and 3 devices, 758 and 57 entities), nine groups, one portal user, prices, main devices, wiring, sums and schedules unchanged. A second apply is refused. No client-account login was performed |
+| Rollback checkpoint | Stop Home Assistant and restore `before-optim-energy-areas-migration-2026-11-12`; the pre-migration store is also kept as `optim_energy.tenancy_before_areas` |
+| Incidents / follow-up | After the migration the entity list an administrator gets for one client held only the 14 device-less entities. Client accounts were not affected. Fixed in 0.7.1 |
 
 ## Repository protection
 

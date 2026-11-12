@@ -1590,9 +1590,20 @@ class TenancyManager:
         """Return entities in a client tree, including legacy placed devices."""
         tree = self.data.get("trees", {}).get(client_id, {})
         allowed: set[str] = set()
+        area_ids: set[str] = set()
         for place in _place_locations(tree):
-            _, entities = self._policy_for_location(client_id, str(place["id"]), tree)
+            areas, entities = self._policy_for_location(client_id, str(place["id"]), tree)
+            area_ids.update(areas)
             allowed.update(entities)
+        if self.areas:
+            # In the new model the policy names the area, not each entity, so
+            # the entities of the devices in those areas are added here.
+            device_ids = {d.id for d in dr.async_get(self.hass).devices if d.area_id in area_ids}
+            allowed.update(
+                entity.entity_id
+                for entity in er.async_get(self.hass).entities.values()
+                if entity.device_id in device_ids
+            )
         return allowed
 
     def _device_ids_for_location(

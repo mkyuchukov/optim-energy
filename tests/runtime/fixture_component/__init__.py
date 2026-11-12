@@ -9,7 +9,7 @@ from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr, label_registry as lr
+from homeassistant.helpers import device_registry as dr, entity_registry as er, label_registry as lr
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -51,6 +51,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     probatio.Required("name"): str,
                     probatio.Optional("area_id"): str,
                     probatio.Optional("labels"): [str],
+                    probatio.Optional("entity"): bool,
                 }
             ],
         }
@@ -80,6 +81,17 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 changes["labels"] = wanted - lr.async_get_missing_label_ids(hass, wanted)
             if changes:
                 device = registry.async_update_device(device.id, **changes)
+            if spec.get("entity"):
+                # A registry-only sensor, so the suite has an entity that
+                # belongs to a device rather than standing on its own.
+                er.async_get(hass).async_get_or_create(
+                    "sensor",
+                    "optim_runtime_fixture",
+                    f"{spec['key']}_power",
+                    config_entry=hass.config_entries.async_get_entry(spec_entry_id),
+                    device_id=device.id,
+                    suggested_object_id=f"{spec['key']}_power",
+                )
             created.append(
                 {
                     "id": device.id,

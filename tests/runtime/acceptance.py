@@ -24,6 +24,9 @@ OWNER_PASSWORD = "Runtime-Owner-2026!"
 CLIENT_A_USER = ("runtime_user_a", "Runtime-UserA-2026!")
 CLIENT_B_USER = ("runtime_user_b", "Runtime-UserB-2026!")
 CLIENT_ADMIN_A = ("runtime_admin_a", "Runtime-AdminA-2026!")
+# Registry-only sensors the fixture hangs on each client's device.
+A_DEVICE_SENSOR = "sensor.client_a_area_device_power"
+B_DEVICE_SENSOR = "sensor.client_b_label_device_power"
 LEGACY_TREE = {
     "places": [
         {"id": "loc:legacy", "name": "Legacy Site", "kind": "location", "parent": None},
@@ -494,7 +497,7 @@ def assert_tenant_ws(
         registry_ids = {entry["entity_id"] for entry in registry}
         assert_equal(
             registry_ids,
-            expected_entities,
+            expected_entities | {A_DEVICE_SENSOR},
             "tenant-filtered entity registry",
         )
         devices = tenant.command(
@@ -698,11 +701,13 @@ def run(version: str, *, keep: bool = False) -> None:
                         "key": "client_a_area_device",
                         "name": "Runtime Client A Area Device",
                         "area_id": "living_room",
+                        "entity": True,
                     },
                     {
                         "key": "client_b_label_device",
                         "name": "Runtime Client B Label Device",
                         "labels": ["runtime_client_b"],
+                        "entity": True,
                     },
                 ],
             }
@@ -948,6 +953,13 @@ def run(version: str, *, keep: bool = False) -> None:
         try:
             root.auth(root_token)
             refused(root, {"type": "optim_energy/group/save", "name": "Too early", "parent": location_a}, "a group before the migration")
+            def root_client_entities(client: str) -> set[str]:
+                listed = root.command({"type": "optim_energy/registry/list", "kind": "entity", "client": client})
+                return {entry["entity_id"] for entry in listed}
+
+            scoped_a = {"input_boolean.runtime_a_toggle", A_DEVICE_SENSOR}
+            scoped_b = {"input_boolean.runtime_b_toggle", B_DEVICE_SENSOR}
+            assert_equal(root_client_entities(client_a), scoped_a, "root's view of client A before the migration")
             plan = root.command({"type": "optim_energy/migration/plan"})
             assert_equal(plan["report"]["blockers"], [], "migration blockers")
             for location, seen in plan["visibility"].items():
@@ -956,6 +968,8 @@ def run(version: str, *, keep: bool = False) -> None:
             refused(root, {"type": "optim_energy/migration/apply"}, "a second migration")
             time.sleep(4)  # the debounced permission sync after the registry changes
 
+            assert_equal(root_client_entities(client_a), scoped_a, "root's view of client A after the migration")
+            assert_equal(root_client_entities(client_b), scoped_b, "root's view of client B after the migration")
             tree_a = client_tree(root, client_a)
             area_a = place_ids(tree_a, "location")[location_a]["area_id"]
             assert_true(area_a, "location A has no area after the migration")
