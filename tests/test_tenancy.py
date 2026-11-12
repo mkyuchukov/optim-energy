@@ -494,9 +494,9 @@ class TenancyTests(unittest.TestCase):
 
         registered: set[str] = set()
         for name in ("tenancy.py", "portal_ops.py"):
-            registered.update(
-                re.findall(r'Required\("type"\): f"\{DOMAIN\}/([a-z_/]+)"', (COMPONENT / name).read_text())
-            )
+            source = (COMPONENT / name).read_text()
+            registered.update(re.findall(r'Required\("type"\): f"\{DOMAIN\}/([a-z_/]+)"', source))
+            registered.update(re.findall(r'_command\(\s*"([a-z_/]+)"', source))
         documented = set(
             re.findall(r"^\| `([a-z_/]+)` \|", (ROOT / "docs" / "CAPABILITIES.md").read_text(), re.M)
         )

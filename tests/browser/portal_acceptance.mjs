@@ -195,8 +195,41 @@ try {
   await deleteRow.locator('[data-delete]').click();
   await deleteRow.waitFor({ state: 'detached', timeout: 20000 });
 
+  if (state.model === 'areas') {
+    // After the move to floors and areas, root manages locations and groups inside Administration.
+    await root.goto(`${base}/energy-admin/locations`, { waitUntil: 'domcontentloaded' });
+    const locs = await waitCard(root, 'building-admin-table-card');
+    await locs.getByRole('heading', { level: 1, name: 'Locations' }).waitFor({ timeout: 30000 });
+    await root.locator('dialog-http-pending-config').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+    await locs.locator('#clientSwitch').selectOption(state.client_a);
+    await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().dispatchEvent('click');
+    // Home Assistant's own pending-config dialog holds keyboard focus on this page, so typed text
+    // would land in it. Set the field the way a user's typing would leave it instead.
+    const typeInto = (locator, text) => locator.evaluate((el, value) => { el.value = value; el.dispatchEvent(new Event('input', { bubbles: true, composed: true })); }, text);
+    await locs.locator('[data-new-group]').dispatchEvent('click');
+    await typeInto(locs.locator('#editorName'), 'Browser Group');
+    await locs.locator('[data-save-editor]').dispatchEvent('click');
+    const groupRow = locs.locator('tbody tr').filter({ hasText: 'Browser Group' }).first();
+    await groupRow.waitFor({ timeout: 20000 }).catch(async (error) => {
+      throw new Error(`group row did not appear; page says: ${(await locs.evaluate((el) => [...(el.shadowRoot || el).children].filter((x) => x.tagName !== 'STYLE').map((x) => x.textContent).join(' ')).catch(() => '')).replace(/\s+/g, ' ').slice(0, 1500)}`, { cause: error });
+    });
+    await groupRow.locator('[data-delete-group]').dispatchEvent('click');
+    await locs.locator('tbody tr').filter({ hasText: 'Browser Group' }).first().locator('[data-delete-group]').dispatchEvent('click');
+    await locs.locator('tbody tr').filter({ hasText: 'Browser Group' }).first().waitFor({ state: 'detached', timeout: 20000 });
+
+    await locs.locator('[data-new-location]').dispatchEvent('click');
+    await typeInto(locs.locator('#editorName'), 'Browser Annex');
+    await locs.locator('[data-save-editor]').dispatchEvent('click');
+    const annex = () => locs.locator('tbody tr').filter({ hasText: 'Browser Annex' }).first();
+    await annex().waitFor({ timeout: 20000 });
+    assert.equal(await locs.locator('[data-move-location]').count(), 0, 'the label-only Move action is still offered');
+    await annex().locator('[data-delete-location]').dispatchEvent('click');
+    await annex().locator('[data-delete-location]').dispatchEvent('click');
+    await annex().waitFor({ state: 'detached', timeout: 20000 });
+  }
+
   assert.deepEqual(pageErrors, [], `browser page errors: ${pageErrors.join('; ')}`);
-  console.log(JSON.stringify({ profile: 'browser portal flows', status: 'PASS' }, null, 2));
+  console.log(JSON.stringify({ profile: `browser portal flows (${state.model || 'labels'} model)`, status: 'PASS' }, null, 2));
 } finally {
   await rootContext?.close();
   await adminContext?.close();

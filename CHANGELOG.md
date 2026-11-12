@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+Adds a new placement model, switched on once by a Home Assistant administrator. Installing this version changes nothing until then.
+
+- New model: a client is a Home Assistant floor, a location is one area on that floor, and groups live in the portal. A device's location is its area, so giving a device that area in Home Assistant's own add-device flow assigns it, for any integration.
+- `optim_energy/migration/plan` reports what the switch would change; `optim_energy/migration/apply` performs it once. Location ids do not change, so people, prices, main devices and schedules keep their locations. Old labels and areas are kept, and the previous store is saved as `optim_energy.tenancy_before_areas`.
+- After the switch each location's permission group covers exactly its area. Sum sensors are visible only in the location of their virtual device; before, every location of a client could see all of that client's sums.
+- New commands for the new model: `location/save`, `location/delete`, `group/save`, `group/delete`, `device/assign`. A Home Assistant administrator can move any device anywhere or remove it from a client; a client administrator can only move its own devices within its own client and manage its own groups.
+- Administration uses these commands once switched: a Groups panel per location and "Remove from client" on devices. "Move location to another client" is not available in the new model yet.
+- Administration no longer loses what was typed into an open form when a background refresh arrives.
+- `tools/migration_dry_run.py` runs the same plan offline against a configuration folder.
+
 ## 0.6.0
 
 Security release for shared instances. Install it before adding a second client.

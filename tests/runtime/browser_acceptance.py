@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from acceptance import (
@@ -197,6 +198,29 @@ def run(version: str, *, keep: bool = False) -> None:
             env=env,
             check=True,
             timeout=180,
+        )
+
+        # The same flows must pass after the move to "floor = client,
+        # area = location"; location ids do not change, so the state is reused.
+        migrate = WebSocket(http.host, http.port)
+        migrate.auth(root_state["tokens"]["access_token"])
+        try:
+            migrate.command({"type": "optim_energy/migration/apply"})
+            # Undo the price the first pass typed, so the same steps run again.
+            fresh = migrate.command({"type": "optim_energy/tree/get", "client": client_a})["tree"]
+            fresh["prices"] = {}
+            migrate.command({"type": "optim_energy/tree/save", "client": client_a, "tree": fresh})
+        finally:
+            migrate.close()
+        time.sleep(4)
+        state["model"] = "areas"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        subprocess.run(
+            ["node", "portal_acceptance.mjs", str(state_path)],
+            cwd=BROWSER_DIR,
+            env=env,
+            check=True,
+            timeout=240,
         )
         success = True
         print(json.dumps({"profile": "browser portal flows", "status": "PASS"}, indent=2))

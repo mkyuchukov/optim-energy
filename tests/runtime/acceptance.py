@@ -929,6 +929,122 @@ def run(version: str, *, keep: bool = False) -> None:
             "migration backup remained idempotent after a second reload",
         )
         assert_tenant_rest(http, token_a)
+
+        # ---- Move to "floor = client, area = location" ----------------------
+        a_device = devices_by_name["Runtime Client A Area Device"]["id"]
+
+        def refused(ws: WebSocket, command: dict[str, Any], what: str) -> None:
+            try:
+                ws.command(command)
+            except RuntimeError:
+                return
+            raise AssertionError(f"{what} was not refused")
+
+        def place_ids(tree: dict[str, Any], kind: str) -> dict[str, dict[str, Any]]:
+            return {p["id"]: p for p in tree["places"] if p["kind"] == kind}
+
+        root = WebSocket(http.host, http.port)
+        admin_a = WebSocket(http.host, http.port)
+        try:
+            root.auth(root_token)
+            refused(root, {"type": "optim_energy/group/save", "name": "Too early", "parent": location_a}, "a group before the migration")
+            plan = root.command({"type": "optim_energy/migration/plan"})
+            assert_equal(plan["report"]["blockers"], [], "migration blockers")
+            for location, seen in plan["visibility"].items():
+                assert_equal((seen["lost"], seen["gained"]), ([], []), f"visibility change planned for {location}")
+            root.command({"type": "optim_energy/migration/apply"})
+            refused(root, {"type": "optim_energy/migration/apply"}, "a second migration")
+            time.sleep(4)  # the debounced permission sync after the registry changes
+
+            tree_a = client_tree(root, client_a)
+            area_a = place_ids(tree_a, "location")[location_a]["area_id"]
+            assert_true(area_a, "location A has no area after the migration")
+            assert_true("area:living_room" in place_ids(tree_a, "group"), "the old area did not become a group")
+            assert_equal(tree_a["placed"].get(a_device), "area:living_room", "device kept its group")
+            assert_equal(
+                harness.storage("optim_energy.tenancy_before_areas")["data"]["data"].get("model"),
+                None,
+                "the pre-migration store was not kept",
+            )
+            # Everyone sees exactly what they saw before.
+            assert_tenant_ws(
+                http,
+                token_a,
+                expected_entities={"input_boolean.runtime_a_toggle"},
+                expected_devices={a_device},
+                expected_areas={area_a},
+            )
+            b = WebSocket(http.host, http.port)
+            try:
+                b.auth(token_b)
+                assert_equal(
+                    {s["entity_id"] for s in b.command({"type": "get_states"}) if s["entity_id"].startswith("input_boolean.")},
+                    {"input_boolean.runtime_b_toggle"},
+                    "Client B state isolation after the migration",
+                )
+                assert_equal(
+                    {d["id"] for d in b.command({"type": "optim_energy/registry/list", "kind": "device"})},
+                    {b_device},
+                    "Client B devices after the migration",
+                )
+                # Root moves B's device to A: B loses it at once, A gains it.
+                root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": b_device, "place": location_a})
+                assert_equal(
+                    b.command({"type": "optim_energy/registry/list", "kind": "device"}), [], "B kept a device that moved to A"
+                )
+                assert_equal(
+                    client_tree(root, client_a)["placed"].get(b_device), location_a, "moved device is not in A"
+                )
+                root.command({"type": "optim_energy/device/assign", "client": client_b, "device_id": b_device, "place": location_b})
+                assert_equal(
+                    {d["id"] for d in b.command({"type": "optim_energy/registry/list", "kind": "device"})},
+                    {b_device},
+                    "device did not return to B",
+                )
+            finally:
+                b.close()
+
+            # A client administrator organises its own devices and nothing else.
+            admin_a.auth(http.login(*CLIENT_ADMIN_A)["access_token"])
+            group = admin_a.command({"type": "optim_energy/group/save", "name": "Lab", "parent": location_a})["id"]
+            admin_a.command({"type": "optim_energy/device/assign", "device_id": a_device, "place": group})
+            assert_equal(admin_a.command({"type": "optim_energy/tree/get"})["tree"]["placed"].get(a_device), group, "client admin group move")
+            refused(admin_a, {"type": "optim_energy/device/assign", "device_id": b_device, "place": location_a}, "taking another client's device")
+            refused(admin_a, {"type": "optim_energy/device/assign", "device_id": a_device, "place": location_b}, "moving a device into another client")
+            refused(admin_a, {"type": "optim_energy/device/assign", "device_id": a_device}, "unassigning a device as a client admin")
+            refused(admin_a, {"type": "optim_energy/group/save", "name": "Sneaky", "parent": location_b}, "a group in another client")
+            refused(admin_a, {"type": "optim_energy/location/save", "name": "Mine"}, "a client admin creating a location")
+            refused(admin_a, {"type": "optim_energy/migration/plan"}, "a client admin reading the migration plan")
+            admin_a.command({"type": "optim_energy/group/delete", "group": group})
+            assert_equal(admin_a.command({"type": "optim_energy/tree/get"})["tree"]["placed"].get(a_device), location_a, "device left a deleted group")
+
+            # Root adds and removes a location; a location in use cannot go.
+            annex = root.command({"type": "optim_energy/location/save", "client": client_a, "name": "Annex"})["id"]
+            assert_true(place_ids(client_tree(root, client_a), "location")[annex]["area_id"], "new location has no area")
+            root.command({"type": "optim_energy/location/delete", "client": client_a, "location": annex})
+            refused(root, {"type": "optim_energy/location/delete", "client": client_a, "location": location_a}, "deleting a location in use")
+        finally:
+            admin_a.close()
+            root.close()
+
+        # The new model survives a restart.
+        harness.restart()
+
+        def login_a() -> str | None:
+            try:
+                return str(http.login(*CLIENT_A_USER)["access_token"])
+            except Exception:
+                return None
+
+        token_after = wait_until(login_a, "Home Assistant did not come back after the restart", timeout=180)
+        time.sleep(6)  # let the integration finish loading and sync permissions
+        assert_tenant_ws(
+            http,
+            token_after,
+            expected_entities={"input_boolean.runtime_a_toggle"},
+            expected_devices={a_device},
+            expected_areas={area_a},
+        )
         success = True
         print(
             json.dumps(
