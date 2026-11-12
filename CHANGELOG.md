@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0
+
+Security release for shared instances. Install it before adding a second client.
+
+- A client administrator's settings save now changes prices only, for its own locations. Places, device placement, wiring, main devices, virtual devices, sums and automations are written only by a Home Assistant administrator or by the server's own checked commands. Previously a client administrator could submit another client's device, area or entity and gain access to it.
+- Alert-rule helpers and automations are recorded per client when the portal creates them, and only the client that created one can change or delete it. Existing schedules are assigned to their client on first start.
+- Deleting a helper needs a client-administrator role, and deleting a sum can only remove a group helper. Previously the stored settings could name any integration for removal.
+- The alert notification template no longer accepts free text.
+- The websocket and REST guards are installed before tenant data loads, so a failed start leaves client accounts denied.
+- Client administrators can no longer change or delete Home Assistant administrators. A Home Assistant administrator can edit people of any client.
+- Wiring, main-device and virtual-device controls are shown to Home Assistant administrators only (use Administration → Devices).
+- Administration: delete buttons show "Confirm delete" on the row being deleted, deleting a virtual device asks for confirmation, and editing a client administrator keeps the role.
+- Device names and models are escaped in the device drawer.
+- `docs/CAPABILITIES.md` lists which role may call each command.
+
 ## 0.5.8
 
 - Apply administrator sidebar cleanup server-side, so stale client Home and Locations panels are removed for every HA administrator before login.
