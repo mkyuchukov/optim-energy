@@ -88,3 +88,10 @@ recovery procedures are in
 [docs/PRODUCTION_OPERATIONS.md](docs/PRODUCTION_OPERATIONS.md).
 
 This is not an official Home Assistant integration.
+
+## License
+
+Copyright 2026 Optimal Industries.
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the
+full license text.
