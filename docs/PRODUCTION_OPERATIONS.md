@@ -219,7 +219,7 @@ check is reproduced and fixed.
 - [ ] Emergency recovery contact and rollback checkpoint recorded
 - [ ] License decision recorded for the repository
 - [ ] First maintenance window and operator assigned
-- [ ] Stable `0.3.x` release and rollback artifacts published
+- [x] Stable `0.3.x` release published as `v0.3.0`
 
 ## Maintenance record template
 
