@@ -10,7 +10,9 @@ the Home Assistant root account remain trusted global resources.
   console for clients, locations and people, and do not enter the client portal
   unless they explicitly choose Preview.
 - Client accounts use the bundled Optim Energy client dashboards and checked
-  portal commands only.
+  portal commands only. Ordinary users may be assigned to one or several
+  locations; a single-location account gets its location preselected and does
+  not see the location picker.
 - File editor, Zigbee2MQTT and other native add-ons remain available to Home
   Assistant administrators from the normal Home Assistant sidebar. Their
   ingress requests use a short-lived Supervisor `ingress_session` capability;

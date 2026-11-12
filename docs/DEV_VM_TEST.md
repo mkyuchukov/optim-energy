@@ -34,7 +34,9 @@ This runbook validates the Optim Energy package on a separate Home Assistant VM.
 - The Home Assistant administrator sees the separate **Administration** console plus normal HA maintenance tools, not the client sidebar.
 - The client administrator sees the client portal and **Setup**, but not Administration.
 - The non-admin client sees only Locations, Overview, Help, Groups, Controls, Devices, Reports and Alerts.
-- Administration opens without browser console errors and exposes Overview, Clients, Locations and People.
+- Administration opens without browser console errors and exposes the table-first Clients, Locations, People and Devices views.
+- An ordinary user assigned to one location lands in that location and does not see a Locations tab.
+- A user assigned to multiple locations sees only those locations in the chooser.
 - Overview opens without browser console errors.
 - Help opens and is readable.
 - Setup is absent for the non-admin client.

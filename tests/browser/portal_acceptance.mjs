@@ -36,7 +36,7 @@ async function waitCard(page, selector) {
 }
 
 async function waitUsers(page, include, exclude) {
-  const users = page.locator('building-admin-card #people');
+  const users = page.locator('building-admin-card #people, building-admin-table-card #people');
   const deadline = Date.now() + 20000;
   let actual = '';
   try {
@@ -58,7 +58,7 @@ let adminPage;
 try {
   // Root client switching: A -> B -> A must update the People list atomically.
   ({ context: rootContext, page: root } = await openPage(state.root, '/energy-admin/people'));
-  const rootCard = await waitCard(root, 'building-admin-card');
+  const rootCard = await waitCard(root, 'building-admin-table-card');
   await rootCard.getByRole('heading', { level: 1, name: 'People' }).waitFor();
   const clientSwitch = rootCard.locator('#clientSwitch');
   await clientSwitch.waitFor();
@@ -72,27 +72,27 @@ try {
   await waitUsers(root, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
 
   // The HA administrator gets the command centre rather than the client pages.
-  for (const [path, title] of [['/energy-admin/overview', 'Overview'], ['/energy-admin/clients', 'Clients'], ['/energy-admin/locations', 'Locations']]) {
+  for (const [path, title] of [['/energy-admin/clients', 'Clients'], ['/energy-admin/locations', 'Locations'], ['/energy-admin/devices', 'Devices']]) {
     await root.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
-    const card = await waitCard(root, 'building-admin-card');
+    const card = await waitCard(root, 'building-admin-table-card');
     await card.getByRole('heading', { level: 1, name: title }).waitFor({ timeout: 30000 });
   }
-  await root.goto(`${base}/energy-admin/overview`, { waitUntil: 'domcontentloaded' });
-  const overviewAgain = await waitCard(root, 'building-admin-card');
+  await root.goto(`${base}/energy-admin/clients`, { waitUntil: 'domcontentloaded' });
+  const overviewAgain = await waitCard(root, 'building-admin-table-card');
   await root.locator('dialog-http-pending-config').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
   await root.waitForTimeout(500);
-  await overviewAgain.getByRole('button', { name: 'Preview selected client' }).dispatchEvent('click');
+  await overviewAgain.getByRole('button', { name: 'Preview' }).first().dispatchEvent('click');
   await root.waitForURL(`${base}/energy-home/home`, { timeout: 30000 });
 
   // Client-admin login and location surface.
   ({ context: adminContext, page: adminPage } = await openPage(state.admin_a, '/energy-locations/start'));
   await adminPage.getByText(state.client_a_name).first().waitFor({ timeout: 30000 });
   assert.equal(await adminPage.getByText(state.client_b_name).count(), 0, 'Client B name leaked to Client A');
-  const clientDefault = await openPage(state.admin_a, '/energy-admin/overview');
+  const clientDefault = await openPage(state.admin_a, '/energy-admin/clients');
   await clientDefault.page.waitForURL(`${base}/energy-locations/start`, { timeout: 30000 });
   await clientDefault.context.close();
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
-  const adminCard = await waitCard(adminPage, 'building-admin-card');
+  const adminCard = await waitCard(adminPage, 'building-admin-table-card');
   await adminCard.getByRole('heading', { level: 1, name: 'People' }).waitFor({ timeout: 30000 });
   assert.equal(await adminCard.locator('#clientSwitch').count(), 0, 'client administrator saw the root client switcher');
   assert.equal(await adminPage.getByText('Settings', { exact: true }).count(), 0, 'client administrator saw HA Settings');
@@ -106,33 +106,41 @@ try {
   assert.match(locationText, /Browser A West/);
 
   // Create, disable, enable, move, and delete a location-scoped user.
-  await adminCard.locator('[data-add-person]').click();
-  await adminCard.locator('#newName').fill('Browser Created User');
-  await adminCard.locator('#newUsername').fill(state.created_user.username);
-  await adminCard.locator('#newPassword').fill(state.created_user.password);
-  await adminCard.locator('#newLocation').selectOption(state.location_a_west);
-  await adminCard.locator('[data-create-user]').click();
+  await adminCard.locator('[data-new-person]').click();
+  await adminCard.locator('#editorName').fill('Browser Created User');
+  await adminCard.locator('#editorUsername').fill(state.created_user.username);
+  await adminCard.locator('#editorPassword').fill(state.created_user.password);
+  await adminCard.locator('#editorLocations').selectOption([state.location_a_west]);
+  await adminCard.locator('[data-save-editor]').click();
   await waitUsers(adminPage, ['Browser Created User'], []);
-  let createdRow = adminCard.locator('.person').filter({ hasText: 'Browser Created User' });
+  let createdRow = adminCard.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
   await createdRow.waitFor();
   const createdId = await createdRow.locator('[data-toggle]').getAttribute('data-toggle');
   assert.ok(createdId, 'created user has no id');
 
   await createdRow.locator('[data-toggle]').click();
-  createdRow = adminCard.locator('.person').filter({ hasText: 'Browser Created User' });
-  await createdRow.getByText('disabled', { exact: false }).waitFor({ timeout: 20000 });
+  createdRow = adminCard.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
+  await createdRow.getByText('Disabled', { exact: true }).waitFor({ timeout: 20000 });
   await createdRow.locator('[data-toggle]').click();
-  createdRow = adminCard.locator('.person').filter({ hasText: 'Browser Created User' });
+  createdRow = adminCard.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
   await createdRow.locator('[data-toggle]').filter({ hasText: 'Disable' }).waitFor({ timeout: 20000 });
 
-  await createdRow.locator('select[data-user-loc]').selectOption(state.location_a_north);
+  await createdRow.locator('[data-edit-person]').click();
+  await adminCard.locator('#editorLocations').selectOption([state.location_a_north]);
+  await adminCard.locator('[data-save-editor]').click();
   const moveDeadline = Date.now() + 20000;
   while (Date.now() < moveDeadline) {
-    createdRow = adminCard.locator('.person').filter({ hasText: 'Browser Created User' });
-    if ((await createdRow.locator('select[data-user-loc]').inputValue().catch(() => '')) === state.location_a_north) break;
+    createdRow = adminCard.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
+    if ((await createdRow.innerText().catch(() => '')).includes('Browser A North')) break;
     await adminPage.waitForTimeout(100);
   }
-  assert.equal(await createdRow.locator('select[data-user-loc]').inputValue(), state.location_a_north, 'user location edit did not persist');
+  assert.match(await createdRow.innerText(), /Browser A North/, 'user location edit did not persist');
+
+  // A one-location ordinary user lands in its workspace and has no Locations tab.
+  const oneLocation = await openPage(state.user_a, '/energy-locations/start');
+  await oneLocation.page.waitForURL(`${base}/energy-home/home`, { timeout: 30000 });
+  assert.equal(await oneLocation.page.getByRole('link', { name: 'Locations' }).count(), 0, 'single-location user saw the Locations tab');
+  await oneLocation.context.close();
 
   // Checked tree/price editing through the client-admin UI.
   await adminPage.goto(`${base}/energy-setup/structure`, { waitUntil: 'domcontentloaded' });
@@ -157,9 +165,9 @@ try {
 
   // Clean up the browser-created user through the same UI.
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
-  const peopleAgain = await waitCard(adminPage, 'building-admin-card');
+  const peopleAgain = await waitCard(adminPage, 'building-admin-table-card');
   await peopleAgain.getByRole('heading', { level: 1, name: 'People' }).waitFor({ timeout: 30000 });
-  let deleteRow = peopleAgain.locator('.person').filter({ hasText: 'Browser Created User' });
+  let deleteRow = peopleAgain.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
   await deleteRow.locator('[data-delete]').click();
   await deleteRow.locator('[data-delete]').click();
   await deleteRow.waitFor({ state: 'detached', timeout: 20000 });

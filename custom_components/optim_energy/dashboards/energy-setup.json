@@ -158,7 +158,7 @@
           "column_span": 4,
           "cards": [
             {
-              "type": "custom:building-admin-card",
+              "type": "custom:building-admin-table-card",
               "section": "people",
               "scope": "setup",
               "grid_options": {

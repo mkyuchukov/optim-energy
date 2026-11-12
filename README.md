@@ -6,7 +6,7 @@ Optim Energy is a Home Assistant portal package for commercial energy monitoring
 
 - The Optim Energy building, controls, alerts and report cards.
 - Nine replacement Home Assistant dashboards:
-  - Administration — clients, locations and people for Home Assistant administrators
+  - Administration — table-first clients, locations, people and devices for Home Assistant administrators
   - Locations
   - Overview and Help
   - Groups
@@ -32,7 +32,7 @@ Optim Energy runs multiple clients in one Home Assistant instance, but it does *
 - Webhook IDs and Supervisor ingress routes do not carry tenant identity. They are blocked unless the request presents a valid Home Assistant root bearer token.
 - Client portal settings live in `.storage/optim_energy.tenancy`, not in a dashboard document.
 
-Home Assistant administrators create clients under **Administration → Clients** and manage people under **Administration → People**. A client administrator can use **Setup → People** to create, disable, move and delete ordinary users inside its own client. Only a Home Assistant administrator can create clients or client administrators.
+Home Assistant administrators use the table-first **Administration** console to create and edit clients, locations, people and devices, including virtual devices and the device tree. A client administrator can use **Setup → People** to manage ordinary users inside its own client. Only a Home Assistant administrator can create clients or client administrators.
 
 The following remain shared: the recorder database, backups, logs, `/local` files, restarts and Home Assistant updates. Do not use this as a hostile-tenant boundary or expose secrets in shared files. For strict isolation, use one Home Assistant instance per client. Do not enable generic or companion-app webhooks, and do not expose add-on ingress, on a shared instance unless every caller is trusted to use the global root identity.
 

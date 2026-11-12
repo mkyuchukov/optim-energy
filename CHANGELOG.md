@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- Replace the administrator card dashboard with a table-first console for clients, locations, people and devices, with create/edit/delete actions in place.
+- Add client renaming and platform-level location, device, virtual-device, main-device and device-tree management.
+- Support multiple locations per ordinary user; scope labels, trees and auth groups to all assigned locations.
+- Hide the Locations chooser for single-location users and preselect their only location.
+
 ## 0.4.6
 
 - Clear stale sidebar hiding state for restored native add-on panels so File editor and Zigbee2MQTT appear for administrators again.
