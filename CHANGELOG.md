@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.5
+
+- Split device placement in Administration into separate Location and Group columns; the previous Location column incorrectly showed the group or area name.
+
 ## 0.5.4
 
 - Keep bridge and radio service devices out of the unassigned-device administrator list while retaining unassigned metered devices.
