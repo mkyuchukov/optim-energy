@@ -647,6 +647,7 @@ def run(version: str, *, keep: bool = False) -> None:
         assert_equal(
             {item["url_path"] for item in dashboards}
             & {
+                "energy-admin",
                 "energy-locations",
                 "energy-home",
                 "energy-groups",
@@ -657,6 +658,7 @@ def run(version: str, *, keep: bool = False) -> None:
                 "energy-setup",
             },
             {
+                "energy-admin",
                 "energy-locations",
                 "energy-home",
                 "energy-groups",

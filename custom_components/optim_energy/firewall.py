@@ -55,6 +55,7 @@ READ_COMMANDS = {
 }
 
 PORTAL_DASHBOARDS = {
+    "energy-admin",
     "energy-locations",
     "energy-home",
     "energy-groups",

@@ -5,7 +5,8 @@ Optim Energy is a Home Assistant portal package for commercial energy monitoring
 ## What it installs
 
 - The Optim Energy building, controls, alerts and report cards.
-- Eight replacement Home Assistant dashboards:
+- Nine replacement Home Assistant dashboards:
+  - Administration — clients, locations and people for Home Assistant administrators
   - Locations
   - Overview and Help
   - Groups
@@ -22,7 +23,7 @@ Optim Energy is a Home Assistant portal package for commercial energy monitoring
 
 Optim Energy runs multiple clients in one Home Assistant instance, but it does **not** make Home Assistant a hard multi-tenant system.
 
-- A Home Assistant owner or administrator is the global root.
+- A Home Assistant owner or administrator is the global root and uses the separate **Administration** console rather than the client portal.
 - A client administrator is a portal role. It is never added to Home Assistant's global `Administrators` group.
 - An ordinary client user is assigned to one location.
 - Authentication groups are generated from the client's areas and entities for Home Assistant's native state, history and entity-service filtering.
@@ -31,7 +32,7 @@ Optim Energy runs multiple clients in one Home Assistant instance, but it does *
 - Webhook IDs and Supervisor ingress routes do not carry tenant identity. They are blocked unless the request presents a valid Home Assistant root bearer token.
 - Client portal settings live in `.storage/optim_energy.tenancy`, not in a dashboard document.
 
-Create users under **Setup → People**. A client administrator can create, disable, move and delete ordinary users inside its own client. Only the Home Assistant administrator can create clients or client administrators.
+Home Assistant administrators create clients under **Administration → Clients** and manage people under **Administration → People**. A client administrator can use **Setup → People** to create, disable, move and delete ordinary users inside its own client. Only a Home Assistant administrator can create clients or client administrators.
 
 The following remain shared: the recorder database, backups, logs, `/local` files, restarts and Home Assistant updates. Do not use this as a hostile-tenant boundary or expose secrets in shared files. For strict isolation, use one Home Assistant instance per client. Do not enable generic or companion-app webhooks, and do not expose add-on ingress, on a shared instance unless every caller is trusted to use the global root identity.
 
@@ -51,9 +52,9 @@ The following remain shared: the recorder database, backups, logs, `/local` file
 5. Restart Home Assistant when prompted.
 6. Open **Settings → Devices & services → Add integration → Optim Energy**.
 7. Enter the first client or site name.
-8. Open **Setup → People** to add client administrators and users.
+8. Open **Administration → People** to add client administrators and users. Client administrators use **Setup → People** for their own client.
 
-The integration replaces the known Optim Energy dashboards with the bundled layouts, repairs legacy dashboard resources, migrates the old `device_tree` into the tenant store, serves the portal assets and sets Locations as the first page.
+The integration replaces the known Optim Energy dashboards with the bundled layouts, repairs legacy dashboard resources, migrates the old `device_tree` into the tenant store, serves the portal assets and gives Home Assistant administrators an Administration console. Client accounts still land on their location picker.
 
 ## Updates
 

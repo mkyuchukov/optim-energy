@@ -1,0 +1,145 @@
+{
+  "title": "Administration",
+  "views": [
+    {
+      "title": "Overview",
+      "path": "overview",
+      "icon": "mdi:view-dashboard-outline",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-admin-card",
+              "section": "overview",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Clients",
+      "path": "clients",
+      "icon": "mdi:account-group-outline",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-admin-card",
+              "section": "clients",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Locations",
+      "path": "locations",
+      "icon": "mdi:map-marker-multiple-outline",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-admin-card",
+              "section": "locations",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "People",
+      "path": "people",
+      "icon": "mdi:account-multiple-outline",
+      "type": "sections",
+      "max_columns": 4,
+      "footer": {
+        "card": {
+          "type": "custom:energy-nav-card",
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 870px)"
+            }
+          ]
+        },
+        "max_width": 870
+      },
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 4,
+          "cards": [
+            {
+              "type": "custom:building-admin-card",
+              "section": "people",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
