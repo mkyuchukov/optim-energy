@@ -80,4 +80,8 @@ The private auth-store and websocket interfaces must also be exercised on the
 pinned Home Assistant test VM for every supported release with
 `tools/vm_smoke.sh`.
 
+Production backup, restore, deletion, retention, quota, upgrade and emergency
+recovery procedures are in
+[docs/PRODUCTION_OPERATIONS.md](docs/PRODUCTION_OPERATIONS.md).
+
 This is not an official Home Assistant integration.

@@ -549,6 +549,30 @@ def run(version: str, *, keep: bool = False) -> None:
         client_ids = {item["id"] for item in root.command({"type": "optim_energy/client/list"})}
         assert_equal(client_ids, {client_a, client_c}, "client deletion cleanup")
 
+        # Rehearse a cold operational restore: back up the auth, tenant and
+        # Lovelace stores, make a disposable change, then restore and restart.
+        harness.backup_config()
+        restore_probe = root.command(
+            {"type": "optim_energy/client/create", "name": "Restore Probe"}
+        )
+        assert_true(restore_probe["id"] not in client_ids, "restore probe was not created")
+        root.close()
+        root = None
+        harness.stop_container()
+        harness.restore_config()
+        harness.start_container()
+        wait_server(http, timeout=180)
+        root = WebSocket(http.host, http.port)
+        root.auth(http.login(OWNER_USERNAME, OWNER_PASSWORD)["access_token"])
+        restored_clients = {
+            item["id"] for item in root.command({"type": "optim_energy/client/list"})
+        }
+        assert_equal(
+            restored_clients,
+            {client_a, client_c},
+            "cold restore removed the probe client",
+        )
+
         store_sizes = {
             "tenancy_bytes": harness.file_size("/config/.storage/optim_energy.tenancy"),
             "auth_bytes": harness.file_size("/config/.storage/auth"),
@@ -562,6 +586,7 @@ def run(version: str, *, keep: bool = False) -> None:
                     "entry_id": entry_id,
                     "sync_seconds": sync_seconds,
                     "store_sizes": store_sizes,
+                    "restore_rehearsal": "PASS",
                     "status": "PASS",
                 },
                 indent=2,
