@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Promote shared-instance multitenancy after REST, webhook and ingress hardening.
+- Add checked client-administrator operations and the awaited client-switch fix.
+- Add pinned Home Assistant runtime acceptance, three-client scale/lifecycle tests and VM smoke coverage.
+- Add bill-reader quotas, audit-mode controls, versioned client deletion and production operations runbooks.
+
 ## 0.3.0-rc.2
 
 - Block webhook and Supervisor ingress routes unless the caller presents a root bearer token.
