@@ -32,21 +32,17 @@ async function waitCard(page, selector) {
 }
 
 async function waitUsers(page, include, exclude) {
+  const users = page.locator('building-tenant-admin-card #users');
+  const deadline = Date.now() + 20000;
+  let actual = '';
   try {
-    await page.waitForFunction(
-      ({ include, exclude }) => {
-        const card = document.querySelector('building-tenant-admin-card');
-        const text = card?.shadowRoot?.querySelector('#users')?.textContent || '';
-        return include.every((value) => text.includes(value)) && exclude.every((value) => !text.includes(value));
-      },
-      { include, exclude },
-      { timeout: 20000 },
-    );
+    while (Date.now() < deadline) {
+      actual = await users.innerText().catch(() => '');
+      if (include.every((value) => actual.includes(value)) && exclude.every((value) => !actual.includes(value))) return;
+      await page.waitForTimeout(100);
+    }
+    throw new Error('timeout');
   } catch (error) {
-    const actual = await page.evaluate(() => {
-      const card = document.querySelector('building-tenant-admin-card');
-      return card?.shadowRoot?.querySelector('#users')?.textContent || '';
-    });
     throw new Error(`users wait failed; include=${include}; exclude=${exclude}; actual=${actual}`, { cause: error });
   }
 }
@@ -102,26 +98,20 @@ try {
   assert.ok(createdId, 'created user has no id');
 
   await createdRow.locator('[data-toggle]').click();
-  await adminPage.waitForFunction((id) => {
-    const card = document.querySelector('building-tenant-admin-card');
-    const row = [...(card?.shadowRoot?.querySelectorAll('.user') || [])].find((item) => item.querySelector(`[data-toggle="${id}"]`));
-    return row?.textContent?.includes('disabled') || false;
-  }, createdId);
   createdRow = adminCard.locator('.user').filter({ hasText: 'Browser Created User' });
+  await createdRow.getByText('disabled', { exact: false }).waitFor({ timeout: 20000 });
   await createdRow.locator('[data-toggle]').click();
-  await adminPage.waitForFunction((id) => {
-    const card = document.querySelector('building-tenant-admin-card');
-    const row = [...(card?.shadowRoot?.querySelectorAll('.user') || [])].find((item) => item.querySelector(`[data-toggle="${id}"]`));
-    return row && !row.textContent.includes('disabled');
-  }, createdId);
-
   createdRow = adminCard.locator('.user').filter({ hasText: 'Browser Created User' });
+  await createdRow.locator('[data-toggle]').filter({ hasText: 'Disable' }).waitFor({ timeout: 20000 });
+
   await createdRow.locator('select[data-user-loc]').selectOption(state.location_a_north);
-  await adminPage.waitForFunction(({ id, location }) => {
-    const card = document.querySelector('building-tenant-admin-card');
-    const row = [...(card?.shadowRoot?.querySelectorAll('.user') || [])].find((item) => item.querySelector(`[data-user-loc="${id}"]`));
-    return row?.querySelector('select[data-user-loc]')?.value === location;
-  }, { id: createdId, location: state.location_a_north });
+  const moveDeadline = Date.now() + 20000;
+  while (Date.now() < moveDeadline) {
+    createdRow = adminCard.locator('.user').filter({ hasText: 'Browser Created User' });
+    if ((await createdRow.locator('select[data-user-loc]').inputValue().catch(() => '')) === state.location_a_north) break;
+    await adminPage.waitForTimeout(100);
+  }
+  assert.equal(await createdRow.locator('select[data-user-loc]').inputValue(), state.location_a_north, 'user location edit did not persist');
 
   // Checked tree/price editing through the client-admin UI.
   await adminPage.goto(`${base}/energy-setup/structure`, { waitUntil: 'domcontentloaded' });
