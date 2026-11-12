@@ -3175,7 +3175,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       await switchPortalClient(this._hass, id);
       await this.refresh();
     }
-    async preview(client = portalClient, location = null) {
+    async openClientView(client = portalClient, location = null) {
       try {
         if (PORTAL.isRoot && client && client !== portalClient) await switchPortalClient(this._hass, client);
         const first = location || TREE.places.find((p) => p.kind === 'location')?.id || null;
@@ -3190,8 +3190,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       if (q('[data-open-create]')) { const d = this.shadowRoot.getElementById('new-client'); if (d) { d.open = true; d.querySelector('input')?.focus(); } return; }
       if (q('[data-add-person]')) { const d = this.shadowRoot.getElementById('add-person'); if (d) { d.open = true; d.querySelector('input')?.focus(); } return; }
       if ((b = q('[data-select-client]'))) { await this.selectClient(b.dataset.selectClient); return; }
-      if ((b = q('[data-preview-client]'))) { await this.preview(b.dataset.previewClient); return; }
-      if ((b = q('[data-preview-location]'))) { await this.preview(portalClient, b.dataset.previewLocation); return; }
+      if ((b = q('[data-preview-client]'))) { await this.openClientView(b.dataset.previewClient); return; }
+      if ((b = q('[data-preview-location]'))) { await this.openClientView(portalClient, b.dataset.previewLocation); return; }
       if ((b = q('[data-toggle]'))) {
         const user = this._users?.find((item) => item.id === b.dataset.toggle); if (!user) return;
         try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: user.id, is_active: !user.is_active }); await this.refresh(); this.flash(`${user.name} ${user.is_active ? 'disabled' : 'enabled'}.`); } catch (x) { this.flash(x?.message || 'Could not update the person.', true); }

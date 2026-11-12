@@ -77,6 +77,12 @@ try {
     const card = await waitCard(root, 'building-admin-card');
     await card.getByRole('heading', { level: 1, name: title }).waitFor({ timeout: 30000 });
   }
+  await root.goto(`${base}/energy-admin/overview`, { waitUntil: 'domcontentloaded' });
+  const overviewAgain = await waitCard(root, 'building-admin-card');
+  await root.locator('dialog-http-pending-config').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+  await root.waitForTimeout(500);
+  await overviewAgain.getByRole('button', { name: 'Preview selected client' }).dispatchEvent('click');
+  await root.waitForURL(`${base}/energy-home/home`, { timeout: 30000 });
 
   // Client-admin login and location surface.
   ({ context: adminContext, page: adminPage } = await openPage(state.admin_a, '/energy-locations/start'));
