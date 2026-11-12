@@ -223,7 +223,7 @@ check is reproduced and fixed.
 - [x] Initial zero-client production deployment completed; no maintenance window required
 - [x] Stable `0.3.x` release published as `v0.3.0`
 - [x] Patch `v0.3.1` restores tenant registry names and device types; production verified
-- [x] Separate Administration console and People workspace implemented; acceptance passed
+- [x] Separate Administration console and People workspace implemented; production verified
 
 ## Maintenance record template
 
@@ -269,6 +269,21 @@ check is reproduced and fixed.
 | Client verification | `Sofia Cleverpine` and `Sofia Optimal` preserved; friendly names, Light/Relay/Energy meter types and live readings visible |
 | Rollback checkpoint | Restore the backup above or copy back `/mnt/data/optim-energy-backups/optim_energy-pre-2026-11-12-v0.3.1` |
 | Incidents / follow-up | Registry serializer now preserves `name_by_user`, model metadata and `via_device_id`; no HA or tenant data loss observed |
+
+### 2026-11-12 v0.4.3 Administration console rollout
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 13:14–13:34 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.3.1 / 0.4.3 |
+| Backup/snapshot | `before-optim-energy-v0.4.0-2026-11-12` (slug `80428764`), plus the previous integration directory copies |
+| Runtime suites | Unit, HA runtime, three-client scale, browser, hassfest and HACS: PASS |
+| VM smoke result | N/A; live portal verified after each restart |
+| Client verification | Administration is the system default for HA administrators; sidebar contains only Administration and normal HA tools. People, Clients and Locations views load; Preview opens the selected client; both locations retain live readings |
+| Rollback checkpoint | Restore the backup above or copy back the preserved `optim_energy-pre-2026-11-12-v0.4.3` directory |
+| Incidents / follow-up | Fixed the pinned client Overview and Preview action during rollout; no tenant, device or registry data loss observed |
 
 ## Repository protection
 
