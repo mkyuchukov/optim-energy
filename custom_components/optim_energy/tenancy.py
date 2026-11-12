@@ -12,6 +12,7 @@ import hashlib
 import logging
 import re
 import time
+import uuid
 from collections.abc import Iterable
 from typing import Any
 
@@ -32,6 +33,7 @@ from homeassistant.helpers import (
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 
+from . import migration
 from .const import DOMAIN
 from .dashboards import default_device_tree
 from .quota import BillReadLimitExceeded, BillReadQuota
@@ -40,6 +42,8 @@ _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.tenancy"
+# The store as it was just before the move to "floor = client, area = location".
+PRE_AREAS_KEY = f"{DOMAIN}.tenancy_before_areas"
 MANAGED_GROUP_PREFIX = f"{DOMAIN}_"
 DEFAULT_CLIENT = "default"
 MAX_TREE_BYTES = 2 * 1024 * 1024
@@ -108,6 +112,21 @@ def _place_descendants(tree: dict[str, Any], root: str) -> set[str]:
                 out.add(pid)
                 changed = True
     return out
+
+
+def _location_of_place(tree: dict[str, Any], place_id: str | None) -> str | None:
+    """Return the location a place sits in, or None if it is not in this tree."""
+    places = {str(p.get("id")): p for p in _tree_places(tree)}
+    seen: set[str] = set()
+    while place_id and place_id not in seen:
+        seen.add(place_id)
+        place = places.get(place_id)
+        if place is None:
+            return None
+        if _is_location_place(place):
+            return place_id
+        place_id = place.get("parent")
+    return None
 
 
 def _place_locations(tree: dict[str, Any]) -> list[dict[str, Any]]:
@@ -336,6 +355,51 @@ class TenancyManager:
         self._group_compat: Any = None
 
     @property
+    def areas(self) -> bool:
+        """Whether a client is a floor and a location is an area (the new model)."""
+        return self.data.get("model") == migration.MODEL
+
+    def location_area(self, tree: dict[str, Any], location: str | None) -> str | None:
+        """Return the Home Assistant area that is this location."""
+        for place in _place_locations(tree):
+            if place.get("id") == location:
+                return place.get("area_id") or None
+        return None
+
+    def _area_index(self) -> dict[str, tuple[str, str]]:
+        """Map every location area to its (client, location)."""
+        return {
+            str(place["area_id"]): (client_id, str(place["id"]))
+            for client_id, tree in self.data.get("trees", {}).items()
+            if isinstance(tree, dict)
+            for place in _place_locations(tree)
+            if place.get("area_id")
+        }
+
+    def _live_placed(self, tree: dict[str, Any]) -> dict[str, str]:
+        """Where each device is: its area gives the location, the store its group.
+
+        A stored group that belongs to another location is ignored, so a
+        device moved in Home Assistant itself simply lands in its new
+        location with no group.
+        """
+        device_ids = {device.id for device in dr.async_get(self.hass).devices}
+        stored = {str(k): str(v) for k, v in (tree.get("placed") or {}).items()}
+        area_loc = {
+            str(place["area_id"]): str(place["id"])
+            for place in _place_locations(tree)
+            if place.get("area_id")
+        }
+        out = {k: v for k, v in stored.items() if k not in device_ids}
+        for device in dr.async_get(self.hass).devices:
+            location = area_loc.get(str(device.area_id)) if device.area_id else None
+            if not location:
+                continue
+            group = stored.get(device.id)
+            out[device.id] = group if group and _location_of_place(tree, group) == location else location
+        return out
+
+    @property
     def site_name(self) -> str:
         client = self.data.get("clients", {}).get(DEFAULT_CLIENT, {})
         return str(client.get("name") or "Optim Energy")
@@ -458,6 +522,18 @@ class TenancyManager:
     def _refresh_location_index(self) -> None:
         """Rebuild the UI index of locations from trees and assigned labels."""
         locations: dict[str, dict[str, Any]] = {}
+        if self.areas:
+            for client_id, tree in self.data.get("trees", {}).items():
+                for place in _place_locations(tree) if isinstance(tree, dict) else []:
+                    locations[str(place["id"])] = {
+                        "id": str(place["id"]),
+                        "name": str(place.get("name") or place["id"]),
+                        "client": client_id,
+                        "label_id": None,
+                        "area_id": place.get("area_id"),
+                    }
+            self.data["locations"] = locations
+            return
         label_registry = lr.async_get(self.hass)
         labels = {x.label_id: x for x in label_registry.async_list_labels()}
         for client_id, tree in self.data.get("trees", {}).items():
@@ -492,6 +568,9 @@ class TenancyManager:
 
     def _merge_native_places(self, tree: dict[str, Any], client_id: str) -> dict[str, Any]:
         """Merge native location labels and areas assigned to one client."""
+        if self.areas:
+            # Places are kept in the store now; nothing is read from labels.
+            return copy.deepcopy(tree)
         label_registry = lr.async_get(self.hass)
         area_registry = ar.async_get(self.hass)
         floor_registry = fr.async_get(self.hass)
@@ -643,12 +722,20 @@ class TenancyManager:
             self.data.get("trees", {}).get(client_id, _copy_tree(None, "Optim Energy")),
             client_id,
         )
+        if self.areas:
+            tree["placed"] = self._live_placed(tree)
+        payload = {
+            "client": client_id,
+            "client_name": ctx["client_name"],
+            "role": ctx["role"],
+            "model": self.data.get("model") or "labels",
+        }
         if ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN:
-            return {"client": client_id, "client_name": ctx["client_name"], "role": ctx["role"], "tree": copy.deepcopy(tree)}
+            return {**payload, "tree": copy.deepcopy(tree)}
         locations = ctx.get("locations") or []
         if not locations:
-            return {"client": client_id, "client_name": ctx["client_name"], "role": ctx["role"], "tree": _copy_tree({}, "No location assigned")}
-        return {"client": client_id, "client_name": ctx["client_name"], "role": ctx["role"], "tree": _filter_tree_for_locations(tree, locations)}
+            return {**payload, "tree": _copy_tree({}, "No location assigned")}
+        return {**payload, "tree": _filter_tree_for_locations(tree, locations)}
 
     def require_client_value(self, user: User, requested: str | None = None) -> tuple[str, dict[str, Any]]:
         """Resolve a client without a websocket connection."""
@@ -664,6 +751,10 @@ class TenancyManager:
             raise HomeAssistantError("Only a client administrator can change the dashboard")
         if ctx["is_root"]:
             clean = _guard_tree(tree)
+            if self.areas:
+                # Locations and groups change only through their own commands,
+                # so a stale browser tab cannot drop a location's area.
+                clean["places"] = copy.deepcopy(self.data["trees"].get(client_id, {}).get("places") or [])
         else:
             locations = {
                 str(location_id)
@@ -683,6 +774,282 @@ class TenancyManager:
         await self.async_save()
         self._schedule_group_sync()
         return {"client": client_id, "saved": True}
+
+    # ---- floor = client, area = location ------------------------------------
+
+    def _create_floor(self, name: str) -> str:
+        registry = fr.async_get(self.hass)
+        for candidate in (name, f"{name} (client)", f"{name} (client {uuid.uuid4().hex[:4]})"):
+            try:
+                return registry.async_create(candidate).floor_id
+            except ValueError:
+                continue
+        raise HomeAssistantError("Could not create a floor for the client")
+
+    def _create_area(self, name: str, client_name: str, floor_id: str | None) -> str:
+        registry = ar.async_get(self.hass)
+        for candidate in (name, f"{client_name} – {name}", f"{client_name} – {name} {uuid.uuid4().hex[:4]}"):
+            try:
+                return registry.async_create(candidate, floor_id=floor_id).id
+            except ValueError:
+                continue
+        raise HomeAssistantError("Could not create an area for the location")
+
+    def _require_areas(self) -> None:
+        if not self.areas:
+            raise HomeAssistantError("Run the location migration first (Administration)")
+
+    def _manager_client(self, user: User, client: str | None) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        """Resolve the stored tree a root or client administrator may change."""
+        self._require_areas()
+        client_id, ctx = self.require_client_value(user, client)
+        if not self.can_manage_tree(ctx):
+            raise HomeAssistantError("Only a client administrator can change this")
+        return client_id, ctx, self.data["trees"][client_id]
+
+    async def _async_saved(self) -> None:
+        self._refresh_location_index()
+        await self.async_save()
+        await self.async_sync_groups()
+
+    async def async_save_location(
+        self, user: User, client: str | None, location_id: str | None, name: str
+    ) -> dict[str, Any]:
+        """Create or rename a location. Root only: a location decides who sees what."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can change locations")
+        client_id, _, tree = self._manager_client(user, client)
+        name = name.strip()
+        if not name or len(name) > 80:
+            raise HomeAssistantError("Enter a location name of up to 80 characters")
+        record = self.data["clients"][client_id]
+        if location_id:
+            place = next((p for p in _place_locations(tree) if p.get("id") == location_id), None)
+            if place is None:
+                raise HomeAssistantError("Location not found for this client")
+            place["name"] = name
+            try:
+                ar.async_get(self.hass).async_update(place["area_id"], name=name)
+            except Exception:  # another area already has this name; the portal name still changes
+                _LOGGER.warning("Optim Energy could not rename area %s", place.get("area_id"))
+        else:
+            if not record.get("floor_id"):
+                record["floor_id"] = self._create_floor(str(record.get("name") or client_id))
+            area_id = self._create_area(name, str(record.get("name") or client_id), record["floor_id"])
+            location_id = f"loc:{area_id}"
+            tree.setdefault("places", []).append(
+                {"id": location_id, "name": name, "kind": "location", "parent": None, "area_id": area_id}
+            )
+        await self._async_saved()
+        await self.async_sync_all_sidebars()
+        return {"client": client_id, "id": location_id, "name": name}
+
+    async def async_delete_location(self, user: User, client: str | None, location_id: str) -> None:
+        """Delete an empty location and its area."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can change locations")
+        client_id, _, tree = self._manager_client(user, client)
+        area_id = self.location_area(tree, location_id)
+        if not area_id:
+            raise HomeAssistantError("Location not found for this client")
+        if any(d.area_id == area_id for d in dr.async_get(self.hass).devices):
+            raise HomeAssistantError("Move this location's devices somewhere else first")
+        if any(
+            record.get("client") == client_id and location_id in _record_locations(record)
+            for record in self.data.get("users", {}).values()
+        ):
+            raise HomeAssistantError("Remove this location from its people first")
+        inside = {str(p["id"]) for p in _tree_places(tree) if _location_of_place(tree, str(p.get("id"))) == location_id}
+        tree["places"] = [p for p in _tree_places(tree) if str(p.get("id")) not in inside]
+        tree["placed"] = {k: v for k, v in (tree.get("placed") or {}).items() if v not in inside}
+        for key in ("prices", "mains"):
+            if isinstance(tree.get(key), dict):
+                tree[key].pop(location_id, None)
+        ar.async_get(self.hass).async_delete(area_id)
+        await self._async_saved()
+        await self.async_sync_all_sidebars()
+
+    async def async_save_group(
+        self, user: User, client: str | None, group_id: str | None, name: str, parent: str | None
+    ) -> dict[str, Any]:
+        """Create, rename or re-parent a group. Groups only organise devices."""
+        client_id, _, tree = self._manager_client(user, client)
+        name = name.strip()
+        if not name or len(name) > 80:
+            raise HomeAssistantError("Enter a group name of up to 80 characters")
+        places = {str(p.get("id")): p for p in _tree_places(tree)}
+        if group_id:
+            group = places.get(group_id)
+            if group is None or _is_location_place(group):
+                raise HomeAssistantError("Group not found for this client")
+            group["name"] = name
+            parent = parent or group.get("parent")
+        else:
+            group_id = f"grp:{uuid.uuid4().hex[:10]}"
+            group = {"id": group_id, "name": name, "kind": "group", "parent": None}
+            tree.setdefault("places", []).append(group)
+        location = _location_of_place(tree, parent)
+        if not location:
+            raise HomeAssistantError("Choose a location or group of this client to put it in")
+        # A group cannot sit inside itself, and it stays in its own location.
+        walk, seen = parent, set()
+        while walk and walk not in seen:
+            if walk == group_id:
+                raise HomeAssistantError("A group cannot be placed inside itself")
+            seen.add(walk)
+            walk = places.get(walk, {}).get("parent")
+        current = _location_of_place({"places": [*places.values()]}, group.get("parent"))
+        if group.get("parent") and current and current != location:
+            raise HomeAssistantError("A group cannot move to another location")
+        group["parent"] = parent
+        await self._async_saved()
+        return {"client": client_id, "id": group_id, "name": name, "parent": parent}
+
+    async def async_delete_group(self, user: User, client: str | None, group_id: str) -> None:
+        """Delete a group; its devices and sub-groups move up one level."""
+        client_id, _, tree = self._manager_client(user, client)
+        group = next((p for p in _tree_places(tree) if p.get("id") == group_id), None)
+        if group is None or _is_location_place(group):
+            raise HomeAssistantError("Group not found for this client")
+        parent = group.get("parent")
+        tree["places"] = [p for p in _tree_places(tree) if p.get("id") != group_id]
+        for place in tree["places"]:
+            if place.get("parent") == group_id:
+                place["parent"] = parent
+        tree["placed"] = {k: (parent if v == group_id else v) for k, v in (tree.get("placed") or {}).items()}
+        for item in tree.get("automations") or []:
+            if isinstance(item, dict) and item.get("place") == group_id:
+                item["place"] = parent
+        await self._async_saved()
+
+    async def async_assign_device(
+        self, user: User, client: str | None, device_id: str, place: str | None
+    ) -> dict[str, Any]:
+        """Put a device in a location or group, or (root) take it out of every client.
+
+        Root may move a device anywhere. A client administrator may only move
+        a device that is already in its client, to a place of its client.
+        """
+        client_id, ctx, tree = self._manager_client(user, client)
+        registry = dr.async_get(self.hass)
+        device = registry.async_get(device_id)
+        if device is None:
+            raise HomeAssistantError("Device not found")
+        owner = self._area_index().get(str(device.area_id)) if device.area_id else None
+        if not ctx["is_root"]:
+            if owner is None or owner[0] != client_id:
+                raise HomeAssistantError("Device belongs to another client")
+            if not place:
+                raise HomeAssistantError("Choose a location or group")
+        location = _location_of_place(tree, place) if place else None
+        if place and not location:
+            raise HomeAssistantError("Choose a location or group of this client")
+        area_id = self.location_area(tree, location) if location else None
+        if place and not area_id:
+            raise HomeAssistantError("This location has no area yet")
+        if owner and owner[0] != client_id or (owner and not place):
+            # Leaving a client: drop what that client's settings said about it.
+            old = self.data["trees"].get(owner[0], {})
+            old["placed"] = {k: v for k, v in (old.get("placed") or {}).items() if k != device_id}
+            old["parents"] = {
+                k: v for k, v in (old.get("parents") or {}).items() if device_id not in (k, v)
+            }
+            old["mains"] = {k: v for k, v in (old.get("mains") or {}).items() if v != device_id}
+            if old.get("main") == device_id:
+                old["main"] = None
+        placed = dict(tree.get("placed") or {})
+        if place and place != location:
+            placed[device_id] = place
+        else:
+            placed.pop(device_id, None)
+        tree["placed"] = placed
+        # Channels and other child devices follow their parent.
+        for item in [device, *[d for d in registry.devices if d.via_device_id == device_id]]:
+            if item.area_id != area_id:
+                registry.async_update_device(item.id, area_id=area_id)
+        await self._async_saved()
+        return {"device_id": device_id, "client": client_id if place else None, "place": place}
+
+    def _snapshot(self) -> dict[str, Any]:
+        """The store and registries as plain data, for the migration planner."""
+        return {
+            "store": copy.deepcopy(self.data),
+            "labels": [{"id": x.label_id, "name": x.name} for x in lr.async_get(self.hass).async_list_labels()],
+            "floors": [{"id": x.floor_id, "name": x.name} for x in fr.async_get(self.hass).async_list_floors()],
+            "areas": [
+                {"id": x.id, "name": x.name, "floor_id": x.floor_id, "labels": list(x.labels or [])}
+                for x in ar.async_get(self.hass).async_list_areas()
+            ],
+            "devices": [
+                {"id": x.id, "name": x.name_by_user or x.name or x.id, "area_id": x.area_id, "labels": list(x.labels or [])}
+                for x in dr.async_get(self.hass).devices
+            ],
+            "entities": [
+                {"entity_id": x.entity_id, "device_id": x.device_id, "area_id": x.area_id, "labels": list(x.labels or [])}
+                for x in er.async_get(self.hass).entities.values()
+            ],
+        }
+
+    def migration_plan(self, user: User) -> dict[str, Any]:
+        """Report what the move to floors and areas would change. Changes nothing."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can run the migration")
+        snap = self._snapshot()
+        plan = migration.plan_migration(snap)
+        after = migration.apply_plan(snap, plan)
+        before_seen, after_seen = migration.visible_before(snap), migration.visible_after(after)
+        return {
+            "model": self.data.get("model") or "labels",
+            "report": plan["report"],
+            "changes": {
+                kind: sum(1 for op in plan["ops"] if op["op"] == kind)
+                for kind in ("create_floor", "create_area", "set_device_area", "set_entity_area")
+            },
+            "visibility": {
+                location: {
+                    "before": len(before_seen.get(location, set())),
+                    "after": len(seen),
+                    "lost": sorted(before_seen.get(location, set()) - seen),
+                    "gained": sorted(seen - before_seen.get(location, set())),
+                }
+                for location, seen in after_seen.items()
+            },
+        }
+
+    async def async_migration_apply(self, user: User) -> dict[str, Any]:
+        """Move this installation to "floor = client, area = location". Once."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can run the migration")
+        if self.areas:
+            raise HomeAssistantError("This installation already uses the new model")
+        async with self._sync_lock:
+            plan = migration.plan_migration(self._snapshot())
+            if plan["report"]["blockers"]:
+                raise HomeAssistantError("The migration is blocked: " + "; ".join(plan["report"]["blockers"]))
+            await Store(self.hass, STORAGE_VERSION, PRE_AREAS_KEY, private=True, atomic_writes=True).async_save(
+                {"saved_at": time.time(), "data": copy.deepcopy(self.data)}
+            )
+            ids: dict[str, str] = {}
+            devices, entities = dr.async_get(self.hass), er.async_get(self.hass)
+            clients = plan["store"]["clients"]
+            for op in plan["ops"]:
+                if op["op"] == "create_floor":
+                    ids[op["key"]] = self._create_floor(op["name"])
+                elif op["op"] == "create_area":
+                    ids[op["key"]] = self._create_area(
+                        op["name"], str(clients[op["client"]].get("name") or op["client"]), ids[op["floor"]]
+                    )
+                elif op["op"] == "set_device_area":
+                    devices.async_update_device(op["device_id"], area_id=ids[op["area"]])
+                elif op["op"] == "set_entity_area":
+                    entities.async_update_entity(op["entity_id"], area_id=ids[op["area"]])
+            self.data = migration.finish_store(plan["store"], ids)
+            self._refresh_location_index()
+            await self.async_save()
+            await self._async_sync_groups_locked()
+        await self.async_sync_all_sidebars()
+        _LOGGER.warning("Optim Energy moved to floors and areas: %d changes", len(plan["ops"]))
+        return {"model": migration.MODEL, "changes": len(plan["ops"])}
 
     def client_list(self, user: User) -> list[dict[str, Any]]:
         """Return clients visible to the caller."""
@@ -726,6 +1093,9 @@ class TenancyManager:
             "created_at": time.time(),
         }
         tree = _copy_tree(None, name)
+        if self.areas:
+            tree["places"] = []
+            self.data["clients"][client_id]["floor_id"] = self._create_floor(name)
         for place in _place_locations(tree):
             if place["id"] == "loc:default":
                 place["id"] = f"loc:{client_id}"
@@ -746,6 +1116,11 @@ class TenancyManager:
         if not clean or len(clean) > 80:
             raise HomeAssistantError("Enter a client name of up to 80 characters")
         client["name"] = clean
+        if self.areas and client.get("floor_id"):
+            try:
+                fr.async_get(self.hass).async_update(client["floor_id"], name=clean)
+            except Exception:  # a name clash must not block renaming the client
+                _LOGGER.warning("Optim Energy could not rename floor %s", client["floor_id"])
         await self.async_save()
         return {"id": client_id, "name": clean}
 
@@ -753,6 +1128,8 @@ class TenancyManager:
         """Assign native location labels to one client. Root only."""
         if not self.is_root(user):
             raise HomeAssistantError("Only a Home Assistant administrator can assign client locations")
+        if self.areas:
+            raise HomeAssistantError("Locations are areas now; add them under Administration → Locations")
         if client_id not in self.data.get("clients", {}):
             raise HomeAssistantError("Client not found")
         label_registry = lr.async_get(self.hass)
@@ -1149,6 +1526,17 @@ class TenancyManager:
         device. Explicit entity ids cover entities without a device and devices
         placed by a location label but with no area.
         """
+        if self.areas:
+            # The location is one area. Home Assistant resolves a device's
+            # entities through that area; entities with no device are listed.
+            area_id = self.location_area(tree, location)
+            if not area_id:
+                return set(), set()
+            return {area_id}, {
+                entity.entity_id
+                for entity in er.async_get(self.hass).entities.values()
+                if entity.device_id is None and entity.area_id == area_id
+            }
         label_id = location[4:] if location.startswith("loc:") else None
         area_registry = ar.async_get(self.hass)
         device_registry = dr.async_get(self.hass)
@@ -1214,6 +1602,8 @@ class TenancyManager:
         area_ids: set[str],
     ) -> set[str]:
         """Return devices owned by one location, including devices without entities."""
+        if self.areas:
+            return {d.id for d in dr.async_get(self.hass).devices if d.area_id in area_ids}
         label_id = location[4:] if location.startswith("loc:") else None
         allowed_places = _place_descendants(tree, location)
         allowed: set[str] = {
@@ -1287,6 +1677,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
             msg["id"],
             {
                 **ctx,
+                "model": manager.data.get("model") or "labels",
                 "clients": manager.client_list(connection.user),
                 "capabilities": {
                     "manage_tree": manager.can_manage_tree(ctx),
@@ -1562,6 +1953,55 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
             _error(connection, msg, str(err))
         except (HomeAssistantError, ValueError) as err:
             _error(connection, msg, str(err))
+
+    def _command(name: str, schema: dict[Any, Any], call: Any) -> Any:
+        """Register a command whose handler is one checked manager call.
+
+        A schema must not use the key "id": that is the websocket message id.
+        """
+
+        @websocket_api.websocket_command({probatio.Required("type"): f"{DOMAIN}/{name}", **schema})
+        @websocket_api.async_response
+        async def handler(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+            try:
+                result = call(connection.user, msg)
+                if asyncio.iscoroutine(result):
+                    result = await result
+                connection.send_result(msg["id"], result if result is not None else {"done": True})
+            except HomeAssistantError as err:
+                _error(connection, msg, str(err))
+
+        _register_ws(hass, handler)
+
+    client = {probatio.Optional("client"): str}
+    _command(
+        "location/save",
+        {**client, probatio.Optional("location"): str, probatio.Required("name"): str},
+        lambda user, msg: manager.async_save_location(user, msg.get("client"), msg.get("location"), msg["name"]),
+    )
+    _command(
+        "location/delete",
+        {**client, probatio.Required("location"): str},
+        lambda user, msg: manager.async_delete_location(user, msg.get("client"), msg["location"]),
+    )
+    _command(
+        "group/save",
+        {**client, probatio.Optional("group"): str, probatio.Required("name"): str, probatio.Optional("parent"): str},
+        lambda user, msg: manager.async_save_group(user, msg.get("client"), msg.get("group"), msg["name"], msg.get("parent")),
+    )
+    _command(
+        "group/delete",
+        {**client, probatio.Required("group"): str},
+        lambda user, msg: manager.async_delete_group(user, msg.get("client"), msg["group"]),
+    )
+    _command(
+        "device/assign",
+        {**client, probatio.Required("device_id"): str, probatio.Optional("place"): str},
+        # No place, or an empty one, takes the device out of every client.
+        lambda user, msg: manager.async_assign_device(user, msg.get("client"), msg["device_id"], msg.get("place") or None),
+    )
+    _command("migration/plan", {}, lambda user, msg: manager.migration_plan(user))
+    _command("migration/apply", {}, lambda user, msg: manager.async_migration_apply(user))
 
     for handler in (
         ws_whoami,

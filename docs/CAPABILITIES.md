@@ -18,6 +18,13 @@ Every `optim_energy/*` websocket command and the roles that may call it. A test 
 | `client/delete` | yes | no | no |
 | `client/set_locations` | yes | no | no |
 | `location/catalog` | yes | no | no |
+| `location/save` | yes | no | no |
+| `location/delete` | yes, when empty | no | no |
+| `group/save` | any client | own locations | no |
+| `group/delete` | any client | own groups | no |
+| `device/assign` | any device, any client, or unassign | own devices to own locations and groups | no |
+| `migration/plan` | yes | no | no |
+| `migration/apply` | yes, once | no | no |
 | `user/list` | any client | own client | no |
 | `user/create` | any role | Users only, own locations | no |
 | `user/update` | yes | own Users, never an HA admin or client admin | no |

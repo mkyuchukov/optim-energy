@@ -132,6 +132,9 @@ def plan_migration(snap: dict[str, Any]) -> dict[str, Any]:
         floor_key = f"floor:{client_id}"
         ops.append({"op": "create_floor", "key": floor_key, "name": floor_name, "client": client_id})
         client["floor_id"] = floor_key
+        # The labels stop meaning "location"; they are kept for a rollback.
+        client["legacy_labels"] = sorted(assigned)
+        client["labels"] = []
 
         # Where every device and loose entity is today, and by which rule.
         area_place = {
@@ -292,15 +295,20 @@ def apply_plan(snap: dict[str, Any], plan: dict[str, Any], ids: dict[str, str] |
             devices[op["device_id"]]["area_id"] = ids[op["area"]]
         elif op["op"] == "set_entity_area":
             entities[op["entity_id"]]["area_id"] = ids[op["area"]]
-    store = copy.deepcopy(plan["store"])
+    out["store"] = finish_store(plan["store"], ids)
+    return out
+
+
+def finish_store(store: dict[str, Any], ids: dict[str, str]) -> dict[str, Any]:
+    """Replace the plan's floor and area keys with the ids that were created."""
+    store = copy.deepcopy(store)
     for client in store.get("clients", {}).values():
         client["floor_id"] = ids.get(client.get("floor_id"), client.get("floor_id"))
     for tree in store.get("trees", {}).values():
         for place in tree.get("places") or []:
             if place.get("area_id"):
                 place["area_id"] = ids.get(place["area_id"], place["area_id"])
-    out["store"] = store
-    return out
+    return store
 
 
 def visible_before(snap: dict[str, Any]) -> dict[str, set[str]]:

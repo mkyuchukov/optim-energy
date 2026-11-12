@@ -195,6 +195,8 @@ class PortalOperations:
         return out
 
     def _client_location_labels(self, tree: dict[str, Any]) -> set[str]:
+        if self.manager.areas:
+            return set()  # locations are areas, no label means "location" any more
         return {
             str(place["id"])[4:]
             for place in tree.get("places", [])
@@ -235,11 +237,11 @@ class PortalOperations:
         current = place_id
         while current and current not in seen:
             seen.add(current)
-            if current.startswith("loc:"):
-                return current
             entry = places.get(current)
             if entry is None:
                 break
+            if entry.get("kind") == "location":
+                return current
             current = entry.get("parent")
         raise HomeAssistantError("The selected group is not in this client")
 
@@ -263,7 +265,11 @@ class PortalOperations:
             location = self._place_location(tree, place)
             if location is None:
                 raise HomeAssistantError("Choose a location for the entity")
-            if place.startswith("area:"):
+            if self.manager.areas:
+                # The entity joins its location's area; the group is kept by the caller.
+                area_id = self.manager.location_area(tree, location)
+                self._validate_area(tree, area_id)
+            elif place.startswith("area:"):
                 area_id = place[5:]
                 self._validate_area(tree, area_id)
             elif location.startswith("loc:"):
