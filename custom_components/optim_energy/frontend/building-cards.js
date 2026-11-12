@@ -448,7 +448,7 @@ function treeWithoutVirtual(tree, id) {
 // Home Assistant keeps the sidebar order per account. Client accounts see the
 // packaged portal only; Home Assistant administrators get a separate command
 // centre and keep their normal HA tools.
-const CLIENT_PANELS = ['energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup'];
+const CLIENT_PANELS = ['energy-start', 'energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup'];
 const ADMIN_PANELS = ['energy-admin', 'core_configurator', '45df7312_zigbee2mqtt', 'hacs'];
 let sidebarKey = null;
 async function syncSidebar(hass) {
@@ -2664,6 +2664,25 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
       if (focusNow) { const i = r.querySelector(`input[data-rename="${CSS.escape(this._hl)}"]`); if (i) { i.focus({ preventScroll: true }); i.select(); setTimeout(() => i.scrollIntoView({ block: 'center' }), 500); } }
     }
   }
+  // The global default panel must stay visible to every account, so it is a
+  // neutral landing card rather than Administration or Locations.
+  class PortalStartCard extends Base {
+    get noBar() { return true; }
+    build() {
+      this.shadowRoot.innerHTML = `<style>${BASE}.opening{display:grid;place-items:center;min-height:220px;color:var(--muted);font-size:14px}</style><div class="w"><div class="opening">Opening Optim Energy…</div></div>`;
+    }
+    async refresh() {
+      await ensureTree(this._hass);
+      if (!PORTAL.ready) return;
+      if (PORTAL.isRoot) { navigate(ADMIN_HOME_PATH); return; }
+      const assigned = PORTAL.locations || [];
+      if (PORTAL.role === 'user' && assigned.length <= 1) {
+        const only = assigned[0] || TREE.places.find((p) => p.kind === 'location')?.id || null;
+        if (only) { setLocation(only); navigate(HOME_PATH); return; }
+      }
+      navigate(START_PATH);
+    }
+  }
   // The way in: choose a location, and everything after it shows only that location.
   class LocationPickerCard extends Base {
     get noBar() { return true; }
@@ -3763,6 +3782,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
   reg('building-manage-card', ManageCard, 'Locations and groups');
   reg('energy-nav-card', NavCard, 'Bottom bar');
   reg('building-device-map-card', DeviceMapCard, 'Device map');
+  reg('building-portal-start-card', PortalStartCard, 'Portal start');
   reg('building-location-picker-card', LocationPickerCard, 'Choose a location');
   reg('building-schedules-card', SchedulesCard, 'Automations');
   reg('building-alert-rules-card', AlertRulesCard, 'Alert rules');

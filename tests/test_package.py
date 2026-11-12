@@ -19,13 +19,18 @@ assert spec and spec.loader
 dashboards = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(dashboards)
 
+spec = importlib.util.spec_from_file_location("optim_energy_sidebar", COMPONENT / "sidebar.py")
+assert spec and spec.loader
+sidebar = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sidebar)
+
 
 class PackageTests(unittest.TestCase):
     """Validate the installable package."""
 
     def test_manifest_and_hacs_versions(self) -> None:
         self.assertEqual(MANIFEST["domain"], "optim_energy")
-        self.assertEqual(MANIFEST["version"], "0.5.1")
+        self.assertEqual(MANIFEST["version"], "0.5.2")
         self.assertTrue(MANIFEST["config_flow"])
         self.assertEqual(HACS["homeassistant"], "2026.11.0")
 
@@ -34,6 +39,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(
             set(configs),
             {
+                "energy-start",
                 "energy-admin",
                 "energy-locations",
                 "energy-home",
@@ -57,7 +63,7 @@ class PackageTests(unittest.TestCase):
             ["home", "help"],
         )
         self.assertFalse(next(s for s in dashboards.DASHBOARD_SPECS if s["url_path"] == "energy-setup")["require_admin"])
-        self.assertFalse(next(s for s in dashboards.DASHBOARD_SPECS if s["url_path"] == "energy-admin")["require_admin"])
+        self.assertTrue(next(s for s in dashboards.DASHBOARD_SPECS if s["url_path"] == "energy-admin")["require_admin"])
 
     def test_assets_exist(self) -> None:
         for name in (
@@ -77,8 +83,32 @@ class PackageTests(unittest.TestCase):
         self.assertIn("building-tenant-admin-card", source)
 
     def test_server_tenancy_files_are_present(self) -> None:
-        for name in ("tenancy.py", "firewall.py"):
+        for name in ("tenancy.py", "firewall.py", "sidebar.py"):
             self.assertTrue((COMPONENT / name).is_file())
+
+    def test_tenant_sidebar_preferences(self) -> None:
+        panels = {"energy-admin", "energy-home", "energy-locations", "config"}
+        single = sidebar.build_sidebar_preferences(
+            "user", ["loc:one"], panels, manage_tree=False
+        )
+        self.assertEqual(single["panelOrder"][0], "energy-start")
+        self.assertNotIn("energy-locations", single["panelOrder"])
+        self.assertIn("energy-locations", single["hiddenPanels"])
+        self.assertIn("energy-admin", single["hiddenPanels"])
+        self.assertNotIn("energy-setup", single["panelOrder"])
+
+        multi = sidebar.build_sidebar_preferences(
+            "user", ["loc:one", "loc:two"], panels, manage_tree=False
+        )
+        self.assertIn("energy-locations", multi["panelOrder"])
+        self.assertNotIn("energy-setup", multi["panelOrder"])
+
+        client_admin = sidebar.build_sidebar_preferences(
+            "client_admin", [], panels, manage_tree=True
+        )
+        self.assertIn("energy-locations", client_admin["panelOrder"])
+        self.assertIn("energy-setup", client_admin["panelOrder"])
+        self.assertIn("energy-admin", client_admin["hiddenPanels"])
 
     def test_bill_reader_uses_integration_route(self) -> None:
         source = (COMPONENT / "frontend" / "building-cards.js").read_text("utf-8")

@@ -1,0 +1,27 @@
+{
+  "title": "Home",
+  "views": [
+    {
+      "title": "Home",
+      "path": "start",
+      "icon": "mdi:home-outline",
+      "type": "sections",
+      "max_columns": 2,
+      "sections": [
+        {
+          "type": "grid",
+          "column_span": 2,
+          "cards": [
+            {
+              "type": "custom:building-portal-start-card",
+              "grid_options": {
+                "columns": "full",
+                "rows": "auto"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

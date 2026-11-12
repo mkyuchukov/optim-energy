@@ -11,14 +11,23 @@ DASHBOARD_DIRECTORY = Path(__file__).parent / "dashboards"
 
 DASHBOARD_SPECS: tuple[dict[str, Any], ...] = (
     {
+        "url_path": "energy-start",
+        "title": "Home",
+        "icon": "mdi:home-outline",
+        "filename": "energy-start.json",
+        # Safe landing page for every account. The start card redirects Home
+        # Assistant administrators to Administration, multi-location users to
+        # the picker, and single-location users straight to their workspace.
+        "require_admin": False,
+    },
+    {
         "url_path": "energy-admin",
         "title": "Administration",
         "icon": "mdi:shield-account-outline",
         "filename": "energy-admin.json",
-        # The panel is the system default so an administrator can land on the
-        # command centre. Client accounts are redirected to their location
-        # picker by the bundled frontend before the admin card renders.
-        "require_admin": False,
+        # Home Assistant enforces this flag before the panel renders, so
+        # ordinary and client-admin accounts cannot see or open it.
+        "require_admin": True,
     },
     {
         "url_path": "energy-locations",

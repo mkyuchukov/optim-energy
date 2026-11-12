@@ -61,6 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await _async_replace_dashboards(hass, entry.data[CONF_SITE_NAME])
     await _async_set_portal_default(hass)
+    await manager.async_sync_all_sidebars()
     entry.async_on_unload(entry.add_update_listener(_async_apply_options))
     return True
 
@@ -225,21 +226,23 @@ async def _async_replace_dashboards(hass: HomeAssistant, site_name: str) -> None
 
 
 async def _async_set_portal_default(hass: HomeAssistant) -> None:
-    """Open the portal first while leaving an explicit user choice alone."""
+    """Open the tenant portal first while leaving an explicit user choice alone."""
     system_store = await frontend.async_system_store(hass)
     core_data = system_store.data.get("core") or {}
-    # Administration is the shared system default. The bundled frontend
-    # redirects client accounts to their location picker; a client profile can
-    # still choose another default dashboard.
+    # Home Assistant always keeps the default panel in the sidebar, even when
+    # an account hides it. Start is therefore a neutral landing panel that
+    # redirects to the right surface for each role.
     if core_data.get("default_panel") in (
         None,
         "lovelace",
-        "energy-home",
+        "home",
+        "energy-admin",
         "energy-locations",
+        "energy-home",
     ):
         await system_store.async_set_item(
             "core",
-            {**core_data, "default_panel": "energy-admin"},
+            {**core_data, "default_panel": "energy-start"},
         )
 
 

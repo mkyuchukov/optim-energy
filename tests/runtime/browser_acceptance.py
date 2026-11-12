@@ -143,12 +143,25 @@ def run(version: str, *, keep: bool = False) -> None:
             location=location_b,
         )
 
+        user_a_state = session(http, *USER_A)
+        user_a_ws = WebSocket(http.host, http.port)
+        user_a_ws.auth(user_a_state["tokens"]["access_token"])
+        try:
+            user_a_sidebar = user_a_ws.command(
+                {"type": "frontend/get_user_data", "key": "sidebar"}
+            )["value"]
+            assert user_a_sidebar["panelOrder"][0] == "energy-start"
+            assert "energy-locations" in user_a_sidebar["hiddenPanels"]
+            assert "energy-admin" in user_a_sidebar["hiddenPanels"]
+        finally:
+            user_a_ws.close()
+
         state = {
             "base_url": http.base_url,
             "root": {"username": "runtime_owner", "tokens": http.login("runtime_owner", "Runtime-Owner-2026!")},
             "admin_a": session(http, *CLIENT_ADMIN_A),
             "admin_b": session(http, *ADMIN_B),
-            "user_a": session(http, *USER_A),
+            "user_a": user_a_state,
             "client_a": client_a,
             "client_b": client_b,
             "client_a_name": "Browser Client A",

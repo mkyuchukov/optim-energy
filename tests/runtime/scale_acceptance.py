@@ -34,6 +34,7 @@ from ha_client import Http, WebSocket, wait_ready, wait_server
 VERSION_FILE = Path(__file__).with_name("HA_VERSION")
 PASSWORD = "Scale-Test-2026!"
 PORTAL_DASHBOARDS = {
+    "energy-start",
     "energy-admin",
     "energy-locations",
     "energy-home",
