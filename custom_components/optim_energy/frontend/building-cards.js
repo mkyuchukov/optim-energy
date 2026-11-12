@@ -449,7 +449,8 @@ function treeWithoutVirtual(tree, id) {
 // packaged portal only; Home Assistant administrators get a separate command
 // centre and keep their normal HA tools.
 const CLIENT_PANELS = ['energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup'];
-const ADMIN_PANELS = ['energy-admin', 'core_configurator', '45df7312_zigbee2mqtt', 'hacs'];
+const ADMIN_PANELS = ['energy-admin', 'hacs'];
+const ADMIN_INGRESS_PANELS = ['core_configurator', '45df7312_zigbee2mqtt'];
 let sidebarKey = null;
 async function syncSidebar(hass) {
   if (!PORTAL.ready || typeof location === 'undefined') return;
@@ -461,11 +462,11 @@ async function syncSidebar(hass) {
   try {
     const now = (await hass.callWS({ type: 'frontend/get_user_data', key: 'sidebar' }))?.value;
     const hidden = new Set(now?.hiddenPanels || []);
-    for (const id of ['energy-admin', ...CLIENT_PANELS]) hidden.delete(id);
+    for (const id of ['energy-admin', ...CLIENT_PANELS, ...ADMIN_INGRESS_PANELS]) hidden.delete(id);
     if (PORTAL.isRoot) {
       // Keep the normal HA tools visible, but do not put the client portal in
       // an administrator's sidebar. The admin console has an explicit preview.
-      for (const id of CLIENT_PANELS) hidden.add(id);
+      for (const id of [...CLIENT_PANELS, ...ADMIN_INGRESS_PANELS]) hidden.add(id);
     } else {
       for (const id of Object.keys(hass.panels || {})) if (!allowed.has(id)) hidden.add(id);
     }
@@ -2957,6 +2958,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       this._users = null;
       this._summaries = [];
       this._catalog = [];
+      this._internalUrl = '';
       this._search = '';
       this._role = 'all';
       this._confirmDelete = null;
@@ -2988,9 +2990,12 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
           type: 'optim_energy/user/list',
           ...(root && client ? { client } : {}),
         });
-        const catalog = root
-          ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }).catch(() => [])
-          : [];
+        const [catalog, networkUrls] = root
+          ? await Promise.all([
+            this._hass.callWS({ type: 'optim_energy/location/catalog' }).catch(() => []),
+            this._hass.callWS({ type: 'network/url' }).catch(() => null),
+          ])
+          : [[], null];
         let summaries = [];
         if (root) {
           summaries = await Promise.all((PORTAL.clients || []).map(async (item) => {
@@ -3017,6 +3022,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         if (seq !== this._loadSeq || client !== portalClient) return;
         this._users = Array.isArray(users) ? users : [];
         this._catalog = Array.isArray(catalog) ? catalog : [];
+        this._internalUrl = String(networkUrls?.internal || '');
         this._summaries = summaries;
         this._error = '';
       } catch (e) {
@@ -3051,6 +3057,14 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         <div class="client-card-actions"><button class="quiet" data-select-client="${esc(item.id)}">${item.id === portalClient ? 'Selected' : 'Select'}</button><button class="quiet" data-preview-client="${esc(item.id)}">Preview client view</button>${item.id === portalClient && (this._summaries || []).length > 1 ? `<button class="danger-ghost" data-delete-client="${esc(item.id)}">${this._confirmClientDelete ? 'Confirm delete' : 'Delete client'}</button>` : ''}</div>
       </article>`;
     }
+    nativeAppsPanel() {
+      const base = this._internalUrl.replace(/\/$/, '');
+      const app = (slug, name, description, icon) => `<button class="shortcut" data-external-url="${esc(`${base}/app/${slug}`)}"><ha-icon icon="${icon}"></ha-icon><span><b>${name}</b><span>${description}</span></span></button>`;
+      const body = base
+        ? `<div class="shortcut-grid">${app('core_configurator', 'File editor', 'Open the native Home Assistant file editor.', 'mdi:file-document-edit-outline')}${app('45df7312_zigbee2mqtt', 'Zigbee2MQTT', 'Open the native Zigbee2MQTT panel.', 'mdi:zigbee')}</div><p class="admin-note">These open the real add-on panels on the local Home Assistant address. The public proxy does not expose add-on ingress.</p>`
+        : '<p class="admin-note">Home Assistant has not reported a local network URL. Set one under Settings → System → Network to open native add-ons.</p>';
+      return `<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Native Home Assistant</span><h2>Apps & tools</h2><p>Open the installed add-ons directly, without the public ingress proxy.</p></div></div>${body}</section>`;
+    }
     renderOverview() {
       const summaries = this._summaries || [];
       const locations = summaries.reduce((n, c) => n + (c.locations || 0), 0);
@@ -3058,6 +3072,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const devices = summaries.reduce((n, c) => n + (c.devices || 0), 0);
       return `<div class="admin-metrics">${this.metric('Clients', summaries.length, 'Isolated workspaces')}${this.metric('Locations', locations, 'Across every client')}${this.metric('People', people, 'Portal accounts')}${this.metric('Devices', devices, 'In client trees')}</div>
         <section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Directory</span><h2>Client workspaces</h2><p>Each client has its own locations, people and portal scope.</p></div><div class="admin-actions"><button class="quiet" data-go="clients">Manage clients</button><button class="primary" data-preview-client="${esc(portalClient || '')}">Preview selected client</button></div></div><div class="client-grid">${summaries.map((item) => this.clientCard(item)).join('') || '<div class="person-empty">No clients yet. Create the first client workspace.</div>'}</div></section>
+        ${this.nativeAppsPanel()}
         <section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Configuration</span><h2>Administrator shortcuts</h2><p>These are the global pieces behind the client experience.</p></div></div><div class="shortcut-grid">
           <button class="shortcut" data-go="clients"><ha-icon icon="mdi:account-group-outline"></ha-icon><span><b>Clients & access</b><span>Create workspaces and assign portal locations.</span></span></button>
           <button class="shortcut" data-go="locations"><ha-icon icon="mdi:map-marker-multiple-outline"></ha-icon><span><b>Locations</b><span>Review groups, devices and location labels.</span></span></button>
@@ -3192,6 +3207,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       if ((b = q('[data-select-client]'))) { await this.selectClient(b.dataset.selectClient); return; }
       if ((b = q('[data-preview-client]'))) { await this.openClientView(b.dataset.previewClient); return; }
       if ((b = q('[data-preview-location]'))) { await this.openClientView(portalClient, b.dataset.previewLocation); return; }
+      if ((b = q('[data-external-url]'))) { window.open(b.dataset.externalUrl, '_blank', 'noopener'); return; }
       if ((b = q('[data-toggle]'))) {
         const user = this._users?.find((item) => item.id === b.dataset.toggle); if (!user) return;
         try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: user.id, is_active: !user.is_active }); await this.refresh(); this.flash(`${user.name} ${user.is_active ? 'disabled' : 'enabled'}.`); } catch (x) { this.flash(x?.message || 'Could not update the person.', true); }
