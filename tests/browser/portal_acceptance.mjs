@@ -62,7 +62,9 @@ try {
   await rootCard.getByText('People & clients').waitFor();
   const clientSwitch = rootCard.locator('#clientSwitch');
   await clientSwitch.waitFor();
-  await clientSwitch.selectOption(state.client_a);
+  if ((await clientSwitch.inputValue()) !== state.client_a) {
+    await clientSwitch.selectOption(state.client_a);
+  }
   await waitUsers(root, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
   await clientSwitch.selectOption(state.client_b);
   await waitUsers(root, ['Browser Admin B', 'Browser User B'], ['Browser Admin A', 'Browser User A']);
