@@ -742,9 +742,13 @@ function syncModel(hass) {
   const src = [hass.devices, hass.entities];
   if (src.some((x) => !x) || (modelFrom && src.every((x, i) => x === modelFrom[i]))) return false;
   modelFrom = src;
-  const all = Object.values(hass.entities), entities = all.filter((e) => ['mqtt', 'shelly'].includes(e.platform) && e.entity_id.startsWith('sensor.'));
+  // Sensors of any integration. Zigbee2MQTT and Shelly are read by their entity names as before; a device
+  // from another provider is read by what its sensors are (device class), whatever they are called.
+  const all = Object.values(hass.entities), entities = all.filter((e) => e.entity_id.startsWith('sensor.'));
   const sensorsOf = (id) => entities.filter((e) => e.device_id === id), kidsOf = (id) => Object.values(hass.devices).filter((k) => k.via_device_id === id);
-  const hasPower = (id) => sensorsOf(id).some((e) => /_power$/.test(e.entity_id));
+  const classOf = (e) => e.device_class || e.original_device_class || hass.states?.[e.entity_id]?.attributes?.device_class;
+  const usable = (e) => !e.entity_category && !e.disabled_by && !e.hidden_by;
+  const hasPower = (id) => sensorsOf(id).some((e) => /_power$/.test(e.entity_id) || (usable(e) && classOf(e) === 'power'));
   const toMeter = (d, own, kidSensors = []) => {
     const find = (re) => own.find((e) => re.test(e.entity_id))?.entity_id, shelly = own[0]?.platform === 'shelly';
     // Shelly gives power factor as 0 to 1, not a percentage, so it is kept apart from the Zigbee figure.
@@ -753,9 +757,16 @@ function syncModel(hass) {
       const m = SHELLY_PHASE.exec(e.entity_id);
       if (m) readings.push([{ power: `Phase ${m[1].toUpperCase()} power`, apparent_power: `Phase ${m[1].toUpperCase()} apparent power`, power_factor: `Phase ${m[1].toUpperCase()} power factor`, voltage: `Voltage ${m[1].toUpperCase()}`, current: `Current ${m[1].toUpperCase()}`, frequency: 'Frequency' }[m[2]], e.entity_id, { power: 'W', apparent_power: 'VA', voltage: 'V', current: 'A', frequency: 'Hz' }[m[2]] || '']);
     }
+    if (!readings.some(([n]) => n === 'Power')) { const e = own.find((x) => usable(x) && classOf(x) === 'power'); if (e) readings.unshift(['Power', e.entity_id, 'W']); }
+    if (!readings.some(([n]) => n === 'Total energy')) {
+      // Several energy sensors (today, this month, total) are common; the one that only ever counts up is the meter.
+      const energy = own.filter((x) => usable(x) && classOf(x) === 'energy'), total = (x) => /total/.test(hass.states?.[x.entity_id]?.attributes?.state_class || '');
+      const e = energy.find(total) || energy[0];
+      if (e) readings.push(['Total energy', e.entity_id, 'kWh']);
+    }
     const read = (name) => readings.find(([n]) => n === name)?.[1];
     const phases = Object.fromEntries(['a', 'b', 'c'].map((x) => [x.toUpperCase(), find(new RegExp(`_energy_phase_${x}$`))]).filter(([, id]) => id));
-    return { id: d.id, tagged: (d.labels || []).map((x) => NATIVE?.kinds[x]).find(Boolean), name: d.name_by_user || d.name, type: 'Energy device', model: [d.manufacturer, d.model_id || d.model].filter(Boolean).join(' '), place: placeById(TREE.placed[d.id])?.id || null, power: read('Power'), energy: read('Total energy'), report: `dev:${d.id}`, readings, alive: read('Device temperature') ? [read('Device temperature')] : [], voltages: readings.filter(([n]) => n.startsWith('Voltage')).map(([, id]) => id), frequency: read('Frequency'), apparent: read('Apparent power'), powerFactor: read('Power factor'), temperature: read('Device temperature'), linkQuality: read('Link quality'), alarms: find(/_event$/)?.replace(/^sensor\.|_event$/g, ''), rssi: read('Signal strength'), address: (d.configuration_url || '').replace(/^https?:\/\//, '').replace(/:80\/?$|\/$/g, ''), ...(shelly ? { shelly: true } : {}), ...(Object.keys(phases).length ? { phases } : {}) };
+    return { id: d.id, tagged: (d.labels || []).map((x) => NATIVE?.kinds[x]).find(Boolean), name: d.name_by_user || d.name, type: 'Energy device', model: [d.manufacturer, d.model_id || d.model].filter(Boolean).join(' '), place: placeById(TREE.placed[d.id])?.id || null, power: read('Power'), energy: read('Total energy'), report: `dev:${d.id}`, readings, alive: read('Device temperature') ? [read('Device temperature')] : [], voltages: readings.filter(([n]) => n.startsWith('Voltage')).map(([, id]) => id), frequency: read('Frequency'), apparent: read('Apparent power'), powerFactor: read('Power factor'), temperature: read('Device temperature'), linkQuality: read('Link quality'), alarms: find(/_event$/)?.replace(/^sensor\.|_event$/g, ''), rssi: read('Signal strength'), address: (d.configuration_url || '').replace(/^https?:\/\//, '').replace(/:80\/?$|\/$/g, ''), platform: own[0]?.platform, ...(shelly ? { shelly: true } : {}), ...(Object.keys(phases).length ? { phases } : {}) };
   };
   const channelMeters = [];
   if (NATIVE) TREE.placed = { ...(TREE.virtualPlaced || {}), ...nativePlaced(hass.devices, NATIVE) };
@@ -1099,7 +1110,12 @@ const typeLabel = (d) => (d.virtual ? 'Virtual' : d.link ? d.type : KIND_LABEL[k
 // Everything that is not lights stays out of All off and the group buttons.
 const isKept = (d) => kindOf(d) !== 'lights';
 // ponytail: only the 1PM's relay is a light circuit. The relay on EM and Pro EM models controls something else, and AIoT does not offer it either.
-const switchOf = (hass, d) => (/1PM/.test(d.model || '') ? Object.values(hass.entities).find((e) => e.device_id === d.id && e.platform === 'shelly' && e.entity_id.startsWith('switch.'))?.entity_id : undefined);
+const switchOf = (hass, d) => {
+  const own = Object.values(hass.entities).filter((e) => e.device_id === d.id);
+  if (own.some((e) => e.platform === 'shelly')) return /1PM/.test(d.model || '') ? own.find((e) => e.platform === 'shelly' && e.entity_id.startsWith('switch.'))?.entity_id : undefined;
+  // Any other provider: the device's own on/off entity, not a configuration or diagnostic toggle.
+  return own.find((e) => /^(switch|light)\./.test(e.entity_id) && !e.entity_category && !e.disabled_by && !e.hidden_by)?.entity_id;
+};
 // The 3D view: rooms packed in rows on one floor, each sized by its number of lights, lights placed evenly inside.
 // ponytail: a stylised plan, not the real one. A real floor plan (Sweet Home 3D and floor3d-card) replaces it if this proves useful.
 function layoutRooms(rooms) {
@@ -1333,7 +1349,8 @@ function deviceStatus(d, states, nowMs) {
     return up === parts.length ? { key: 'ok', label: 'All online' } : { key: 'warn', label: `${up} of ${parts.length} online` };
   }
   if (d.link) return states[BRIDGE]?.state === 'on' ? { key: 'ok', label: 'Connected' } : { key: 'warn', label: 'Connection dropped' };
-  if (!d.shelly && states[BRIDGE]?.state !== 'on') return { key: 'warn', label: 'Connection dropped' };
+  // The Zigbee bridge being down only says something about the devices behind it.
+  if (!d.shelly && (!d.platform || d.platform === 'mqtt') && states[BRIDGE]?.state !== 'on') return { key: 'warn', label: 'Connection dropped' };
   const s = states[d.power];
   if (!s || s.state === 'unavailable' || s.state === 'unknown') return { key: 'bad', label: 'Offline' };
   // Home Assistant holds a live connection to a Shelly and marks it unavailable the moment it drops. A steady reading never updates, so age says nothing.
@@ -3108,7 +3125,11 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         this._summaries = summaries;
         this._inbox = Array.isArray(inbox) ? inbox : null;
         this._picked = new Set([...this._picked].filter((id) => (this._inbox || []).some((d) => d.id === id)));
-        this._adminDevices = root ? Object.fromEntries(adminDeviceCatalog(allDevices, allEntities, TREE.placed).map((d) => [d.id, d])) : {};
+        // The wiring table and its Add dialog offer what the inbox recognised, from any integration,
+        // on top of the older Zigbee2MQTT and Shelly rule.
+        const recognised = new Set((Array.isArray(inbox) ? inbox : []).filter((d) => d.kind && d.status !== 'ignored').map((d) => d.id));
+        const offered = root ? [...adminDeviceCatalog(allDevices, allEntities, TREE.placed), ...(allDevices || []).filter((d) => recognised.has(d.id))] : [];
+        this._adminDevices = Object.fromEntries(offered.map((d) => [d.id, d]));
         this._error = '';
       } catch (e) {
         if (seq !== this._loadSeq || client !== portalClient) return;

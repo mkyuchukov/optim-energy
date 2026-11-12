@@ -278,3 +278,31 @@ console.log('prices ok');
   await assert.rejects(m.billPages(files, { max_pages: 4 }), /at most 4 pages/i);
   console.log('bill page limit ok');
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// A device from another provider: nothing is named the Zigbee2MQTT way, and it has more than one energy sensor.
+{
+  m.setLocation(null);
+  m.setTree({ places: [], placed: {} });
+  const hass = {
+    devices: { plug: { id: 'plug', name: 'Kettle plug', manufacturer: 'Tuya', model: 'TS011F', labels: ['energy_meter'] }, hub: { id: 'hub', name: 'Hub', labels: ['energy_meter'] } },
+    entities: {
+      'switch.kettle': { entity_id: 'switch.kettle', device_id: 'plug', platform: 'tuya' },
+      'switch.kettle_child_lock': { entity_id: 'switch.kettle_child_lock', device_id: 'plug', platform: 'tuya', entity_category: 'config' },
+      'sensor.kettle_current_consumption': { entity_id: 'sensor.kettle_current_consumption', device_id: 'plug', platform: 'tuya', device_class: 'power' },
+      'sensor.kettle_today': { entity_id: 'sensor.kettle_today', device_id: 'plug', platform: 'tuya', device_class: 'energy' },
+      'sensor.kettle_total': { entity_id: 'sensor.kettle_total', device_id: 'plug', platform: 'tuya', device_class: 'energy' },
+      'sensor.hub_uptime': { entity_id: 'sensor.hub_uptime', device_id: 'hub', platform: 'tuya', device_class: 'duration' },
+    },
+    states: { 'sensor.kettle_today': { attributes: { state_class: 'measurement' } }, 'sensor.kettle_total': { attributes: { state_class: 'total_increasing' } }, 'switch.kettle': { attributes: { device_class: 'outlet' } } },
+  };
+  m.syncModel(hass);
+  const plug = m.DEVICES.find((d) => d.id === 'plug');
+  assert.ok(plug, 'a metered device from another provider is not in the portal');
+  assert.strictEqual(plug.power, 'sensor.kettle_current_consumption');
+  assert.strictEqual(plug.energy, 'sensor.kettle_total');
+  assert.strictEqual(plug.switch, 'switch.kettle');
+  assert.strictEqual(m.kindOf(plug), 'socket');
+  assert.ok(!m.DEVICES.some((d) => d.id === 'hub'), 'a device with no power or energy sensor is shown as a meter');
+  m.DEVICES.length = 0;
+  console.log('any provider ok');
+}
