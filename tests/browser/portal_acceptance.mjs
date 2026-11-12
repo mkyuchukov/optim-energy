@@ -32,15 +32,23 @@ async function waitCard(page, selector) {
 }
 
 async function waitUsers(page, include, exclude) {
-  await page.waitForFunction(
-    ({ include, exclude }) => {
+  try {
+    await page.waitForFunction(
+      ({ include, exclude }) => {
+        const card = document.querySelector('building-tenant-admin-card');
+        const text = card?.shadowRoot?.querySelector('#users')?.textContent || '';
+        return include.every((value) => text.includes(value)) && exclude.every((value) => !text.includes(value));
+      },
+      { include, exclude },
+      { timeout: 20000 },
+    );
+  } catch (error) {
+    const actual = await page.evaluate(() => {
       const card = document.querySelector('building-tenant-admin-card');
-      const text = card?.shadowRoot?.querySelector('#users')?.textContent || '';
-      return include.every((value) => text.includes(value)) && exclude.every((value) => !text.includes(value));
-    },
-    { include, exclude },
-    { timeout: 20000 },
-  );
+      return card?.shadowRoot?.querySelector('#users')?.textContent || '';
+    });
+    throw new Error(`users wait failed; include=${include}; exclude=${exclude}; actual=${actual}`, { cause: error });
+  }
 }
 
 let rootContext;
