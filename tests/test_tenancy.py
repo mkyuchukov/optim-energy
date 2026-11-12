@@ -507,6 +507,21 @@ class TenancyTests(unittest.TestCase):
         assert kind([{"entity_id": "sensor.room_temperature", "device_class": "temperature", "unit": "°C"}]) == (None, "")
         assert kind([{"entity_id": "switch.off", "disabled_by": "user"}]) == (None, "")
 
+    def test_a_bridge_does_not_swallow_the_devices_behind_it(self) -> None:
+        fold = tenancy.shown_with_parent
+        a, b = ("client", "loc:a"), ("client", "loc:b")
+        # A three-phase meter's channels, unplaced or beside their parent.
+        assert fold("Shelly", "Shelly", "meter", None, a)
+        assert fold("Shelly", "Shelly", "meter", a, a)
+        # A Zigbee plug behind a bridge that happens to have a plain switch of its own.
+        assert not fold("Tuya", "Zigbee2MQTT", "relay", None, None)
+        assert not fold("Tongou", "Zigbee2MQTT", "relay", b, None)
+        # A parent that is not a portal device never hides anything.
+        assert not fold("Shelly", "Shelly", None, None, None)
+        # A channel placed somewhere other than its parent is shown where it is.
+        assert not fold("Shelly", "Shelly", "meter", b, a)
+        assert not fold(None, None, "meter", None, None)
+
     def test_every_command_has_a_capability_row(self) -> None:
         import re
 

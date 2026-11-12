@@ -377,6 +377,32 @@ def device_kind(entities: Iterable[dict[str, Any]]) -> tuple[str | None, str]:
     return None, ""
 
 
+def shown_with_parent(
+    child_maker: str | None,
+    parent_maker: str | None,
+    parent_kind: str | None,
+    child_place: Any,
+    parent_place: Any,
+) -> bool:
+    """Whether a device is a channel of its parent rather than a device of its own.
+
+    A three-phase meter reports each phase as a child device; those belong
+    with the meter. A Zigbee plug is also a child, of its bridge, but it is
+    its own device. The difference used here: a channel is made by the same
+    manufacturer as its parent and sits where its parent sits.
+
+    ponytail: a bridge whose own lamps share its brand would be folded if the
+    bridge itself looked like a portal device; none does today. If one turns
+    up, key this on the integration instead.
+    """
+    return bool(
+        parent_kind
+        and child_maker
+        and child_maker == parent_maker
+        and (child_place is None or child_place == parent_place)
+    )
+
+
 class TenancyManager:
     """Own the shared tenant store and keep it synchronized with HA auth."""
 
@@ -1065,6 +1091,13 @@ class TenancyManager:
                     out.append(f'the schedule "{state.name if state else automation_id}"')
         return out
 
+    def _device_integrations(self, device: Any) -> list[str]:
+        """Name the integration a device comes from."""
+        # Newer Home Assistant gives a device one config entry; older gave a set.
+        entry_ids = [getattr(device, "config_entry_id", None)] if hasattr(device, "config_entry_id") else list(device.config_entries)
+        entries = (self.hass.config_entries.async_get_entry(x) for x in entry_ids if x)
+        return sorted({entry.domain for entry in entries if entry is not None})
+
     def device_inbox(self, user: User) -> list[dict[str, Any]]:
         """Every Home Assistant device with where it is and what it looks like. Root only."""
         if not self.is_root(user):
@@ -1090,26 +1123,23 @@ class TenancyManager:
                 }
             )
         devices = list(dr.async_get(self.hass).devices)
+        by_id = {d.id: d for d in devices}
         kinds = {d.id: device_kind(by_device.get(d.id, [])) for d in devices}
+        owner_of = {d.id: index.get(str(d.area_id)) if d.area_id else None for d in devices}
         out: list[dict[str, Any]] = []
         for device in devices:
             kind, why = kinds[device.id]
-            owner = index.get(str(device.area_id)) if device.area_id else None
-            parent = device.via_device_id
-            # A channel of a device that is itself recognised is shown with it, not on its own.
-            if parent and kinds.get(parent, (None, ""))[0]:
+            owner = owner_of[device.id]
+            parent = by_id.get(device.via_device_id) if device.via_device_id else None
+            if parent is not None and shown_with_parent(
+                device.manufacturer, parent.manufacturer, kinds[parent.id][0], owner, owner_of[parent.id]
+            ):
                 continue
             item: dict[str, Any] = {
                 "id": device.id,
                 "name": device.name_by_user or device.name or device.id,
                 "model": " ".join(str(x) for x in (device.manufacturer, device.model) if x),
-                "integrations": sorted(
-                    {
-                        entry.domain
-                        for entry in map(self.hass.config_entries.async_get_entry, device.config_entries)
-                        if entry is not None
-                    }
-                ),
+                "integrations": self._device_integrations(device),
                 "kind": kind,
                 "why": why,
                 "entities": len(by_device.get(device.id, [])),
