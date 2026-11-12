@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- Polish the Administration directory layouts: align person controls on one row and remove duplicate client/person actions.
+
 ## 0.4.1
 
 - Make the administrator console the system default and redirect client accounts to their location picker so the client Overview cannot remain pinned in an administrator's sidebar.
