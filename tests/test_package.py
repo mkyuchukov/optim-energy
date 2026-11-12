@@ -25,7 +25,7 @@ class PackageTests(unittest.TestCase):
 
     def test_manifest_and_hacs_versions(self) -> None:
         self.assertEqual(MANIFEST["domain"], "optim_energy")
-        self.assertEqual(MANIFEST["version"], "0.4.5")
+        self.assertEqual(MANIFEST["version"], "0.4.6")
         self.assertTrue(MANIFEST["config_flow"])
         self.assertEqual(HACS["homeassistant"], "2026.11.0")
 

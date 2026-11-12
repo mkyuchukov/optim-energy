@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6
+
+- Clear stale sidebar hiding state for restored native add-on panels so File editor and Zigbee2MQTT appear for administrators again.
+
 ## 0.4.5
 
 - Allow a validated Supervisor ingress-session capability through the REST guard and restore File editor and Zigbee2MQTT to the administrator sidebar.
