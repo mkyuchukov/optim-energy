@@ -1037,6 +1037,51 @@ def run(version: str, *, keep: bool = False) -> None:
             assert_true(place_ids(client_tree(root, client_a), "location")[annex]["area_id"], "new location has no area")
             root.command({"type": "optim_energy/location/delete", "client": client_a, "location": annex})
             refused(root, {"type": "optim_energy/location/delete", "client": client_a, "location": location_a}, "deleting a location in use")
+
+            # The inbox: every device, where it is, and why it was recognised.
+            spare = root.command(
+                {
+                    "type": "optim_runtime_fixture/create_devices",
+                    "config_entry_id": fixture_entry_id,
+                    "devices": [{"key": "spare_device", "name": "Runtime Spare Device", "entity": True}],
+                }
+            )[0]["id"]
+
+            def inbox() -> dict[str, dict[str, Any]]:
+                return {d["id"]: d for d in root.command({"type": "optim_energy/device/inbox"})}
+
+            seen = inbox()
+            assert_equal((seen[a_device]["status"], seen[a_device]["client"], seen[a_device]["location"]), ("assigned", client_a, location_a), "inbox row of A's device")
+            assert_equal((seen[b_device]["status"], seen[b_device]["client"]), ("assigned", client_b), "inbox row of B's device")
+            assert_equal((seen[spare]["status"], seen[spare]["kind"]), ("unassigned", "meter"), "a new device is an unassigned candidate")
+            assert_true("sensor.spare_device_power" in seen[spare]["why"], "the inbox does not say why the device was recognised")
+            assert_true(seen[spare]["integrations"] == ["optim_runtime_fixture"], "the inbox does not name the integration")
+            refused(admin_a, {"type": "optim_energy/device/inbox"}, "a client admin reading the inbox")
+            refused(admin_a, {"type": "optim_energy/device/assign", "device_id": spare, "place": location_a}, "a client admin claiming an unassigned device")
+            root.command({"type": "optim_energy/device/ignore", "device_id": spare, "ignored": True})
+            assert_equal(inbox()[spare]["status"], "ignored", "ignored device")
+            refused(root, {"type": "optim_energy/device/ignore", "device_id": a_device, "ignored": True}, "ignoring an assigned device")
+            root.command({"type": "optim_energy/device/ignore", "device_id": spare, "ignored": False})
+            root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": spare, "place": location_a})
+            assert_equal(inbox()[spare]["status"], "assigned", "assigned from the inbox")
+            root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": spare})
+            assert_equal(inbox()[spare]["status"], "unassigned", "removed from the client")
+
+            # A device still counted in a client's sum cannot leave that client.
+            with_sum = client_tree(root, client_a)
+            with_sum["virtual"] = [{"id": "virt:total", "name": "Runtime Total"}]
+            with_sum["sums"] = {"virt:total": {"energy": {"entry": "none", "entity": "sensor.none", "members": [A_DEVICE_SENSOR]}}}
+            root.command({"type": "optim_energy/tree/save", "client": client_a, "tree": with_sum})
+            try:
+                root.command({"type": "optim_energy/device/assign", "client": client_b, "device_id": a_device, "place": location_b})
+            except RuntimeError as err:
+                assert_true("Runtime Total" in str(err), f"the refusal does not name what to fix: {err}")
+            else:
+                raise AssertionError("a device left its client while a sum still counted it")
+            with_sum["virtual"], with_sum["sums"] = [], {}
+            root.command({"type": "optim_energy/tree/save", "client": client_a, "tree": with_sum})
+            root.command({"type": "optim_energy/device/assign", "client": client_b, "device_id": a_device, "place": location_b})
+            root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": a_device, "place": location_a})
         finally:
             admin_a.close()
             root.close()
