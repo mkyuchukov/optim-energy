@@ -25,7 +25,7 @@ class PackageTests(unittest.TestCase):
 
     def test_manifest_and_hacs_versions(self) -> None:
         self.assertEqual(MANIFEST["domain"], "optim_energy")
-        self.assertEqual(MANIFEST["version"], "0.4.0")
+        self.assertEqual(MANIFEST["version"], "0.4.1")
         self.assertTrue(MANIFEST["config_flow"])
         self.assertEqual(HACS["homeassistant"], "2026.11.0")
 
@@ -57,7 +57,7 @@ class PackageTests(unittest.TestCase):
             ["home", "help"],
         )
         self.assertFalse(next(s for s in dashboards.DASHBOARD_SPECS if s["url_path"] == "energy-setup")["require_admin"])
-        self.assertTrue(next(s for s in dashboards.DASHBOARD_SPECS if s["url_path"] == "energy-admin")["require_admin"])
+        self.assertFalse(next(s for s in dashboards.DASHBOARD_SPECS if s["url_path"] == "energy-admin")["require_admin"])
 
     def test_assets_exist(self) -> None:
         for name in (

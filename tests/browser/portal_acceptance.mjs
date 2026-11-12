@@ -82,6 +82,9 @@ try {
   ({ context: adminContext, page: adminPage } = await openPage(state.admin_a, '/energy-locations/start'));
   await adminPage.getByText(state.client_a_name).first().waitFor({ timeout: 30000 });
   assert.equal(await adminPage.getByText(state.client_b_name).count(), 0, 'Client B name leaked to Client A');
+  const clientDefault = await openPage(state.admin_a, '/energy-admin/overview');
+  await clientDefault.page.waitForURL(`${base}/energy-locations/start`, { timeout: 30000 });
+  await clientDefault.context.close();
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
   const adminCard = await waitCard(adminPage, 'building-admin-card');
   await adminCard.getByRole('heading', { level: 1, name: 'People' }).waitFor({ timeout: 30000 });

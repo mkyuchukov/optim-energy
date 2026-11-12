@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- Make the administrator console the system default and redirect client accounts to their location picker so the client Overview cannot remain pinned in an administrator's sidebar.
+
 ## 0.4.0
 
 - Give Home Assistant owners and administrators a separate Administration console with overview, clients, locations and people views instead of the client portal.
