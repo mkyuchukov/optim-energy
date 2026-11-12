@@ -176,9 +176,10 @@ logger:
             "sh",
             "-c",
             "rm -rf /config/ops_backup && mkdir -p /config/ops_backup && "
-            "cp -a /config/.storage/auth /config/.storage/optim_energy.tenancy "
-            "/config/.storage/optim_energy.migration_backup /config/ops_backup/ && "
-            "cp -a /config/.storage/lovelace* /config/ops_backup/",
+            "for f in auth optim_energy.tenancy optim_energy.migration_backup; do "
+            "[ -e /config/.storage/$f ] && cp -a /config/.storage/$f /config/ops_backup/; "
+            "done; for f in /config/.storage/lovelace*; do "
+            "[ -e $f ] && cp -a $f /config/ops_backup/; done; true",
             timeout=180,
         )
 
