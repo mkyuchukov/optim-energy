@@ -52,6 +52,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     probatio.Optional("area_id"): str,
                     probatio.Optional("labels"): [str],
                     probatio.Optional("entity"): bool,
+                    probatio.Optional("meter"): bool,
                 }
             ],
         }
@@ -93,6 +94,18 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     suggested_object_id=f"{spec['key']}_power",
                     original_device_class="power",
                 )
+            if spec.get("meter"):
+                # What the portal needs to show a device: a power and an energy sensor.
+                for measure in ("power", "energy"):
+                    er.async_get(hass).async_get_or_create(
+                        "sensor",
+                        "optim_runtime_fixture",
+                        f"{spec['key']}_{measure}",
+                        config_entry=hass.config_entries.async_get_entry(spec_entry_id),
+                        device_id=device.id,
+                        suggested_object_id=f"{spec['key']}_{measure}",
+                        original_device_class=measure,
+                    )
             created.append(
                 {
                     "id": device.id,

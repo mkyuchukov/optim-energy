@@ -29,6 +29,8 @@ const portalCanManage = () => !!PORTAL.capabilities.manage_tree;
 // Wiring, main devices and virtual devices decide what a client can see; the server only takes them from root.
 const portalCanWire = () => !!PORTAL.capabilities.manage_wiring;
 const portalCanManageHA = () => !!PORTAL.capabilities.manage_ha;
+// A Home Assistant administrator works on whichever client is selected, so its commands say which.
+const clientArg = () => (PORTAL.isRoot && portalClient ? { client: portalClient } : {});
 const portalCanManageUsers = () => !!PORTAL.capabilities.manage_users;
 const portalTenantMode = () => !PORTAL.isRoot;
 let portalClient = null;
@@ -602,7 +604,8 @@ function needLocation() {
       return;
     }
   }
-  if (PORTAL.isRoot && /^\/(energy-locations|energy-setup)(?:\/|$)/.test(location.pathname)) {
+  // Setup (prices, alerts, schedules, groups, people) is open to an administrator for the selected client.
+  if (PORTAL.isRoot && /^\/energy-locations(?:\/|$)/.test(location.pathname)) {
     history.replaceState(null, '', ADMIN_HOME_PATH);
     window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
     return;
@@ -687,7 +690,7 @@ async function syncSums(hass) {
       for (const [id, helpers] of Object.entries(sums)) {
         if (TREE.virtual.some((v) => v.id === id)) continue;
         for (const kind of ['energy', 'power']) if (helpers[kind]?.entry) {
-          await hass.callWS({ type: 'optim_energy/helper/sum/delete', virtual_id: id, kind }).catch(() => {});
+          await hass.callWS({ ...clientArg(), type: 'optim_energy/helper/sum/delete', virtual_id: id, kind }).catch(() => {});
           changed = true;
         }
       }
@@ -695,10 +698,10 @@ async function syncSums(hass) {
         const now = sums[id]?.[kind], members = wanted[kind];
         if (now && now.members.join() === members.join()) continue;
         if (!members.length) {
-          if (now?.entry) { await hass.callWS({ type: 'optim_energy/helper/sum/delete', virtual_id: id, kind }).catch(() => {}); changed = true; }
+          if (now?.entry) { await hass.callWS({ ...clientArg(), type: 'optim_energy/helper/sum/delete', virtual_id: id, kind }).catch(() => {}); changed = true; }
           continue;
         }
-        const saved = await hass.callWS({ type: 'optim_energy/helper/sum/save', virtual_id: id, kind, name: `${wanted.name} ${kind}`, members, ...(now?.entry ? { entry_id: now.entry } : {}) });
+        const saved = await hass.callWS({ ...clientArg(), type: 'optim_energy/helper/sum/save', virtual_id: id, kind, name: `${wanted.name} ${kind}`, members, ...(now?.entry ? { entry_id: now.entry } : {}) });
         sums[id] = { ...(sums[id] || {}), [kind]: { entry: saved.entry_id, entity: saved.entity_id, members } };
         changed = true;
       }
@@ -1106,6 +1109,12 @@ const kindOf = (d) => {
   const saved = TREE.kinds?.[d.id];
   return d.tagged || OLD_KIND[saved] || saved || d.guess || 'relay';
 };
+// Renaming a device and moving it between this client's locations and groups, for whoever manages the client.
+function deviceManageHtml(d) {
+  if (!portalCanManage() || !areasModel() || d.virtual || d.link || d.channelOf) return '';
+  const spots = TREE.places.filter((p) => p.kind === 'location').sort(byName).flatMap((l) => [l.id, ...[...placesUnder(l.id)].filter((x) => x !== l.id)]), name = d.fullName || d.name;
+  return `<h3>Name and place</h3><div class="kvl manage"><label>Name<input id="dname" maxlength="80" value="${esc(name)}" autocomplete="off"></label><label>Location or group<select id="dplace">${spots.map((p) => `<option value="${esc(p)}"${p === d.place ? ' selected' : ''}>${esc(placeLabel(p))}</option>`).join('')}</select></label></div><button data-save-device="${esc(d.id)}" data-was-name="${esc(name)}" data-was-place="${esc(d.place || '')}">Save name and place</button><span class="err" id="dmsg"></span>`;
+}
 const typeLabel = (d) => (d.virtual ? 'Virtual' : d.link ? d.type : KIND_LABEL[kindOf(d)]);
 // Everything that is not lights stays out of All off and the group buttons.
 const isKept = (d) => kindOf(d) !== 'lights';
@@ -1315,7 +1324,7 @@ function alertsHtml(data, st, nowMs, tz, inScope, openSet, hasNet, part) {
   const when = (t) => new Date(t).toLocaleString('en-GB', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const time = (t) => new Date(t).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
   const row = (sev, key, title, meta, body) => `<details class="ar ${sev}" data-group="${esc(key)}"${openSet?.has(key) ? ' open' : ''}><summary><i></i><span><b>${title}</b><small>${meta}</small></span></summary><div class="more">${body}</div></details>`;
-  const cfgBtn = (a) => (a.config ? `<button class="cfg" data-config="${a.config}">Change limit in Home Assistant ›</button>` : '');
+  const cfgBtn = (a) => (a.config && portalCanManageHA() ? `<button class="cfg" data-config="${a.config}">Change limit in Home Assistant ›</button>` : '');
   const times = (n) => `${n} time${n > 1 ? 's' : ''}`;
   if (part === 'now') {
     const active = computeActive(st, nowMs, data).filter(inScope);
@@ -1572,7 +1581,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}bu
 const ADMIN_TABLE_CSS = `
 .admin-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;padding:4px 0 2px}.admin-head h1{margin:0;font-size:clamp(24px,3vw,32px);letter-spacing:-.03em}.admin-head p{margin:5px 0 0;color:var(--muted);font-size:13px;max-width:760px;line-height:1.45}.admin-kicker{display:block;color:var(--accent);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
 .admin-toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.admin-toolbar.compact{padding:8px 10px}.admin-toolbar .sp{flex:1}.admin-control{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.admin-control select{min-width:220px}.toolbar-label{font-size:12px;color:var(--muted)}.toolbar-label b{color:var(--fg)}.toolbar-count{font-size:12px;color:var(--muted);margin:auto 0}.admin-actions{display:flex;gap:6px;flex-wrap:wrap}.admin-actions button,.admin-toolbar .table-action{font-size:12.5px;padding:6px 10px}
-.admin-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.admin-table{width:100%;border-collapse:collapse;font-size:13px}.admin-table th{text-align:left;color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.admin-table td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);vertical-align:middle}.admin-table tr:last-child td{border-bottom:0}.admin-table tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}.table-name{all:unset;cursor:pointer;display:grid;gap:2px;font-weight:600;color:var(--fg)}.table-name small,.table-sub{display:block;font-weight:400;color:var(--muted);font-size:11px}.table-name:hover{color:var(--accent)}.table-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.table-action{all:unset;cursor:pointer;padding:5px 8px;border:1px solid var(--line);border-radius:6px;color:var(--fg);font-size:11.5px;white-space:nowrap}.table-action:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}.table-action.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}.table-action.on{background:color-mix(in srgb,var(--fg) 12%,transparent);font-weight:600}.admin-table input[type=checkbox]{width:16px;height:16px;margin:0}.table-select{min-width:110px;padding:5px 7px;font-size:12px}.admin-empty{text-align:center;color:var(--muted);padding:24px !important}.admin-note{color:var(--muted);font-size:12px;line-height:1.45;margin:0}
+.admin-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.admin-table{width:100%;border-collapse:collapse;font-size:13px}.admin-table th{text-align:left;color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.admin-table td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);vertical-align:middle}.admin-table tr:last-child td{border-bottom:0}.admin-table tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}.table-name{all:unset;cursor:pointer;display:grid;gap:2px;font-weight:600;color:var(--fg)}.table-name small,.table-sub{display:block;font-weight:400;color:var(--muted);font-size:11px}.table-name:hover{color:var(--accent)}.table-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.table-action{all:unset;cursor:pointer;padding:5px 8px;border:1px solid var(--line);border-radius:6px;color:var(--fg);font-size:11.5px;white-space:nowrap}.table-action:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}.table-action.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}.checks{display:grid;gap:6px;padding:4px 0}.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--fg)}.check input{width:16px;height:16px;margin:0}.table-action.on{background:color-mix(in srgb,var(--fg) 12%,transparent);font-weight:600}.admin-table input[type=checkbox]{width:16px;height:16px;margin:0}.table-select{min-width:110px;padding:5px 7px;font-size:12px}.admin-empty{text-align:center;color:var(--muted);padding:24px !important}.admin-note{color:var(--muted);font-size:12px;line-height:1.45;margin:0}
 .admin-editor{border:1px solid color-mix(in srgb,var(--accent) 38%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--accent) 5%,var(--panel));padding:13px 14px;display:grid;gap:10px}.admin-editor-head h3{margin:2px 0 0;font-size:16px}.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}.form-grid .wide{grid-column:1/-1}.form-grid .field{display:grid;gap:4px;color:var(--muted);font-size:11.5px}.form-grid input,.form-grid select{width:100%;box-sizing:border-box}.form-grid select[multiple]{min-height:90px}.form-actions{display:flex;justify-content:flex-end;gap:7px}
 @media(max-width:700px){.admin-head h1{font-size:25px}.admin-table th,.admin-table td{padding:8px}.admin-table th:nth-child(3),.admin-table td:nth-child(3){display:none}.admin-toolbar .admin-control{width:100%}.admin-toolbar .admin-control select{flex:1;min-width:0}.admin-actions{width:100%}.admin-actions button{flex:1}.table-actions{justify-content:flex-start}}
 `;
@@ -1741,6 +1750,25 @@ function hourTip(hour, today, yesterday, current, tariff, costLabel = 'Cost') {
   }
   return { when: `${pad(hour)}:00 to ${pad((hour + 1) % 24)}:00`, note: hour === current ? 'This hour so far' : today == null ? 'Later today' : null, rows };
 }
+// The drawer is redrawn every few seconds. While something typed in it is unsaved, it is left alone.
+function paintDrawer(card, dr, html) { if (!dr._watched) { dr._watched = true; watchDrawer(card, dr); } if (dr.dataset.dirty) return; dr.innerHTML = html; }
+function watchDrawer(card, dr) {
+  dr.addEventListener('input', () => { dr.dataset.dirty = '1'; });
+  dr.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-close]')) { delete dr.dataset.dirty; return; }
+    const b = e.target.closest('[data-save-device]');
+    if (!b) return;
+    const name = dr.querySelector('#dname').value.trim(), place = dr.querySelector('#dplace').value, msg = dr.querySelector('#dmsg');
+    try {
+      if (name && name !== b.dataset.wasName) await card._hass.callWS({ ...clientArg(), type: 'optim_energy/device/update', device_id: b.dataset.saveDevice, name });
+      if (place && place !== b.dataset.wasPlace) await card._hass.callWS({ ...clientArg(), type: 'optim_energy/device/assign', device_id: b.dataset.saveDevice, place });
+      delete dr.dataset.dirty;
+      treeLoad = null;
+      await ensureTree(card._hass);
+      card.paint();
+    } catch (x) { msg.textContent = x?.message || 'Could not save the change.'; }
+  });
+}
 function drawerHtml(d, st, now, totals) {
   const s = deviceStatus(d, st, now);
   const fresh = [d.power, d.energy, ...(d.alive || [])].map((id) => st[id]).filter(Boolean).map((x) => +new Date(x.last_updated));
@@ -1757,7 +1785,7 @@ function drawerHtml(d, st, now, totals) {
   <div class="kvl"><div><span>Type</span><span>${typeLabel(d)}</span></div><div><span>Model</span><span>${esc(d.model || '')}</span></div>${wiring}</div>
   ${rows ? `<h3>Latest readings</h3><div class="kvl">${rows}</div>` : ''}
   ${tech ? `<details class="tech"><summary>Technical details</summary><div class="kvl">${tech}</div></details>` : ''}
-  ${d.report ? `<button class="gold" data-report="${d.report}">Open report</button>` : ''}`;
+  ${d.report ? `<button class="gold" data-report="${d.report}">Open report</button>` : ''}${deviceManageHtml(d)}`;
 }
 function navigate(path) {
   history.pushState(null, '', path);
@@ -1838,7 +1866,7 @@ if (typeof HTMLElement !== 'undefined') {
       }).join('') || '<tr><td colspan="5" class="muted">No devices match.</td></tr>';
       const dr = r.getElementById('drawer'), open = DEVICES.find((d) => d.id === this._open);
       dr.hidden = !open;
-      if (open) dr.innerHTML = drawerHtml(open, st, now, this._totals);
+      if (open) paintDrawer(this, dr, drawerHtml(open, st, now, this._totals));
     }
   }
 
@@ -1924,7 +1952,7 @@ ${CHART_CSS}
       r.getElementById('main').innerHTML = `<button class="back" data-back>‹ Groups</button><div class="head"><h2 class="title">${esc(sp.name)}</h2>${sp.energy ? `<b>${spacePower(sp, st)}</b>` : ''}</div>${this.energy(sp, st)}`;
       const dr = r.getElementById('drawer'), open = DEVICES.find((d) => d.id === this._open);
       dr.hidden = !open;
-      if (open) dr.innerHTML = drawerHtml(open, st, Date.now(), this._totals);
+      if (open) paintDrawer(this, dr, drawerHtml(open, st, Date.now(), this._totals));
     }
     // Draw at the real on-screen width, so a wide screen gets a wider chart instead of a taller one.
     chartW() { const w = this.shadowRoot.getElementById('main')?.clientWidth; return w > 66 ? Math.max(280, w - 34) : 640; }
@@ -2227,7 +2255,7 @@ ${SHEET_CSS}</style><div class="w"><div class="chead"><h2>Automations</h2><butto
     async refresh() {
       // What each automation switches, so the list can say so and the form can change it. Only an admin can read it.
       this._cfgs = AUTO_CFG;
-      for (const a of automationsIn(resolveSpace())) { try { this._cfgs[a.entity] = portalCanManageHA() ? (await this._hass.callWS({ type: 'automation/config', entity_id: a.entity })).config : (await this._hass.callWS({ type: 'optim_energy/automation/get', entity_id: a.entity })).config; } catch (e) { /* listed without its devices */ } }
+      for (const a of automationsIn(resolveSpace())) { try { this._cfgs[a.entity] = portalCanManageHA() ? (await this._hass.callWS({ type: 'automation/config', entity_id: a.entity })).config : (await this._hass.callWS({ ...clientArg(), type: 'optim_energy/automation/get', entity_id: a.entity })).config; } catch (e) { /* listed without its devices */ } }
       this.paint();
     }
     // Lights are ticked; sockets, relays and the rest are left out unless someone ticks them.
@@ -2246,7 +2274,7 @@ ${SHEET_CSS}</style><div class="w"><div class="chead"><h2>Automations</h2><butto
     async openForm({ entity, place } = {}) {
       const a = entity && portalAutomations().find((x) => x.entity === entity);
       // Its devices come from its own settings, read fresh, so what shows is what it does.
-      if (a) { try { AUTO_CFG[entity] = (portalCanManageHA() ? await this._hass.callWS({ type: 'automation/config', entity_id: entity }) : await this._hass.callWS({ type: 'optim_energy/automation/get', entity_id: entity })).config; } catch (e) { /* shows what was read before */ } }
+      if (a) { try { AUTO_CFG[entity] = (portalCanManageHA() ? await this._hass.callWS({ type: 'automation/config', entity_id: entity }) : await this._hass.callWS({ ...clientArg(), type: 'optim_energy/automation/get', entity_id: entity })).config; } catch (e) { /* shows what was read before */ } }
       this._form = a ? { entity, name: autoTitle(a), place: a.place, how: a.how || 'off', at: a.at, days: a.days || [...DAY_KEY] } : { name: '', target: 'group', place: place || this.groupsWithSwitches()[0]?.id, how: 'off', at: '18:00', days: [...DAY_KEY] };
       this.devicesFor(this._form);
       this.paintForm();
@@ -2307,7 +2335,7 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
         const alias = `${placeById(currentLocation)?.name}: ${name}`;
         let entity = old?.entity;
         if (!portalCanManageHA()) {
-          const saved = await h.callWS({ type: 'optim_energy/automation/save_schedule', ...(old?.entity ? { entity_id: old.entity } : {}), name: alias, place: f.place, how: f.how, at: f.at, days: f.days, switches });
+          const saved = await h.callWS({ ...clientArg(), type: 'optim_energy/automation/save_schedule', ...(old?.entity ? { entity_id: old.entity } : {}), name: alias, place: f.place, how: f.how, at: f.at, days: f.days, switches });
           entity = saved.entity_id;
           AUTO_CFG[entity] = saved.config;
           treeLoad = null;
@@ -2339,7 +2367,7 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
           await h.callApi('DELETE', `config/automation/config/${h.states[f.entity]?.attributes?.id}`);
           await saveTree(h, { ...TREE, automations: TREE.automations.filter((a) => a.entity !== f.entity) });
         } else {
-          await h.callWS({ type: 'optim_energy/automation/delete', entity_id: f.entity });
+          await h.callWS({ ...clientArg(), type: 'optim_energy/automation/delete', entity_id: f.entity });
           treeLoad = null; await ensureTree(h);
         }
         this._form = null; this.paintForm();
@@ -2410,7 +2438,7 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
         const automationEntity = `automation.${ruleAutoId(entity)}`;
         const read = portalCanManageHA()
           ? this._hass.callApi('GET', `config/automation/config/${ruleAutoId(entity)}`)
-          : this._hass.callWS({ type: 'optim_energy/automation/get', entity_id: automationEntity }).then((r) => r.config);
+          : this._hass.callWS({ ...clientArg(), type: 'optim_energy/automation/get', entity_id: automationEntity }).then((r) => r.config);
         read.then((c) => ruleTargets(c), () => notifyTargets(this._hass).map(([k]) => k)).then((t) => { if (this._form?.entity === entity) { this._form.notify = new Set(t); this.paintForm(); } });
       }
     }
@@ -2471,11 +2499,11 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
         const allowed = notifyTargets(h).map(([k]) => k), targets = [...(f.notify || [])].filter((k) => allowed.includes(k));
         const autoName = this.devName(f.sensor) ? `${this.devName(f.sensor)} ${name}` : name;
         if (!portalCanManageHA()) {
-          const saved = await h.callWS({ type: 'optim_energy/helper/threshold/save', ...(f.entity ? { entity_id: f.entity } : {}), name, sensor: f.sensor, hysteresis: 0, ...bound, place: d.place || currentLocation, labels });
+          const saved = await h.callWS({ ...clientArg(), type: 'optim_energy/helper/threshold/save', ...(f.entity ? { entity_id: f.entity } : {}), name, sensor: f.sensor, hysteresis: 0, ...bound, place: d.place || currentLocation, labels });
           entity = saved.entity_id;
           const id = ruleAutoId(entity);
-          if (targets.length) await h.callWS({ type: 'optim_energy/automation/save_alert', rule_entity: entity, name: autoName, sensor: f.sensor, unit: rd[2], severity: f.sev, targets });
-          else await h.callWS({ type: 'optim_energy/automation/delete', entity_id: `automation.${id}` }).catch(() => {});
+          if (targets.length) await h.callWS({ ...clientArg(), type: 'optim_energy/automation/save_alert', rule_entity: entity, name: autoName, sensor: f.sensor, unit: rd[2], severity: f.sev, targets });
+          else await h.callWS({ ...clientArg(), type: 'optim_energy/automation/delete', entity_id: `automation.${id}` }).catch(() => {});
           treeLoad = null; await ensureTree(h);
         } else {
           if (entity) {
@@ -2511,9 +2539,9 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
           await h.callService('persistent_notification', 'dismiss', { notification_id: id }).catch(() => {});
           await h.callApi('DELETE', `config/config_entries/entry/${await this.entryOf(f.entity)}`);
         } else {
-          await h.callWS({ type: 'optim_energy/automation/delete', entity_id: `automation.${id}` }).catch(() => {});
+          await h.callWS({ ...clientArg(), type: 'optim_energy/automation/delete', entity_id: `automation.${id}` }).catch(() => {});
           await h.callService('persistent_notification', 'dismiss', { notification_id: id }).catch(() => {});
-          await h.callWS({ type: 'optim_energy/helper/delete', entity_id: f.entity });
+          await h.callWS({ ...clientArg(), type: 'optim_energy/helper/delete', entity_id: f.entity });
           treeLoad = null; await ensureTree(h);
         }
         this._form = null; this.paintForm(); showToast(this, 'Alert rule deleted');
@@ -2652,7 +2680,7 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
           if (TREE.virtual.some((v) => v.id === t.dataset.rename)) this.commit({ ...TREE, virtual: TREE.virtual.map((v) => (v.id === t.dataset.rename ? { ...v, name: t.value.trim() } : v)) });
           else (portalCanManageHA()
             ? this._hass.callWS({ type: 'config/device_registry/update', device_id: t.dataset.rename, name_by_user: t.value.trim() })
-            : this._hass.callWS({ type: 'optim_energy/device/update', device_id: t.dataset.rename, name: t.value.trim() })).catch(() => { r.getElementById('err').textContent = 'Could not rename the device. Try again.'; });
+            : this._hass.callWS({ ...clientArg(), type: 'optim_energy/device/update', device_id: t.dataset.rename, name: t.value.trim() })).catch(() => { r.getElementById('err').textContent = 'Could not rename the device. Try again.'; });
         }
       });
       this.startTimer();
@@ -2855,6 +2883,7 @@ ${kpi('Usage this month', t ? `${t.month.toFixed(0)} kWh` : '—', t ? `${since}
 .box{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:grid;gap:10px;min-width:0;align-content:start}
 ul.t,ul.t ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}ul.t ul{margin-top:4px;padding-left:18px}
 .n{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:6px;border:1px solid var(--line);font-size:14px}
+.gacts{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.gform{display:flex;gap:6px;flex-wrap:wrap;padding:6px 0}.gform input{flex:1;min-width:120px;height:34px;box-sizing:border-box}
 label.f{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}label.f select{width:100%;box-sizing:border-box;height:36px}
 .two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:10px}.cfg-hint{font-size:12px;color:var(--muted);line-height:1.35;margin-top:2px}
 .main{display:grid;gap:12px;min-width:0}
@@ -2873,6 +2902,8 @@ ${SHEET_CSS}.bk{display:grid;grid-template-columns:auto auto;justify-content:spa
 <dialog id="billDlg" aria-labelledby="billT"><div class="dh"><h3 id="billT">Upload a bill</h3><button class="x" data-bill-close="1" aria-label="Close">×</button></div><div class="db" id="billBody"></div><div class="df" id="billFoot"></div></dialog></div>`;
       const w = this.shadowRoot.querySelector('.w');
       w.addEventListener('click', (e) => {
+        const g = e.target.closest('[data-group-new],[data-group-rename],[data-group-delete],[data-group-save],[data-group-cancel]');
+        if (g) { this.groupAction(g); return; }
         const n = e.target.closest('[data-nav],[data-bill],[data-bill-close],[data-bill-save],[data-bill-again],[data-price-mode],[data-type],[data-type-cancel],[data-type-save],[data-ibex],[data-ibex-cancel],[data-ibex-save]');
         if (!n) return;
         if (n.dataset.nav) navigate(n.dataset.nav);
@@ -3026,12 +3057,40 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       };
       return `<div class="box"><div class="price-head"><div><h3>Price per kWh</h3><p>Choose one per location. Switching is immediate; the other choices stay saved.</p></div></div><div class="price-list">${locs.map(one).join('')}</div></div>`;
     }
-    paint() {
+    // Groups of each location, with add, rename and delete. A group only organises devices.
+    groupTree(locs, count) {
+      const ed = this._groupEdit, can = portalCanManage();
+      const form = (label) => `<div class="gform"><input id="gname" maxlength="80" value="${esc(ed.name || '')}" placeholder="Group name" aria-label="Group name" autocomplete="off"><button class="gold" data-group-save="1">${label}</button><button data-group-cancel="1">Cancel</button></div>`;
+      const acts = (p, isGroup) => (can ? `<span class="gacts"><button class="inline-action" data-group-new="${esc(p.id)}">Add group</button>${isGroup ? `<button class="inline-action" data-group-rename="${esc(p.id)}">Rename</button><button class="inline-action" data-group-delete="${esc(p.id)}">${this._groupConfirm === p.id ? 'Confirm delete' : 'Delete'}</button>` : ''}</span>` : '');
+      const node = (p, isGroup) => `<li>${ed?.mode === 'rename' && ed.id === p.id ? form('Save') : `<div class="n"><span>${isGroup ? esc(p.name) : `<b>${esc(p.name)}</b>`} <span class="muted">${count(p.id)}</span></span>${acts(p, isGroup)}</div>`}${ed?.mode === 'new' && ed.parent === p.id ? form('Add') : ''}${branch(p.id)}</li>`;
+      const branch = (parent) => { const kids = placeChildren(parent); return kids.length ? `<ul>${kids.map((p) => node(p, true)).join('')}</ul>` : ''; };
+      return `<h3>Locations and groups</h3><ul class="t">${locs.map((l) => node(l, false)).join('') || '<li class="muted">No location yet. Your administrator adds locations.</li>'}</ul><div class="cfg-hint">Groups organise a location's devices; they do not change who can see them. Deleting a group moves its devices up a level. Move a device from its own page under Devices.</div>`;
+    }
+    async groupAction(n) {
+      const d = n.dataset, r = this.shadowRoot, done = async () => { this._groupEdit = null; this._groupConfirm = null; treeLoad = null; await ensureTree(this._hass); this.paint(); };
+      const fail = (x) => { r.getElementById('err').textContent = x?.message || 'Could not change the group.'; };
+      r.getElementById('err').textContent = '';
+      if (d.groupNew) { this._groupEdit = { mode: 'new', parent: d.groupNew, name: '' }; this._groupConfirm = null; this.paint(true); r.getElementById('gname')?.focus(); return; }
+      if (d.groupRename) { this._groupEdit = { mode: 'rename', id: d.groupRename, name: placeById(d.groupRename)?.name || '' }; this._groupConfirm = null; this.paint(true); r.getElementById('gname')?.focus(); return; }
+      if (d.groupCancel) { this._groupEdit = null; this.paint(true); return; }
+      if (d.groupDelete) {
+        if (this._groupConfirm !== d.groupDelete) { this._groupConfirm = d.groupDelete; this.paint(true); return; }
+        try { await this._hass.callWS({ ...clientArg(), type: 'optim_energy/group/delete', group: d.groupDelete }); await done(); } catch (x) { fail(x); }
+        return;
+      }
+      if (d.groupSave) {
+        const ed = this._groupEdit, name = r.getElementById('gname')?.value.trim();
+        if (!ed || !name) return;
+        try { await this._hass.callWS({ ...clientArg(), type: 'optim_energy/group/save', name, ...(ed.mode === 'rename' ? { group: ed.id } : { parent: ed.parent }) }); await done(); } catch (x) { fail(x); }
+      }
+    }
+    paint(force = false) {
       const r = this.shadowRoot, h = this._hass, count = (id) => { const under = placesUnder(id); return allNodes.filter((d) => !d.virtual && under.has(d.place)).length; };
-      if (['SELECT', 'INPUT'].includes(r.activeElement?.tagName)) return;
+      if (!force && ['SELECT', 'INPUT'].includes(r.activeElement?.tagName)) return;
       const branch = (parent) => { const kids = placeChildren(parent); return kids.length ? `<ul>${kids.map((p) => `<li><div class="n"><span>${esc(p.name)}</span><span class="muted">${count(p.id)}</span></div>${branch(p.id)}</li>`).join('')}</ul>` : ''; };
       const locs = TREE.places.filter((p) => p.kind === 'location').sort(byName), problems = NATIVE ? nativeProblems(h.devices, NATIVE) : [];
-      r.getElementById('tree').innerHTML = `<h3>Locations and groups</h3><ul class="t">${locs.map((l) => `<li><div class="n"><b>${esc(l.name)}</b><span class="muted">${count(l.id)}</span></div>${branch(l.id)}</li>`).join('') || '<li class="muted">None yet.</li>'}</ul><div class="cfg-hint">📍 labels define locations; areas and floors define groups.</div><div class="two"><button data-nav="/config/areas/dashboard">Areas and floors ›</button><button data-nav="/config/labels">Labels ›</button></div>`;
+if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, count);
+      else r.getElementById('tree').innerHTML = `<h3>Locations and groups</h3><ul class="t">${locs.map((l) => `<li><div class="n"><b>${esc(l.name)}</b><span class="muted">${count(l.id)}</span></div>${branch(l.id)}</li>`).join('') || '<li class="muted">None yet.</li>'}</ul><div class="cfg-hint">📍 labels define locations; areas and floors define groups.</div>${portalCanManageHA() ? '<div class="two"><button data-nav="/config/areas/dashboard">Areas and floors ›</button><button data-nav="/config/labels">Labels ›</button></div>' : ''}`;
       r.getElementById('main').innerHTML = `${problems.length ? `<div class="box"><h3>Needs attention (${problems.length})</h3>${problems.map((x) => `<span class="muted">${esc(x)}</span>`).join('')}</div>` : ''}${locs.length && portalCanWire() ? `<div class="box"><h3>Main device</h3><span class="muted">The device whose figures Overview shows.</span>${locs.map((l) => { const under = placesUnder(l.id), now = TREE.mains?.[l.id] || ''; const opts = allNodes.filter((d) => under.has(d.place) && (d.virtual || kindOf(d) === 'meter' || d.id === now)).sort(byName); return `<label class="f">${esc(l.name)}<select data-main-for="${l.id}"><option value="">None: add up the top devices</option>${opts.map((d) => `<option value="${d.id}"${d.id === now ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>`; }).join('')}</div>` : ''}${this.priceBox(locs)}`;
     }
   }
@@ -3203,7 +3262,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const current = e.user;
         title = current ? 'Edit person' : 'New person';
         const selected = current?.locations || (current?.location ? [current.location] : []);
-        fields = `<label class="field">Name<input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field">Username<input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label>${current ? '' : '<label class="field">Password<input id="editorPassword" type="password" minlength="8" autocomplete="new-password"></label>'}<label class="field">Role<select id="editorRole">${PORTAL.isRoot ? `<option value="user">User</option><option value="client_admin"${current?.role === 'client_admin' ? ' selected' : ''}>Client admin</option>` : '<option value="user">User</option>'}</select></label><label class="field wide">Locations<select id="editorLocations" multiple size="${Math.max(2, Math.min(5, locations.length))}">${locations.map((p) => `<option value="${esc(p.id)}"${selected.includes(p.id) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join('')}</select></label>`;
+        fields = `<label class="field">Name<input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field">Username<input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label><label class="field">${current ? 'New password' : 'Password'}<input id="editorPassword" type="${e.shown ? 'text' : 'password'}" minlength="8" autocomplete="new-password" placeholder="${current ? 'Leave empty to keep the current one' : 'At least 8 characters'}"><button type="button" class="inline-action" data-generate-password="1">Generate one</button></label><label class="field">Role<select id="editorRole">${PORTAL.isRoot ? `<option value="user">User</option><option value="client_admin"${(e.role || current?.role) === 'client_admin' ? ' selected' : ''}>Client admin</option>` : '<option value="user">User</option>'}</select></label>${(e.role || current?.role) === 'client_admin' ? '<p class="admin-note">A client administrator sees every location of the client.</p>' : `<div class="field wide"><span>Locations</span><div class="checks" id="editorLocations">${locations.map((p) => `<label class="check"><input type="checkbox" data-loc-check="${esc(p.id)}"${(e.locations || selected).includes(p.id) ? ' checked' : ''}> ${esc(placeLabel(p.id))}</label>`).join('') || '<span class="muted">This client has no location yet.</span>'}</div></div>`}`;
       } else if (e.kind === 'assign') {
         const names = e.devices.map((id) => (this._inbox || []).find((d) => d.id === id)?.name || id);
         title = names.length === 1 ? `Assign ${names[0]}` : `Assign ${names.length} devices`;
@@ -3239,7 +3298,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const q = this._search.trim().toLowerCase(), role = this._role;
         return (!q || [u.name, u.username].some((x) => String(x || '').toLowerCase().includes(q))) && (role === 'all' || u.role === role);
       });
-      const rows = users.map((u) => `<td><b>${esc(u.name || u.username || u.id)}</b><small class="table-sub">@${esc(u.username || 'no username')}</small></td><td>${esc(this.roleName(u.role))}</td><td>${esc(this.userLocations(u))}</td><td>${u.is_active ? 'Active' : 'Disabled'}</td><td><div class="table-actions">${this.action('Edit', `data-edit-person="${esc(u.id)}"`)}${this.action(u.is_active ? 'Disable' : 'Enable', `data-toggle="${esc(u.id)}"`)}${this.action(this._confirmDelete === u.id ? 'Confirm delete' : 'Delete', `data-delete="${esc(u.id)}"`, 'table-action danger')}</div></td>`);
+      const rows = users.map((u) => `<td><b>${esc(u.name || u.username || u.id)}</b><small class="table-sub">@${esc(u.username || 'no username')}</small></td><td>${esc(this.roleName(u.role))}</td><td>${esc(this.userLocations(u))}</td><td>${u.is_active ? 'Active' : 'Disabled'}</td><td><div class="table-actions">${this.action('Edit', `data-edit-person="${esc(u.id)}"`)}${PORTAL.isRoot || (u.role !== 'client_admin' && u.id !== this._hass.user?.id) ? `${this.action(u.is_active ? 'Disable' : 'Enable', `data-toggle="${esc(u.id)}"`)}${this.action(this._confirmDelete === u.id ? 'Confirm delete' : 'Delete', `data-delete="${esc(u.id)}"`, 'table-action danger')}` : ''}</div></td>`);
       return `${this.renderEditor()}<div class="admin-toolbar compact" id="locationmap"><span class="toolbar-label">Client locations: <b>${esc(this.locations().map((x) => x.name).join(' · ') || 'None')}</b></span></div><div class="admin-toolbar compact"><label class="field">Search<input id="peopleSearch" type="search" value="${esc(this._search)}" placeholder="Name or username"></label><label class="field">Role<select id="peopleRole"><option value="all"${this._role === 'all' ? ' selected' : ''}>All roles</option><option value="user"${this._role === 'user' ? ' selected' : ''}>Users</option><option value="client_admin"${this._role === 'client_admin' ? ' selected' : ''}>Client admins</option></select></label><span class="toolbar-count">${users.length} ${users.length === 1 ? 'person' : 'people'}</span></div>${this.table(['Person', 'Role', 'Locations', 'Status', 'Actions'], rows, 'people')}`;
     }
     deviceRowsHtml(locationId = null) {
@@ -3430,12 +3489,13 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
           await this.afterChange(`Location moved to ${targetItem.name || target}.`);
         } else if (e.kind === 'person') {
           const role = value('editorRole') || 'user';
-          const selectedLocations = [...(r.getElementById('editorLocations')?.selectedOptions || [])].map((x) => x.value);
+          const selectedLocations = [...r.querySelectorAll('[data-loc-check]:checked')].map((x) => x.dataset.locCheck);
           const locs = role === 'client_admin' ? [] : selectedLocations;
+          const password = r.getElementById('editorPassword')?.value || '';
           if (!e.user) {
             await this._hass.callWS({ type: 'optim_energy/user/create', client: portalClient, name: value('editorName'), username: value('editorUsername'), password: r.getElementById('editorPassword')?.value || '', role, locations: locs });
           } else {
-            await this._hass.callWS({ type: 'optim_energy/user/update', user_id: e.user.id, name: value('editorName'), role, locations: locs });
+            await this._hass.callWS({ type: 'optim_energy/user/update', user_id: e.user.id, name: value('editorName'), role, locations: locs, ...(password ? { password } : {}) });
           }
           await this.afterChange(e.user ? 'Person updated.' : 'Person created.');
         } else if (e.kind === 'device') {
@@ -3487,6 +3547,12 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
       if ((b = q('[data-select-location]'))) { this._selectedLocation = b.dataset.selectLocation; this.paint(true); return; }
       if ((b = q('[data-new-person]'))) { this._editor = { kind: 'person' }; this.paint(true); return; }
       if ((b = q('[data-edit-person]'))) { this._editor = { kind: 'person', user: (this._users || []).find((x) => x.id === b.dataset.editPerson) }; this.paint(true); return; }
+      if (q('[data-generate-password]')) {
+        // Shown in clear so it can be copied and handed to the person; it is never stored by the portal.
+        const box = this.shadowRoot.getElementById('editorPassword'), bytes = crypto.getRandomValues(new Uint8Array(14)), alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+        if (box && this._editor) { this._editor.shown = true; box.type = 'text'; box.value = [...bytes].map((x) => alphabet[x % alphabet.length]).join(''); box.select(); }
+        return;
+      }
       if ((b = q('[data-device-view]'))) { this._deviceView = b.dataset.deviceView; this._editor = null; this.paint(true); return; }
       if ((b = q('[data-inbox-assign]'))) { const d = (this._inbox || []).find((x) => x.id === b.dataset.inboxAssign); if (d) { this._editor = { kind: 'assign', devices: [d.id], client: d.client || portalClient, location: d.location, group: d.group || '' }; this.paint(true); } return; }
       if (q('[data-assign-picked]')) { if (this._picked.size) { this._editor = { kind: 'assign', devices: [...this._picked], client: portalClient, location: null, group: '' }; this.paint(true); } return; }
@@ -3586,6 +3652,8 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
       if (t.id === 'clientSwitch') { await this.selectClient(t.value); return; }
       if (t.id === 'peopleRole') { this._role = t.value; this.paint(true); return; }
       if (t.id === 'peopleSearch') { this._search = t.value; this.paint(true); return; }
+      // A client administrator has no locations of its own, so the list goes when that role is picked.
+      if (t.id === 'editorRole' && this._editor?.kind === 'person') { this._editor.role = t.value; this._editor.locations = [...this.shadowRoot.querySelectorAll('[data-loc-check]:checked')].map((x) => x.dataset.locCheck); this.paint(true); return; }
       if (t.id === 'inboxFilter') { this._inboxFilter = t.value; this.paint(true); return; }
       if (t.dataset.pick) { if (t.checked) this._picked.add(t.dataset.pick); else this._picked.delete(t.dataset.pick); this.paint(true); return; }
       // The assign dialog narrows as you go: the client decides the locations, the location its groups.
@@ -3899,7 +3967,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
       const dr = r.getElementById('drawer'), open = DEVICES.find((d) => d.id === this._open);
       dr.hidden = !open;
       const sig = open && `${open.id}:${Math.floor(now / 10000)}:${kindOf(open)}`;
-      if (open && this._openPainted !== sig) { this._openPainted = sig; dr.innerHTML = drawerHtml(open, st, now, this._totals); }
+      if (open && this._openPainted !== sig) { this._openPainted = sig; paintDrawer(this, dr, drawerHtml(open, st, now, this._totals)); }
     }
     // Drawn once for each shape. Live values are written in, so the moving lines never restart.
     paintRadial(root) {

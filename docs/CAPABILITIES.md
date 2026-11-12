@@ -29,7 +29,7 @@ Every `optim_energy/*` websocket command and the roles that may call it. A test 
 | `migration/apply` | yes, once | no | no |
 | `user/list` | any client | own client | no |
 | `user/create` | any role | Users only, own locations | no |
-| `user/update` | yes | own Users, never an HA admin or client admin | no |
+| `user/update` | yes, including a new password | own Users, never an HA admin or client admin; may set a new password | no |
 | `user/delete` | yes | own Users, never an HA admin or client admin | no |
 | `entity/get` | yes | own entities | no |
 | `entity/update` | yes | own entities, own areas and labels | no |

@@ -369,6 +369,21 @@ check is reproduced and fixed.
 | Rollback checkpoint | Stop Home Assistant and restore `before-optim-energy-areas-migration-2026-11-12`; the pre-migration store is also kept as `optim_energy.tenancy_before_areas` |
 | Incidents / follow-up | After the migration the entity list an administrator gets for one client held only the 14 device-less entities. Client accounts were not affected. Fixed in 0.7.1 |
 
+### 2026-11-12 v0.7.1 and v0.8.0
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, 22:40 (0.7.1) and 23:02 (0.8.0) |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.7.0 / 0.7.1 / 0.8.0, each installed through the Marketplace update entity |
+| Backup/snapshot | Manual `after-areas-migration-before-v0.7.1-2026-11-12` and `before-optim-energy-v0.8.0-2026-11-12`, configuration only, on the VM |
+| Runtime suites | Unit, HA runtime, three-client scale, browser on both models, hassfest and HACS: PASS for each release |
+| VM smoke result | N/A; the device inbox was tried on an isolated HA 2026.11.0 copy of the configuration before 0.8.0 |
+| Client verification | After 0.7.1 an administrator's view of the client lists all 815 entities (14 before). After 0.8.0 the inbox lists 79 devices: 42 assigned, 2 not assigned yet, 35 not portal devices. Client, locations, groups, people and settings unchanged. No client-account login was performed |
+| Rollback checkpoint | Reinstall the previous tag from the Marketplace; the backups above hold the migrated configuration |
+| Incidents / follow-up | 0.8.0 hides devices behind the Zigbee2MQTT bridge in the inbox (display only); fixed in 0.8.1, which was published but not installed on its own. After the 23:02 restart the ENTSO-e integration failed its fetches for about twenty minutes and one Shelly device ("OSV row 8 NE") did not reconnect. Six restarts in two hours; later releases are batched |
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the

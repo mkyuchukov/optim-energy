@@ -1534,6 +1534,7 @@ class TenancyManager:
         role: str | None = None,
         location: str | None = None,
         locations: list[str] | None = None,
+        password: str | None = None,
     ) -> dict[str, Any]:
         """Update a user while keeping the target inside the actor's client."""
         target = await self.hass.auth.async_get_user(user_id)
@@ -1571,6 +1572,17 @@ class TenancyManager:
         for location_id in chosen:
             if location_id not in self.data.get("locations", {}) or self.data["locations"][location_id].get("client") != actor_client:
                 raise HomeAssistantError("Location not found for this client")
+        username = None
+        if password is not None:
+            # Checked before anything is changed, so a bad password changes nothing.
+            if len(password) < 8:
+                raise HomeAssistantError("A password needs at least 8 characters")
+            username = next(
+                (c.data.get("username") for c in target.credentials if c.auth_provider_type == "homeassistant"),
+                None,
+            )
+            if not username:
+                raise HomeAssistantError("This account has no local Home Assistant login")
         if role is not None:
             record["role"] = target_role
         if locations is not None or location is not None or role is not None:
@@ -1580,6 +1592,11 @@ class TenancyManager:
             await self.hass.auth.async_update_user(target, name=name.strip())
         if is_active is not None:
             await self.hass.auth.async_update_user(target, is_active=is_active)
+        if username:
+            provider = next((p for p in self.hass.auth.auth_providers if p.type == "homeassistant"), None)
+            if provider is None:
+                raise HomeAssistantError("The local Home Assistant login provider is not configured")
+            await provider.async_change_password(username, password)
         await self.async_save()
         await self.async_sync_groups()
         await self.async_sync_sidebar(target)
@@ -1999,6 +2016,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
             probatio.Optional("role"): str,
             probatio.Optional("location"): str,
             probatio.Optional("locations"): [str],
+            probatio.Optional("password"): str,
         }
     )
     @websocket_api.async_response
@@ -2014,6 +2032,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
                     role=msg.get("role"),
                     location=msg.get("location"),
                     locations=msg.get("locations"),
+                    password=msg.get("password"),
                 ),
             )
         except (HomeAssistantError, ValueError) as err:

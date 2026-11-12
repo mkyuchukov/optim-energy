@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0
+
+Screens for client administrators. Needs the floor and area model.
+
+- A device's page (Devices → open a device) has "Name and place": a client administrator renames the device and moves it between its own client's locations and groups. Unsaved edits there are no longer wiped by the periodic redraw.
+- Setup → Locations manages groups: add a group under a location or inside another group, rename it, delete it. The links into Home Assistant settings are gone.
+- People: a client administrator can set a new password for its own users, with a "Generate one" button that shows the password for handing over. Locations are tick boxes and are hidden for the client-administrator role.
+- Buttons the server would refuse are hidden: Disable and Delete on client-administrator rows and on one's own row, and "Change limit in Home Assistant" for accounts that are not Home Assistant administrators.
+- A Home Assistant administrator can open a client's Setup (prices, alerts, schedules, groups, people) instead of being sent back to Administration, and portal commands from those pages act on the selected client instead of the first one.
+
 ## 0.8.1
 
 - Device inbox: devices behind a bridge (Zigbee2MQTT and similar) are listed on their own again. In 0.8.0 they were shown as part of the bridge whenever the bridge itself looked like a portal device, which hid them. Only channels of a multi-channel device (same manufacturer, same place as their parent) are shown with their parent.

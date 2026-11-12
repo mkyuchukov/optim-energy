@@ -1029,6 +1029,19 @@ def run(version: str, *, keep: bool = False) -> None:
             refused(admin_a, {"type": "optim_energy/group/save", "name": "Sneaky", "parent": location_b}, "a group in another client")
             refused(admin_a, {"type": "optim_energy/location/save", "name": "Mine"}, "a client admin creating a location")
             refused(admin_a, {"type": "optim_energy/migration/plan"}, "a client admin reading the migration plan")
+            # A client administrator can give its own user a new password, not another client's user.
+            new_password = "Runtime-Reset-2026!"
+            refused(admin_a, {"type": "optim_energy/user/update", "user_id": user_b["id"], "password": new_password}, "resetting another client's password")
+            refused(admin_a, {"type": "optim_energy/user/update", "user_id": user_a["id"], "password": "short"}, "a too-short password")
+            admin_a.command({"type": "optim_energy/user/update", "user_id": user_a["id"], "password": new_password})
+            assert_true(http.login(CLIENT_A_USER[0], new_password)["access_token"], "the new password does not log in")
+            try:
+                http.login(*CLIENT_A_USER)
+            except Exception:
+                pass
+            else:
+                raise AssertionError("the old password still logs in")
+            admin_a.command({"type": "optim_energy/user/update", "user_id": user_a["id"], "password": CLIENT_A_USER[1]})
             admin_a.command({"type": "optim_energy/group/delete", "group": group})
             assert_equal(admin_a.command({"type": "optim_energy/tree/get"})["tree"]["placed"].get(a_device), location_a, "device left a deleted group")
 
