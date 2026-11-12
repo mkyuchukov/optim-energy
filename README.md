@@ -56,3 +56,10 @@ make test
 The integration currently packages and installs the portal. It does not yet migrate existing client settings out of the dashboard `device_tree` or bundle the bill-reading provider configuration.
 
 This is not an official Home Assistant integration.
+
+## License
+
+Copyright 2026 Optimal Industries.
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the
+full license text.
