@@ -45,6 +45,8 @@ async function waitUsers(page, include, exclude) {
 
 let rootContext;
 let adminContext;
+let root;
+let adminPage;
 try {
   // Root client switching: A -> B -> A must update the People list atomically.
   ({ context: rootContext, page: root } = await openPage(state.root, '/energy-setup/people'));
@@ -64,7 +66,6 @@ try {
   await waitUsers(root, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
 
   // Client-admin login and location surface.
-  let adminPage;
   ({ context: adminContext, page: adminPage } = await openPage(state.admin_a, '/energy-locations/start'));
   await adminPage.getByText(state.client_a_name).first().waitFor({ timeout: 30000 });
   assert.equal(await adminPage.getByText(state.client_b_name).count(), 0, 'Client B name leaked to Client A');
