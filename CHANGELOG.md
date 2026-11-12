@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.5
+
+- Allow a validated Supervisor ingress-session capability through the REST guard and restore File editor and Zigbee2MQTT to the administrator sidebar.
+
 ## 0.4.4
 
 - Add native add-on launchers for File editor and Zigbee2MQTT on the configured local Home Assistant URL, and keep their public ingress panels out of the administrator sidebar.

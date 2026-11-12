@@ -11,10 +11,11 @@ the Home Assistant root account remain trusted global resources.
   unless they explicitly choose Preview.
 - Client accounts use the bundled Optim Energy client dashboards and checked
   portal commands only.
-- Native add-ons such as File editor and Zigbee2MQTT are not exposed through
-  the public ingress proxy. Administrators open them from Administration →
-  Apps & tools using the configured local Home Assistant URL; they require
-  network/VPN access and a normal Home Assistant login on that address.
+- File editor, Zigbee2MQTT and other native add-ons remain available to Home
+  Assistant administrators from the normal Home Assistant sidebar. Their
+  ingress requests use a short-lived Supervisor `ingress_session` capability;
+  the public reverse proxy must pass `/api/hassio_ingress/` through to Home
+  Assistant and preserve cookies, uploads and long-lived connections.
 - Home Assistant mobile-app webhooks, generic webhooks, Supervisor ingress,
   Assist, templates, raw REST and native configuration commands are not part of
   the client surface.
@@ -303,6 +304,21 @@ check is reproduced and fixed.
 | Client verification | Administrator sidebar no longer exposes broken public ingress panels; Administration → Apps & tools opens native File editor and Zigbee2MQTT on the internal HA URL |
 | Rollback checkpoint | Copy back the preserved `optim_energy-pre-2026-11-12-v0.4.4` directory |
 | Incidents / follow-up | Public `ha.int` proxy returns openresty 404 for `/api/hassio_ingress`; native add-ons require local network/VPN access |
+
+### 2026-11-12 v0.4.5 native add-on ingress
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 14:00–14:15 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.4.4 / 0.4.5 |
+| Backup/snapshot | Existing `before-optim-energy-v0.4.0-2026-11-12`; previous integration directory preserved |
+| Runtime suites | Unit, HA runtime, three-client scale, browser, hassfest and HACS: PASS |
+| VM smoke result | Native File editor and Zigbee2MQTT panels verified through `/api/hassio_ingress` |
+| Client verification | Administrator sidebar remains limited to Administration and native HA tools; tenant routes remain blocked |
+| Rollback checkpoint | Copy back the preserved `optim_energy-pre-2026-11-12-v0.4.5` directory |
+| Incidents / follow-up | REST guard now accepts only signed Supervisor ingress-session cookies; proxy passes ingress paths and keeps uploads/WebSocket support |
 
 ## Repository protection
 
