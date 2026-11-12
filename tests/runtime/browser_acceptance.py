@@ -11,6 +11,7 @@ from pathlib import Path
 from acceptance import (
     CLIENT_ADMIN_A,
     RuntimeHarness,
+    client_tree,
     complete_onboarding,
     create_config_entry,
     ensure_area,
