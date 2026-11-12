@@ -64,6 +64,23 @@ async def async_sync_default_panel(
         await store.async_set_item("core", {**core, "default_panel": panel})
 
 
+async def async_sync_admin_sidebar(
+    hass: HomeAssistant,
+    user_id: str,
+) -> None:
+    """Keep only the administrator console and native HA tools in the sidebar."""
+    from homeassistant.components.frontend.storage import async_user_store
+
+    store = await async_user_store(hass, user_id)
+    current = store.data.get("sidebar") or {}
+    managed = set(_MANAGED_PANELS)
+    hidden = {panel for panel in current.get("hiddenPanels", []) if panel not in managed}
+    hidden.update(CLIENT_PANELS)
+    value = {"panelOrder": list(ADMIN_PANELS), "hiddenPanels": sorted(hidden)}
+    if current != value:
+        await store.async_set_item("sidebar", value)
+
+
 async def async_sync_user_sidebar(
     hass: HomeAssistant,
     user_id: str,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.8
+
+- Apply administrator sidebar cleanup server-side, so stale client Home and Locations panels are removed for every HA administrator before login.
+
 ## 0.5.7
 
 - Set the default dashboard per account: Home Assistant administrators land on Administration and no longer see the client Home tab, while tenant accounts keep their Home landing page.

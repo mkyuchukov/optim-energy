@@ -30,7 +30,7 @@ class PackageTests(unittest.TestCase):
 
     def test_manifest_and_hacs_versions(self) -> None:
         self.assertEqual(MANIFEST["domain"], "optim_energy")
-        self.assertEqual(MANIFEST["version"], "0.5.7")
+        self.assertEqual(MANIFEST["version"], "0.5.8")
         self.assertTrue(MANIFEST["config_flow"])
         self.assertEqual(HACS["homeassistant"], "2026.11.0")
 
@@ -109,6 +109,12 @@ class PackageTests(unittest.TestCase):
         self.assertIn("energy-locations", client_admin["panelOrder"])
         self.assertIn("energy-setup", client_admin["panelOrder"])
         self.assertIn("energy-admin", client_admin["hiddenPanels"])
+
+        # The administrator sidebar hides every client dashboard under the
+        # server-side policy as well as the browser-side one.
+        source = (COMPONENT / "sidebar.py").read_text("utf-8")
+        self.assertIn("hidden.update(CLIENT_PANELS)", source)
+        self.assertIn("panelOrder", source)
 
     def test_bill_reader_uses_integration_route(self) -> None:
         source = (COMPONENT / "frontend" / "building-cards.js").read_text("utf-8")
