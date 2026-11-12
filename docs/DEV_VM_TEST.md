@@ -227,6 +227,13 @@ and restarting Optim Energy 0.3.0-rc.2:
 - public `/api/config` bootstrap route: `200`
 - root browser session and the Client A administrator portal loaded after restart; Client A saw no Client B data
 
+An automated Playwright profile also passed against the pinned runtime:
+
+- root client switching A → B → A cleared the previous People list before rendering
+- client-administrator login and location scope
+- create, disable, enable, move and delete user flows
+- checked price and main-device tree edits persisted after reload
+
 ### Three-client scale verification record
 
 The CI scale acceptance job passed on 2026-11-11 against Home Assistant
