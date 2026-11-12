@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.6
+
+- Fix Administration location device counts for real MQTT meters that sit below a bridge; only Shelly meter channels are folded into their parent device.
+
 ## 0.5.5
 
 - Split device placement in Administration into separate Location and Group columns; the previous Location column incorrectly showed the group or area name.

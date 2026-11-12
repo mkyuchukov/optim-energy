@@ -24,15 +24,20 @@ const m = require('../../custom_components/optim_energy/frontend/building-cards.
 const adminCatalog = m.adminDeviceCatalog(
   [
     { id: 'placed', labels: [] },
+    { id: 'bridge_child', labels: [], via_device_id: 'bridge' },
     { id: 'unassigned', labels: ['light'], entry_type: null },
     { id: 'platform', labels: [], entry_type: null },
     { id: 'child', labels: [], via_device_id: 'placed' },
     { id: 'service', labels: [], entry_type: 'service' },
   ],
-  [{ device_id: 'platform', platform: 'shelly', entity_id: 'sensor.load_power' }],
+  [
+    { device_id: 'placed', platform: 'shelly', entity_id: 'sensor.parent_power' },
+    { device_id: 'bridge_child', platform: 'mqtt', entity_id: 'sensor.office_power' },
+    { device_id: 'platform', platform: 'shelly', entity_id: 'sensor.load_power' },
+  ],
   { placed: 'loc:a' },
 );
-assert.deepStrictEqual(adminCatalog.map((d) => d.id), ['placed', 'unassigned', 'platform']);
+assert.deepStrictEqual(adminCatalog.map((d) => d.id), ['placed', 'bridge_child', 'unassigned', 'platform']);
 console.log('admin devices ok');
 m.setTree({ places: [{ id: 'loc', name: 'L', kind: 'location' }], placed: {}, kinds: { a: 'lights', w: 'relay' }, kept: ['w'] });
 m.setLocation('loc');
