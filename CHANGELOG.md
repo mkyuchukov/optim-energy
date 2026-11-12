@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.4
+
+- Add native add-on launchers for File editor and Zigbee2MQTT on the configured local Home Assistant URL, and keep their public ingress panels out of the administrator sidebar.
+
 ## 0.4.3
 
 - Fix the administrator Preview client view action and cover it in browser acceptance.
