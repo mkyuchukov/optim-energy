@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- Remove the unused legacy administrator card implementation while retaining the table-first console.
+
 ## 0.5.0
 
 - Replace the administrator card dashboard with a table-first console for clients, locations, people and devices, with create/edit/delete actions in place.

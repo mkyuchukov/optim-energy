@@ -36,7 +36,7 @@ async function waitCard(page, selector) {
 }
 
 async function waitUsers(page, include, exclude) {
-  const users = page.locator('building-admin-card #people, building-admin-table-card #people');
+  const users = page.locator('building-admin-table-card #people');
   const deadline = Date.now() + 20000;
   let actual = '';
   try {
