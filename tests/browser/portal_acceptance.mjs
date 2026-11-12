@@ -60,6 +60,14 @@ try {
   ({ context: rootContext, page: root } = await openPage(state.root, '/energy-admin/people'));
   const rootCard = await waitCard(root, 'building-admin-table-card');
   await rootCard.getByRole('heading', { level: 1, name: 'People' }).waitFor();
+  const rootDefault = await openPage(state.root, '/');
+  await rootDefault.page.waitForURL(`${base}/energy-admin/clients`, { timeout: 30000 });
+  assert.equal(
+    await rootDefault.page.getByRole('link', { name: 'Administration' }).count(),
+    1,
+    'Home Assistant administrator did not get the Administration tab',
+  );
+  await rootDefault.context.close();
   const clientSwitch = rootCard.locator('#clientSwitch');
   await clientSwitch.waitFor();
   if ((await clientSwitch.inputValue()) !== state.client_a) {
@@ -88,8 +96,21 @@ try {
   ({ context: adminContext, page: adminPage } = await openPage(state.admin_a, '/energy-locations/start'));
   await adminPage.getByText(state.client_a_name).first().waitFor({ timeout: 30000 });
   assert.equal(await adminPage.getByText(state.client_b_name).count(), 0, 'Client B name leaked to Client A');
-  const clientDefault = await openPage(state.admin_a, '/energy-admin/clients');
+  const clientDefault = await openPage(state.admin_a, '/');
   await clientDefault.page.waitForURL(`${base}/energy-locations/start`, { timeout: 30000 });
+  assert.equal(
+    await clientDefault.page.getByRole('link', { name: 'Administration' }).count(),
+    0,
+    'client administrator saw the Administration tab',
+  );
+  const blockedAdmin = await openPage(state.admin_a, '/energy-admin/clients');
+  await blockedAdmin.page.waitForURL((url) => !url.pathname.startsWith('/energy-admin'), { timeout: 30000 });
+  assert.equal(
+    await blockedAdmin.page.getByRole('link', { name: 'Administration' }).count(),
+    0,
+    'client administrator could open the Administration dashboard',
+  );
+  await blockedAdmin.context.close();
   await clientDefault.context.close();
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
   const adminCard = await waitCard(adminPage, 'building-admin-table-card');
@@ -139,7 +160,9 @@ try {
   // A one-location ordinary user lands in its workspace and has no Locations tab.
   const oneLocation = await openPage(state.user_a, '/energy-locations/start');
   await oneLocation.page.waitForURL(`${base}/energy-home/home`, { timeout: 30000 });
-  assert.equal(await oneLocation.page.getByRole('link', { name: 'Locations' }).count(), 0, 'single-location user saw the Locations tab');
+  const locationLinks = oneLocation.page.getByRole('link', { name: 'Locations' });
+  await locationLinks.first().waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
+  assert.equal(await locationLinks.count(), 0, 'single-location user saw the Locations tab');
   await oneLocation.context.close();
 
   // Checked tree/price editing through the client-admin UI.

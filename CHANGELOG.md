@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- Make Home Assistant's default landing page a neutral Home panel so the default panel cannot pin Administration or Locations in a tenant sidebar.
+- Enforce Administration as an administrator-only dashboard and persist tenant sidebar preferences server-side before login.
+- Keep single-location users on Overview with no Locations tab, while administrators continue to land on Administration.
+
 ## 0.5.1
 
 - Remove the unused legacy administrator card implementation while retaining the table-first console.

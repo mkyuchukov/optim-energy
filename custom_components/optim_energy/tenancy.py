@@ -481,6 +481,35 @@ class TenancyManager:
     def can_manage_tree(self, ctx: dict[str, Any]) -> bool:
         return bool(ctx.get("is_root") or ctx.get("role") == ROLE_CLIENT_ADMIN)
 
+    async def async_sync_sidebar(self, user: User) -> None:
+        """Apply the account's sidebar before its next frontend load."""
+        if user.system_generated or self.is_root(user):
+            return
+        ctx = self.context(user)
+        from .sidebar import async_sync_user_sidebar
+
+        try:
+            await async_sync_user_sidebar(
+                self.hass,
+                user.id,
+                ctx.get("role"),
+                ctx.get("locations") or [],
+                manage_tree=self.can_manage_tree(ctx),
+            )
+        except Exception:
+            # Sidebar presentation must never break account creation, role
+            # changes or integration startup.
+            _LOGGER.warning(
+                "Could not update Optim Energy sidebar preferences for %s",
+                user.id,
+                exc_info=True,
+            )
+
+    async def async_sync_all_sidebars(self) -> None:
+        """Refresh sidebar preferences for every non-admin account."""
+        for user in await self.hass.auth.async_get_users():
+            await self.async_sync_sidebar(user)
+
     def tree_for(self, user: User, requested_client: str | None = None) -> dict[str, Any]:
         """Return the tree visible to one connection user."""
         client_id, ctx = self.require_client_value(user, requested_client)
@@ -606,6 +635,7 @@ class TenancyManager:
         self._refresh_location_index()
         await self.async_save()
         await self.async_sync_groups()
+        await self.async_sync_all_sidebars()
         return {"client": client_id, "labels": clean}
 
     async def async_delete_client(
@@ -757,6 +787,7 @@ class TenancyManager:
         }
         await self.async_save()
         await self.async_sync_groups()
+        await self.async_sync_sidebar(ha_user)
         return self._user_info(ha_user, self.data["users"][ha_user.id])
 
     async def async_update_user(
@@ -813,6 +844,7 @@ class TenancyManager:
             await self.hass.auth.async_update_user(target, is_active=is_active)
         await self.async_save()
         await self.async_sync_groups()
+        await self.async_sync_sidebar(target)
         return self._user_info(target, record)
 
     async def async_delete_user(self, actor: User, user_id: str) -> None:
