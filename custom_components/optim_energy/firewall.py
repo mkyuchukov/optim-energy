@@ -312,6 +312,7 @@ def _rest_request_decision(
     *,
     authenticated: bool,
     root: bool,
+    ingress_session: bool = False,
 ) -> tuple[bool, str]:
     """Return whether a REST request may reach Home Assistant's auth layer."""
     if not path.startswith("/api/") or path in REST_ALLOWLIST:
@@ -323,6 +324,13 @@ def _rest_request_decision(
     # separate signed session. Neither surface carries tenant identity at this
     # boundary, so they are unavailable unless the caller proves root access.
     if any(_is_api_surface(path, surface) for surface in REST_ROOT_ONLY):
+        # Supervisor ingress is a capability URL guarded by its own signed
+        # ingress_session cookie. The Home Assistant frontend obtains that
+        # cookie through the admin-only supervisor/ingress/session websocket
+        # command. Let the Supervisor validate it; tenant sessions cannot
+        # create one because the Optim Energy websocket firewall denies it.
+        if (path == "/api/hassio_ingress" or path.startswith("/api/hassio_ingress/")) and ingress_session:
+            return True, ""
         if root:
             return True, ""
         return False, "webhook and ingress routes require root authentication"
@@ -376,10 +384,14 @@ class RestFirewall:
             user = token.user if token is not None else None
             authenticated = user is not None
             root = authenticated and self.manager.is_root(user)
+            ingress_session = bool(
+                getattr(request, "cookies", {}).get("ingress_session")
+            )
             allowed, reason = _rest_request_decision(
                 path,
                 authenticated=authenticated,
                 root=root,
+                ingress_session=ingress_session,
             )
             if allowed:
                 return await handler(request)

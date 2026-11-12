@@ -204,17 +204,31 @@ def test_rest_guard_leaves_unauthenticated_regular_api_paths_to_ha_auth() -> Non
     assert firewall._rest_request_decision("/api/template", authenticated=False, root=False)[0]
 
 
-def test_rest_guard_hard_blocks_webhooks_and_ingress_without_root() -> None:
+def test_rest_guard_hard_blocks_webhooks_without_root() -> None:
     for path in (
         "/api/webhook",
         "/api/webhook/",
         "/api/webhook/companion-device",
+    ):
+        assert not firewall._rest_request_decision(path, authenticated=False, root=False)[0]
+        assert not firewall._rest_request_decision(path, authenticated=True, root=False)[0]
+        assert firewall._rest_request_decision(path, authenticated=True, root=True)[0]
+
+
+def test_rest_guard_allows_valid_ingress_capability_session() -> None:
+    for path in (
         "/api/hassio_ingress",
         "/api/hassio_ingress/",
         "/api/hassio_ingress/signed-addon-url",
     ):
         assert not firewall._rest_request_decision(path, authenticated=False, root=False)[0]
         assert not firewall._rest_request_decision(path, authenticated=True, root=False)[0]
+        assert firewall._rest_request_decision(
+            path,
+            authenticated=False,
+            root=False,
+            ingress_session=True,
+        )[0]
         assert firewall._rest_request_decision(path, authenticated=True, root=True)[0]
 
 
@@ -277,7 +291,8 @@ class TenancyTests(unittest.TestCase):
         test_rest_guard_leaves_unauthenticated_regular_api_paths_to_ha_auth()
 
     def test_rest_bypass_surfaces(self) -> None:
-        test_rest_guard_hard_blocks_webhooks_and_ingress_without_root()
+        test_rest_guard_hard_blocks_webhooks_without_root()
+        test_rest_guard_allows_valid_ingress_capability_session()
 
     def test_rest_root_and_static_paths(self) -> None:
         test_rest_guard_allows_root_and_non_api_paths()
