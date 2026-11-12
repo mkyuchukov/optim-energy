@@ -1,4 +1,4 @@
-.PHONY: test test-js test-python test-runtime test-scale
+.PHONY: test test-js test-python test-runtime test-scale test-browser
 
 test: test-js test-python
 
@@ -16,3 +16,6 @@ test-runtime:
 
 test-scale:
 	python3 tests/runtime/scale_acceptance.py
+
+test-browser:
+	python3 tests/runtime/browser_acceptance.py
