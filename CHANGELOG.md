@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3
+
+- Show unassigned portal-capable devices in Administration → Devices, including an unassigned count, so new Shelly and MQTT devices can be placed before they have a Home Assistant area.
+
 ## 0.5.2
 
 - Make Home Assistant's default landing page a neutral Home panel so the default panel cannot pin Administration or Locations in a tenant sidebar.
