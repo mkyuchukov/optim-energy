@@ -54,10 +54,6 @@ try {
   await rootCard.getByText('People & clients').waitFor();
   const clientSwitch = rootCard.locator('#clientSwitch');
   await clientSwitch.waitFor();
-  await root.waitForFunction(() => {
-    const card = document.querySelector('building-tenant-admin-card');
-    return (card?.shadowRoot?.querySelector('#clientSwitch')?.options?.length || 0) >= 2;
-  });
   await clientSwitch.selectOption(state.client_a);
   await waitUsers(root, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
   await clientSwitch.selectOption(state.client_b);

@@ -564,9 +564,15 @@ def run(version: str, *, keep: bool = False) -> None:
         wait_server(http, timeout=180)
         root = WebSocket(http.host, http.port)
         root.auth(http.login(OWNER_USERNAME, OWNER_PASSWORD)["access_token"])
-        restored_clients = {
-            item["id"] for item in root.command({"type": "optim_energy/client/list"})
-        }
+        restored_client_list = wait_until(
+            lambda: (
+                root.command({"type": "optim_energy/client/list"})
+                if root is not None
+                else None
+            ),
+            "Optim Energy did not resume after cold restore",
+        )
+        restored_clients = {item["id"] for item in restored_client_list}
         assert_equal(
             restored_clients,
             {client_a, client_c},
