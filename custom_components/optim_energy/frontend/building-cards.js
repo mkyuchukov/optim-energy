@@ -565,6 +565,11 @@ function needLocation() {
     window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
     return;
   }
+  if (!PORTAL.isRoot && /^\/energy-admin(?:\/|$)/.test(location.pathname)) {
+    history.replaceState(null, '', START_PATH);
+    window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+    return;
+  }
   if (currentLocation || !hasLocations()) return;
   if (!NEEDS_LOCATION.test(location.pathname)) return;
   history.replaceState(null, '', START_PATH);
@@ -2972,8 +2977,10 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const client = portalClient;
       const root = PORTAL.isRoot;
       if (!root && this._scope !== 'setup') {
+        // The system default is the admin route. Client accounts must never
+        // see its shell, even if they open the URL directly.
         this._users = [];
-        this._error = 'Administration is available to Home Assistant administrators only.';
+        navigate(START_PATH);
         return;
       }
       try {

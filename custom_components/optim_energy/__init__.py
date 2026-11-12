@@ -228,10 +228,18 @@ async def _async_set_portal_default(hass: HomeAssistant) -> None:
     """Open the portal first while leaving an explicit user choice alone."""
     system_store = await frontend.async_system_store(hass)
     core_data = system_store.data.get("core") or {}
-    if core_data.get("default_panel") in (None, "lovelace"):
+    # Administration is the shared system default. The bundled frontend
+    # redirects client accounts to their location picker; a client profile can
+    # still choose another default dashboard.
+    if core_data.get("default_panel") in (
+        None,
+        "lovelace",
+        "energy-home",
+        "energy-locations",
+    ):
         await system_store.async_set_item(
             "core",
-            {**core_data, "default_panel": "energy-locations"},
+            {**core_data, "default_panel": "energy-admin"},
         )
 
 

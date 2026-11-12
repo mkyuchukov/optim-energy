@@ -15,7 +15,10 @@ DASHBOARD_SPECS: tuple[dict[str, Any], ...] = (
         "title": "Administration",
         "icon": "mdi:shield-account-outline",
         "filename": "energy-admin.json",
-        "require_admin": True,
+        # The panel is the system default so an administrator can land on the
+        # command centre. Client accounts are redirected to their location
+        # picker by the bundled frontend before the admin card renders.
+        "require_admin": False,
     },
     {
         "url_path": "energy-locations",
