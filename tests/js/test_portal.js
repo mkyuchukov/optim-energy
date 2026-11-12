@@ -29,7 +29,7 @@ const adminCatalog = m.adminDeviceCatalog(
     { id: 'child', labels: [], via_device_id: 'placed' },
     { id: 'service', labels: [], entry_type: 'service' },
   ],
-  [{ device_id: 'platform', platform: 'shelly' }],
+  [{ device_id: 'platform', platform: 'shelly', entity_id: 'sensor.load_power' }],
   { placed: 'loc:a' },
 );
 assert.deepStrictEqual(adminCatalog.map((d) => d.id), ['placed', 'unassigned', 'platform']);

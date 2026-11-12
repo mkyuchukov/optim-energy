@@ -125,7 +125,7 @@ function nativePlaced(devices, nat) {
 const PORTAL_TYPE_LABELS = new Set(['light', 'socket', 'relay', 'ac', 'energy_meter']);
 function adminDeviceCatalog(devices, entities, placed) {
   const placedIds = new Set(Object.keys(placed || {}));
-  const portalEntityDevices = new Set((entities || []).filter((e) => ['mqtt', 'shelly'].includes(e.platform) && e.device_id).map((e) => e.device_id));
+  const portalEntityDevices = new Set((entities || []).filter((e) => ['mqtt', 'shelly'].includes(e.platform) && e.device_id && /_(power|energy)$/.test(e.entity_id || '')).map((e) => e.device_id));
   return (devices || []).filter((d) => {
     if (!d?.id || d.via_device_id) return false;
     if (placedIds.has(d.id)) return true;
