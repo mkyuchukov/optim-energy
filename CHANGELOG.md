@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.0
+
+Device inbox for Home Assistant administrators. Needs the floor and area model (0.7.0 migration).
+
+- Administration → Devices lists every Home Assistant device from any integration: its model and integration, what it looks like (energy meter, relay, socket, light, AC) and the entity that shows it, and its client, location and group or "Not assigned yet".
+- Filter by status with counts and search by name, model, integration or client.
+- One assign dialog (client, location, group) for a single device or several selected at once; "Remove from client"; "Ignore" for bridges, coordinators and other devices that never go to a client.
+- The previous table for parent wiring, main devices and virtual devices is kept under "Wiring and main devices", and now also offers devices from other integrations.
+- Devices are recognised by what their entities are, not by integration or entity names. Diagnostic and configuration entities do not count.
+- The client portal reads power, energy and on/off for devices of other integrations by device class. Zigbee2MQTT and Shelly devices are read as before. A device still needs both a power and an energy sensor to appear in the portal.
+- "Connection dropped" from the Zigbee bridge now applies only to Zigbee devices.
+- A device cannot leave a client while one of that client's sums, schedules or alert rules still uses it; the refusal names what to change first. Moving a device to another location clears it as the old location's main device.
+- People search in Administration keeps the cursor in the box while typing.
+
 ## 0.7.1
 
 - Fix the entity list a Home Assistant administrator gets when viewing one client after the switch to floors and areas: it held only the entities that have no device, so Administration and client previews were missing device readings. Client accounts were not affected.

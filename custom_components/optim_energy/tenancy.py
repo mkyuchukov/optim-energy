@@ -340,6 +340,43 @@ def _client_tree_update(
     return clean
 
 
+_POWER_UNITS = {"W", "kW", "mW", "MW"}
+_ENERGY_UNITS = {"Wh", "kWh", "MWh"}
+
+
+def device_kind(entities: Iterable[dict[str, Any]]) -> tuple[str | None, str]:
+    """Say what a device is for the portal, and which entity gave it away.
+
+    It works on what the entities are (their domain, device class and unit),
+    not on which integration made them or how they are named, so a device
+    from any provider is recognised the same way. Diagnostic and
+    configuration entities are ignored: a device is not a relay because it
+    has a "restart" switch.
+    """
+    main = [
+        e for e in entities
+        if not e.get("entity_category") and not e.get("disabled_by") and not e.get("hidden_by")
+    ]
+    by_domain: dict[str, list[dict[str, Any]]] = {}
+    for entity in main:
+        by_domain.setdefault(str(entity["entity_id"]).partition(".")[0], []).append(entity)
+    if by_domain.get("climate"):
+        return "ac", f"climate entity {by_domain['climate'][0]['entity_id']}"
+    if by_domain.get("light"):
+        return "light", f"light entity {by_domain['light'][0]['entity_id']}"
+    if by_domain.get("switch"):
+        switch = by_domain["switch"][0]
+        kind = "socket" if switch.get("device_class") == "outlet" else "relay"
+        return kind, f"switch entity {switch['entity_id']}"
+    for sensor in by_domain.get("sensor", []):
+        measure = sensor.get("device_class")
+        unit = sensor.get("unit")
+        if measure in ("power", "energy") or unit in _POWER_UNITS or unit in _ENERGY_UNITS:
+            what = measure or ("power" if unit in _POWER_UNITS else "energy")
+            return "meter", f"{what} sensor {sensor['entity_id']}"
+    return None, ""
+
+
 class TenancyManager:
     """Own the shared tenant store and keep it synchronized with HA auth."""
 
@@ -947,7 +984,20 @@ class TenancyManager:
         area_id = self.location_area(tree, location) if location else None
         if place and not area_id:
             raise HomeAssistantError("This location has no area yet")
-        if owner and owner[0] != client_id or (owner and not place):
+        leaving = bool(owner) and (owner[0] != client_id or not place)
+        if leaving:
+            blockers = self._leaving_blockers(owner[0], device_id)
+            if blockers:
+                raise HomeAssistantError(
+                    "This device is still used by its client. First remove it from "
+                    + "; ".join(blockers)
+                )
+        if owner and not leaving and owner[1] != location:
+            # Changing location inside a client: it cannot stay the old location's main device.
+            mains = tree.get("mains") or {}
+            if mains.get(owner[1]) == device_id:
+                mains.pop(owner[1], None)
+        if leaving:
             # Leaving a client: drop what that client's settings said about it.
             old = self.data["trees"].get(owner[0], {})
             old["placed"] = {k: v for k, v in (old.get("placed") or {}).items() if k != device_id}
@@ -969,6 +1019,141 @@ class TenancyManager:
                 registry.async_update_device(item.id, area_id=area_id)
         await self._async_saved()
         return {"device_id": device_id, "client": client_id if place else None, "place": place}
+
+    def _device_family(self, device_id: str) -> tuple[set[str], set[str]]:
+        """Return a device with its channel devices, and all their entities."""
+        device_ids = {device_id} | {
+            d.id for d in dr.async_get(self.hass).devices if d.via_device_id == device_id
+        }
+        entity_ids = {
+            e.entity_id for e in er.async_get(self.hass).entities.values() if e.device_id in device_ids
+        }
+        return device_ids, entity_ids
+
+    def _leaving_blockers(self, client_id: str, device_id: str) -> list[str]:
+        """Name what in a client still depends on a device that is about to leave it.
+
+        A sum, schedule or alert that kept a device of another client would
+        go on reading or switching it, so the move waits until they let go.
+        """
+        tree = self.data.get("trees", {}).get(client_id, {})
+        _, entity_ids = self._device_family(device_id)
+        out: list[str] = []
+        names = {str(v.get("id")): str(v.get("name") or v.get("id")) for v in tree.get("virtual") or [] if isinstance(v, dict)}
+        for virtual_id, kinds in (tree.get("sums") or {}).items():
+            parts = kinds.values() if isinstance(kinds, dict) else []
+            if any(isinstance(p, dict) and entity_ids.intersection(p.get("members") or []) for p in parts):
+                out.append(f'the virtual device "{names.get(str(virtual_id), virtual_id)}"')
+        owned = self.data.get("owned", {}).get(client_id, {})
+        for entry_id in owned.get("entries", []):
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is not None and (entry.options or {}).get("entity_id") in entity_ids:
+                out.append(f'the alert rule "{entry.title}"')
+        mine = set(owned.get("automations", []))
+        if mine:
+            from homeassistant.components.automation import automations_with_entity
+
+            registry = er.async_get(self.hass)
+            seen: set[str] = set()
+            for entity_id in entity_ids:
+                for automation_id in automations_with_entity(self.hass, entity_id):
+                    entry = registry.async_get(automation_id)
+                    if entry is None or entry.unique_id not in mine or automation_id in seen:
+                        continue
+                    seen.add(automation_id)
+                    state = self.hass.states.get(automation_id)
+                    out.append(f'the schedule "{state.name if state else automation_id}"')
+        return out
+
+    def device_inbox(self, user: User) -> list[dict[str, Any]]:
+        """Every Home Assistant device with where it is and what it looks like. Root only."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can list all devices")
+        self._require_areas()
+        index = self._area_index()
+        trees = self.data.get("trees", {})
+        clients = self.data.get("clients", {})
+        ignored = set(self.data.get("ignored", []))
+        by_device: dict[str, list[dict[str, Any]]] = {}
+        for entity in er.async_get(self.hass).entities.values():
+            if not entity.device_id:
+                continue
+            state = self.hass.states.get(entity.entity_id)
+            by_device.setdefault(entity.device_id, []).append(
+                {
+                    "entity_id": entity.entity_id,
+                    "device_class": entity.device_class or entity.original_device_class,
+                    "unit": state.attributes.get("unit_of_measurement") if state else None,
+                    "entity_category": entity.entity_category,
+                    "disabled_by": entity.disabled_by,
+                    "hidden_by": entity.hidden_by,
+                }
+            )
+        devices = list(dr.async_get(self.hass).devices)
+        kinds = {d.id: device_kind(by_device.get(d.id, [])) for d in devices}
+        out: list[dict[str, Any]] = []
+        for device in devices:
+            kind, why = kinds[device.id]
+            owner = index.get(str(device.area_id)) if device.area_id else None
+            parent = device.via_device_id
+            # A channel of a device that is itself recognised is shown with it, not on its own.
+            if parent and kinds.get(parent, (None, ""))[0]:
+                continue
+            item: dict[str, Any] = {
+                "id": device.id,
+                "name": device.name_by_user or device.name or device.id,
+                "model": " ".join(str(x) for x in (device.manufacturer, device.model) if x),
+                "integrations": sorted(
+                    {
+                        entry.domain
+                        for entry in map(self.hass.config_entries.async_get_entry, device.config_entries)
+                        if entry is not None
+                    }
+                ),
+                "kind": kind,
+                "why": why,
+                "entities": len(by_device.get(device.id, [])),
+                "client": None,
+                "location": None,
+                "group": None,
+            }
+            if owner:
+                tree = trees.get(owner[0], {})
+                place = (tree.get("placed") or {}).get(device.id)
+                group = place if place and place != owner[1] and _location_of_place(tree, place) == owner[1] else None
+                item.update(
+                    status="assigned",
+                    client=owner[0],
+                    client_name=str(clients.get(owner[0], {}).get("name") or owner[0]),
+                    location=owner[1],
+                    location_name=_place_name(tree, owner[1]),
+                    group=group,
+                    group_name=_place_name(tree, group) if group else None,
+                )
+            elif device.id in ignored:
+                item["status"] = "ignored"
+            elif kind and not device.disabled_by and str(device.entry_type or "") != "service":
+                item["status"] = "unassigned"
+            else:
+                item["status"] = "other"
+            out.append(item)
+        return sorted(out, key=lambda x: (x["status"] != "unassigned", str(x["name"]).casefold()))
+
+    async def async_ignore_device(self, user: User, device_id: str, ignored: bool) -> dict[str, Any]:
+        """Mark a device as not for clients (a bridge, a coordinator), or undo that."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can ignore devices")
+        self._require_areas()
+        device = dr.async_get(self.hass).async_get(device_id)
+        if device is None:
+            raise HomeAssistantError("Device not found")
+        if ignored and device.area_id and str(device.area_id) in self._area_index():
+            raise HomeAssistantError("Remove the device from its client first")
+        current = set(self.data.get("ignored", []))
+        (current.add if ignored else current.discard)(device_id)
+        self.data["ignored"] = sorted(current)
+        await self.async_save()
+        return {"device_id": device_id, "ignored": ignored}
 
     def _snapshot(self) -> dict[str, Any]:
         """The store and registries as plain data, for the migration planner."""
@@ -2010,6 +2195,12 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
         {**client, probatio.Required("device_id"): str, probatio.Optional("place"): str},
         # No place, or an empty one, takes the device out of every client.
         lambda user, msg: manager.async_assign_device(user, msg.get("client"), msg["device_id"], msg.get("place") or None),
+    )
+    _command("device/inbox", {}, lambda user, msg: manager.device_inbox(user))
+    _command(
+        "device/ignore",
+        {probatio.Required("device_id"): str, probatio.Required("ignored"): bool},
+        lambda user, msg: manager.async_ignore_device(user, msg["device_id"], msg["ignored"]),
     )
     _command("migration/plan", {}, lambda user, msg: manager.migration_plan(user))
     _command("migration/apply", {}, lambda user, msg: manager.async_migration_apply(user))

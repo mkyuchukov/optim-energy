@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from acceptance import (
+    create_fixture_entry,
     CLIENT_ADMIN_A,
     RuntimeHarness,
     client_tree,
@@ -206,6 +207,14 @@ def run(version: str, *, keep: bool = False) -> None:
         migrate.auth(root_state["tokens"]["access_token"])
         try:
             migrate.command({"type": "optim_energy/migration/apply"})
+            # A device Home Assistant knows but no client has, for the inbox.
+            migrate.command(
+                {
+                    "type": "optim_runtime_fixture/create_devices",
+                    "config_entry_id": create_fixture_entry(http, root_state["tokens"]["access_token"]),
+                    "devices": [{"key": "browser_spare", "name": "Browser Spare Meter", "entity": True}],
+                }
+            )
             # Undo the price the first pass typed, so the same steps run again.
             fresh = migrate.command({"type": "optim_energy/tree/get", "client": client_a})["tree"]
             fresh["prices"] = {}

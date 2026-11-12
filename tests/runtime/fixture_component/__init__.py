@@ -91,6 +91,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     config_entry=hass.config_entries.async_get_entry(spec_entry_id),
                     device_id=device.id,
                     suggested_object_id=f"{spec['key']}_power",
+                    original_device_class="power",
                 )
             created.append(
                 {

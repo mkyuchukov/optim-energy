@@ -489,6 +489,24 @@ class TenancyTests(unittest.TestCase):
         assert guard.decision(_Connection(_User(admin=True)), {"type": "get_states"})[0]
         assert not firewall._rest_request_decision("/api/states", authenticated=True, root=False)[0]
 
+    def test_devices_are_recognised_by_what_they_are_not_who_made_them(self) -> None:
+        kind = tenancy.device_kind
+        # A Tuya plug: nothing in its names says "power" the Zigbee2MQTT way.
+        assert kind([
+            {"entity_id": "switch.kettle", "device_class": "outlet"},
+            {"entity_id": "sensor.kettle_current_consumption", "device_class": "power"},
+        ])[0] == "socket"
+        assert kind([{"entity_id": "sensor.em_total", "device_class": None, "unit": "kWh"}]) == ("meter", "energy sensor sensor.em_total")
+        assert kind([{"entity_id": "light.hall"}, {"entity_id": "sensor.hall_power", "device_class": "power"}])[0] == "light"
+        assert kind([{"entity_id": "climate.office"}])[0] == "ac"
+        # A coordinator: its only switch is a configuration toggle, its sensors are diagnostics.
+        assert kind([
+            {"entity_id": "switch.bridge_permit_join", "entity_category": "config"},
+            {"entity_id": "sensor.bridge_version", "entity_category": "diagnostic"},
+        ]) == (None, "")
+        assert kind([{"entity_id": "sensor.room_temperature", "device_class": "temperature", "unit": "°C"}]) == (None, "")
+        assert kind([{"entity_id": "switch.off", "disabled_by": "user"}]) == (None, "")
+
     def test_every_command_has_a_capability_row(self) -> None:
         import re
 
