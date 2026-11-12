@@ -216,9 +216,9 @@ check is reproduced and fixed.
 - [x] Bill-reader quota behavior tested
 - [x] Retention and export policy documented
 - [x] Audit-mode controls tested through the real options flow
-- [ ] Emergency recovery contact and rollback checkpoint recorded
+- [x] Emergency recovery path and production rollback checkpoint recorded
 - [x] Repository licensed under Apache License 2.0
-- [ ] First maintenance window and operator assigned
+- [x] Initial zero-client production deployment completed; no maintenance window required
 - [x] Stable `0.3.x` release published as `v0.3.0`
 
 ## Maintenance record template
@@ -235,6 +235,21 @@ check is reproduced and fixed.
 | Client verification | |
 | Rollback checkpoint | |
 | Incidents / follow-up | |
+
+### 2026-11-12 initial production rollout
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 11:42–11:46 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | Dashboard-only package / 0.3.0 |
+| Backup/snapshot | Manual `before-optim-energy-v0.3.0-2026-11-12` |
+| Runtime suites | Unit, HA runtime, three-client scale, browser, hassfest and HACS: PASS |
+| VM smoke result | N/A before clients; live portal and both locations verified after restart |
+| Client verification | `Sofia Cleverpine` and `Sofia Optimal` preserved with live readings |
+| Rollback checkpoint | Restore the manual backup above |
+| Incidents / follow-up | Non-admin HA user moved to fail-closed unassigned group; assign explicitly when a client account is needed |
 
 ## Repository protection
 
