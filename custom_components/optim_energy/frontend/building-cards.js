@@ -119,6 +119,20 @@ function nativePlaced(devices, nat) {
   }
   return out;
 }
+// The administrator must be able to assign a device before it has an area or
+// location label. Keep the picker to portal-capable main devices rather than
+// every integration, add-on pseudo-device and multi-channel child.
+const PORTAL_TYPE_LABELS = new Set(['light', 'socket', 'relay', 'ac', 'energy_meter']);
+function adminDeviceCatalog(devices, entities, placed) {
+  const placedIds = new Set(Object.keys(placed || {}));
+  const portalEntityDevices = new Set((entities || []).filter((e) => ['mqtt', 'shelly'].includes(e.platform) && e.device_id).map((e) => e.device_id));
+  return (devices || []).filter((d) => {
+    if (!d?.id || d.via_device_id) return false;
+    if (placedIds.has(d.id)) return true;
+    if (d.entry_type === 'service' || d.disabled_by) return false;
+    return portalEntityDevices.has(d.id) || (d.labels || []).some((x) => PORTAL_TYPE_LABELS.has(x));
+  });
+}
 // Things Home Assistant does not catch by itself: an area with devices but no location, and a device whose location label disagrees with its area.
 function nativeProblems(devices, nat) {
   const out = [], name = (d) => d.name_by_user || d.name;
@@ -3001,6 +3015,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       this._users = [];
       this._summaries = [];
       this._catalog = [];
+      this._adminDevices = {};
       this._editor = null;
       this._selectedLocation = null;
       this._search = '';
@@ -3028,10 +3043,14 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         return;
       }
       try {
-        const users = await this._hass.callWS({
-          type: 'optim_energy/user/list',
-          ...(root && client ? { client } : {}),
-        });
+        const [users, allDevices, allEntities] = await Promise.all([
+          this._hass.callWS({
+            type: 'optim_energy/user/list',
+            ...(root && client ? { client } : {}),
+          }),
+          root ? this._hass.callWS({ type: 'optim_energy/registry/list', kind: 'device' }).catch(() => []) : [],
+          root ? this._hass.callWS({ type: 'optim_energy/registry/list', kind: 'entity' }).catch(() => []) : [],
+        ]);
         const catalog = root
           ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }).catch(() => [])
           : [];
@@ -3062,6 +3081,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         this._users = Array.isArray(users) ? users : [];
         this._catalog = Array.isArray(catalog) ? catalog : [];
         this._summaries = summaries;
+        this._adminDevices = root ? Object.fromEntries(adminDeviceCatalog(allDevices, allEntities, TREE.placed).map((d) => [d.id, d])) : {};
         this._error = '';
       } catch (e) {
         if (seq !== this._loadSeq || client !== portalClient) return;
@@ -3101,8 +3121,9 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       return TREE.placed[device.id] || native[device.id] || (NATIVE?.areaLoc?.[device.area_id] ? `area:${device.area_id}` : null);
     }
     deviceRows(locationId = null) {
-      const native = NATIVE ? nativePlaced(HASS?.devices || {}, NATIVE) : {};
-      const rows = Object.values(HASS?.devices || {}).map((device) => ({
+      const devices = PORTAL.isRoot && Object.keys(this._adminDevices || {}).length ? this._adminDevices : (HASS?.devices || {});
+      const native = NATIVE ? nativePlaced(devices, NATIVE) : {};
+      const rows = Object.values(devices).map((device) => ({
         ...device,
         virtual: false,
         name: device.name_by_user || device.name || device.id,
@@ -3315,7 +3336,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       } catch (x) { this.flash(x?.message || 'Could not save the change.', true); }
     }
     async assignDevice(deviceId, place) {
-      const device = Object.values(HASS?.devices || {}).find((x) => x.id === deviceId);
+      const devices = PORTAL.isRoot && Object.keys(this._adminDevices || {}).length ? this._adminDevices : (HASS?.devices || {});
+      const device = Object.values(devices).find((x) => x.id === deviceId);
       if (!device) return;
       if (place.startsWith('area:')) {
         const labels = (device.labels || []).filter((x) => !NATIVE?.locIds?.has(x));
@@ -3792,4 +3814,4 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
   reg('building-alerts-card', AlertsCard, 'Building alerts');
 }
 
-if (typeof module !== 'undefined') module.exports = { billPrices, billKind, billPages, parseBill, exchangeRows, billExtra, dayStartMs, priceRule, vatNote, chartPrice, priceList, priceSeries, pricePanel, combineTotals, priceOf, treeWithPrice, ruleAutomation, ruleTargets, ruleAutoId, autoRuns, whenShort, autoTitle, sumPlan, parseSchedule, nativeAutomations, nativePlaces, nativePlaced, nativeProblems, spreadCatchUp, statGaps, cfgSwitches, guessControls, kindOf, typeLabel, scheduleConfig, daysText, groupSwitches, liveSwitches, isKept, shortNames, layoutRooms, radialLayout, layoutTree, wiringTree, networkTree, countUnder, downUnder, shutNodes, shutBelow, allParents, alarmRules, energyChart, chartBox, treeWithLocationMain, valueText, nowPanel, powerText, isMeasuring, setLocation, placesUnder, placePath, placeParts, placeLabel, flatPlaces, placedDevices, treeWithDevicePlaced, setTree, TREE, rootsIn, countedIn, readingsOf, homeDevices, buildingRoots, subtreeOf, nodeEnergy, unmeasuredOf, breakdownRows, wouldLoop, treeWithParent, treeWithMain, treeWithVirtual, treeWithoutVirtual, qualityRows, syncModel, portalModel, devicePower, withLiveHour, liveReadings, combineTotals, hourSoFar, mergeEnergy, spacePower, controlChanged, ALERT_SETTINGS, assessAlarm, worstIn, valueAt, groupAlarms, networkSummary, alertsHtml, resolveSpace, inSpace, devicesIn, deviceHealth, bucketEnergy, computeActive, alarmPeriods, alarmInfo, networkRestarts, duration, hourTip, deviceStatus, filterDevices, minutes, DEVICES, BRIDGE };
+if (typeof module !== 'undefined') module.exports = { billPrices, billKind, billPages, parseBill, exchangeRows, billExtra, dayStartMs, priceRule, vatNote, chartPrice, priceList, priceSeries, pricePanel, combineTotals, priceOf, treeWithPrice, ruleAutomation, ruleTargets, ruleAutoId, autoRuns, whenShort, autoTitle, sumPlan, parseSchedule, nativeAutomations, nativePlaces, nativePlaced, nativeProblems, adminDeviceCatalog, spreadCatchUp, statGaps, cfgSwitches, guessControls, kindOf, typeLabel, scheduleConfig, daysText, groupSwitches, liveSwitches, isKept, shortNames, layoutRooms, radialLayout, layoutTree, wiringTree, networkTree, countUnder, downUnder, shutNodes, shutBelow, allParents, alarmRules, energyChart, chartBox, treeWithLocationMain, valueText, nowPanel, powerText, isMeasuring, setLocation, placesUnder, placePath, placeParts, placeLabel, flatPlaces, placedDevices, treeWithDevicePlaced, setTree, TREE, rootsIn, countedIn, readingsOf, homeDevices, buildingRoots, subtreeOf, nodeEnergy, unmeasuredOf, breakdownRows, wouldLoop, treeWithParent, treeWithMain, treeWithVirtual, treeWithoutVirtual, qualityRows, syncModel, portalModel, devicePower, withLiveHour, liveReadings, combineTotals, hourSoFar, mergeEnergy, spacePower, controlChanged, ALERT_SETTINGS, assessAlarm, worstIn, valueAt, groupAlarms, networkSummary, alertsHtml, resolveSpace, inSpace, devicesIn, deviceHealth, bucketEnergy, computeActive, alarmPeriods, alarmInfo, networkRestarts, duration, hourTip, deviceStatus, filterDevices, minutes, DEVICES, BRIDGE };

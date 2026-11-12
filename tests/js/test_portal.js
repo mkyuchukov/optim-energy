@@ -19,6 +19,21 @@ assert.strictEqual(daysText(['mon', 'wed']), 'Mon, Wed');
 console.log('ok');
 // A kept device stays out of what a group's tile and All off act on, and is still in its group.
 const m = require('../../custom_components/optim_energy/frontend/building-cards.js');
+
+// Administration can see an unassigned portal device, but not service pseudo-devices or channel children.
+const adminCatalog = m.adminDeviceCatalog(
+  [
+    { id: 'placed', labels: [] },
+    { id: 'unassigned', labels: ['light'], entry_type: null },
+    { id: 'platform', labels: [], entry_type: null },
+    { id: 'child', labels: [], via_device_id: 'placed' },
+    { id: 'service', labels: [], entry_type: 'service' },
+  ],
+  [{ device_id: 'platform', platform: 'shelly' }],
+  { placed: 'loc:a' },
+);
+assert.deepStrictEqual(adminCatalog.map((d) => d.id), ['placed', 'unassigned', 'platform']);
+console.log('admin devices ok');
 m.setTree({ places: [{ id: 'loc', name: 'L', kind: 'location' }], placed: {}, kinds: { a: 'lights', w: 'relay' }, kept: ['w'] });
 m.setLocation('loc');
 m.DEVICES.push({ id: 'a', name: 'A', switch: 'switch.a', place: 'loc' }, { id: 'w', name: 'W', switch: 'switch.w', place: 'loc' });
