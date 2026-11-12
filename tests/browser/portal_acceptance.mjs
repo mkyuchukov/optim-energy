@@ -67,6 +67,9 @@ try {
     1,
     'Home Assistant administrator did not get the Administration tab',
   );
+  const adminHomeLinks = rootDefault.page.getByRole('link', { name: 'Home' });
+  await adminHomeLinks.first().waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
+  assert.equal(await adminHomeLinks.count(), 0, 'Home Assistant administrator saw the client Home tab');
   await rootDefault.context.close();
   const clientSwitch = rootCard.locator('#clientSwitch');
   await clientSwitch.waitFor();

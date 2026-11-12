@@ -50,6 +50,20 @@ def build_sidebar_preferences(
     return {"panelOrder": client_panels, "hiddenPanels": hidden}
 
 
+async def async_sync_default_panel(
+    hass: HomeAssistant,
+    user_id: str,
+    panel: str,
+) -> None:
+    """Set the account's landing dashboard without changing global defaults."""
+    from homeassistant.components.frontend.storage import async_user_store
+
+    store = await async_user_store(hass, user_id)
+    core = store.data.get("core") or {}
+    if core.get("default_panel") != panel:
+        await store.async_set_item("core", {**core, "default_panel": panel})
+
+
 async def async_sync_user_sidebar(
     hass: HomeAssistant,
     user_id: str,
