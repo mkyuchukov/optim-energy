@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.4
+
+- Keep bridge and radio service devices out of the unassigned-device administrator list while retaining unassigned metered devices.
+
 ## 0.5.3
 
 - Show unassigned portal-capable devices in Administration → Devices, including an unassigned count, so new Shelly and MQTT devices can be placed before they have a Home Assistant area.
