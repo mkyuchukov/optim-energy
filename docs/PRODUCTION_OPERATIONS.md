@@ -231,6 +231,7 @@ check is reproduced and fixed.
 - [x] Stable `0.3.x` release published as `v0.3.0`
 - [x] Patch `v0.3.1` restores tenant registry names and device types; production verified
 - [x] Separate Administration console and People workspace implemented; production verified
+- [x] `v0.6.0` closes client-administrator isolation holes and starts fail-closed; production verified
 
 ## Maintenance record template
 
@@ -336,6 +337,21 @@ check is reproduced and fixed.
 | Client verification | Clients, Locations, People and Devices render in table form; one-location user behavior covered by browser acceptance |
 | Rollback checkpoint | Copy back the preserved `optim_energy-pre-2026-11-12-v0.5.0` directory |
 | Incidents / follow-up | v0.5.1 removes the unused legacy admin card implementation; no tenant or registry data loss observed |
+
+### 2026-11-12 v0.6.0 tenant isolation fixes
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 21:25–21:35 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.5.8 / 0.6.0, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-optim-energy-phase1-2026-11-12` (configuration only, no database or add-ons), copied off the VM; automatic full backup of 2026-11-12 04:49 retained |
+| Runtime suites | Unit, HA runtime (including the hostile client-administrator tree scenario), three-client scale, browser, hassfest and HACS: PASS |
+| VM smoke result | N/A; the backup was restored into an isolated HA 2026.11.0 container with no network and 0.6.0 started on it with no plugin errors |
+| Client verification | One client with two locations, one portal user, 134 devices, 1,486 entities, 11 automations and the settings tree unchanged after restart; Administration renders. No client-account login was performed |
+| Rollback checkpoint | Restore the manual backup above with Home Assistant stopped, or reinstall `v0.5.8` from the Marketplace |
+| Incidents / follow-up | None. The Marketplace had recorded `v0.3.0` as installed while the files were 0.5.8; it now reads `v0.6.0`. Free disk space on the VM was 5.6 GB of 30.8 GB, which is why the backup excluded the database |
 
 ## Repository protection
 
