@@ -11,6 +11,10 @@ the Home Assistant root account remain trusted global resources.
   unless they explicitly choose Preview.
 - Client accounts use the bundled Optim Energy client dashboards and checked
   portal commands only.
+- Native add-ons such as File editor and Zigbee2MQTT are not exposed through
+  the public ingress proxy. Administrators open them from Administration →
+  Apps & tools using the configured local Home Assistant URL; they require
+  network/VPN access and a normal Home Assistant login on that address.
 - Home Assistant mobile-app webhooks, generic webhooks, Supervisor ingress,
   Assist, templates, raw REST and native configuration commands are not part of
   the client surface.
@@ -284,6 +288,21 @@ check is reproduced and fixed.
 | Client verification | Administration is the system default for HA administrators; sidebar contains only Administration and normal HA tools. People, Clients and Locations views load; Preview opens the selected client; both locations retain live readings |
 | Rollback checkpoint | Restore the backup above or copy back the preserved `optim_energy-pre-2026-11-12-v0.4.3` directory |
 | Incidents / follow-up | Fixed the pinned client Overview and Preview action during rollout; no tenant, device or registry data loss observed |
+
+### 2026-11-12 v0.4.4 native add-on launchers
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 13:45–14:00 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.4.3 / 0.4.4 |
+| Backup/snapshot | Existing `before-optim-energy-v0.4.0-2026-11-12`; previous integration directory preserved |
+| Runtime suites | Unit, HA runtime, three-client scale, browser, hassfest and HACS: PASS |
+| VM smoke result | N/A; live portal verified after restart |
+| Client verification | Administrator sidebar no longer exposes broken public ingress panels; Administration → Apps & tools opens native File editor and Zigbee2MQTT on the internal HA URL |
+| Rollback checkpoint | Copy back the preserved `optim_energy-pre-2026-11-12-v0.4.4` directory |
+| Incidents / follow-up | Public `ha.int` proxy returns openresty 404 for `/api/hassio_ingress`; native add-ons require local network/VPN access |
 
 ## Repository protection
 
