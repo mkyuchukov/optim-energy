@@ -11,6 +11,13 @@ DASHBOARD_DIRECTORY = Path(__file__).parent / "dashboards"
 
 DASHBOARD_SPECS: tuple[dict[str, Any], ...] = (
     {
+        "url_path": "energy-admin",
+        "title": "Administration",
+        "icon": "mdi:shield-account-outline",
+        "filename": "energy-admin.json",
+        "require_admin": True,
+    },
+    {
         "url_path": "energy-locations",
         "title": "Locations",
         "icon": "mdi:map-marker-multiple",

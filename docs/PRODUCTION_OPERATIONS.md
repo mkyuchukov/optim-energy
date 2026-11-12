@@ -6,9 +6,11 @@ the Home Assistant root account remain trusted global resources.
 
 ## Supported client surface
 
-- Clients use the browser or installed PWA at the Home Assistant URL.
-- Client accounts use the bundled Optim Energy dashboards and checked portal
-  commands only.
+- Home Assistant owners and administrators use the separate **Administration**
+  console for clients, locations and people, and do not enter the client portal
+  unless they explicitly choose Preview.
+- Client accounts use the bundled Optim Energy client dashboards and checked
+  portal commands only.
 - Home Assistant mobile-app webhooks, generic webhooks, Supervisor ingress,
   Assist, templates, raw REST and native configuration commands are not part of
   the client surface.
@@ -221,6 +223,7 @@ check is reproduced and fixed.
 - [x] Initial zero-client production deployment completed; no maintenance window required
 - [x] Stable `0.3.x` release published as `v0.3.0`
 - [x] Patch `v0.3.1` restores tenant registry names and device types; production verified
+- [x] Separate Administration console and People workspace implemented; acceptance passed
 
 ## Maintenance record template
 

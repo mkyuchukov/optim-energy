@@ -158,7 +158,9 @@
           "column_span": 4,
           "cards": [
             {
-              "type": "custom:building-tenant-admin-card",
+              "type": "custom:building-admin-card",
+              "section": "people",
+              "scope": "setup",
               "grid_options": {
                 "columns": "full",
                 "rows": "auto"

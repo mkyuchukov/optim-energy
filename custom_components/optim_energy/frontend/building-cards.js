@@ -21,7 +21,7 @@ const TREE = { main: null, mains: {}, parents: {}, virtual: [], known: null, pla
 let nodeIds = new Set(), allNodes = [];
 // The location being viewed. Locations act like tenants: every page shows only the chosen one.
 // ponytail: this is what is shown, not a security boundary. Any logged-in user can still read everything in Home Assistant.
-const LOCATION_KEY = 'portalLocation', CLIENT_KEY = 'portalClient', START_PATH = '/energy-locations/start', HOME_PATH = '/energy-home/home', SETUP_PATH = '/energy-setup/structure';
+const LOCATION_KEY = 'portalLocation', CLIENT_KEY = 'portalClient', START_PATH = '/energy-locations/start', HOME_PATH = '/energy-home/home', SETUP_PATH = '/energy-setup/structure', ADMIN_HOME_PATH = '/energy-admin/overview';
 // Server-provided identity. A Home Assistant admin is the only root; a
 // client administrator is a portal role and never receives HA's admin flag.
 const PORTAL = { ready: false, isRoot: false, role: null, client: null, clientName: '', location: null, clients: [], capabilities: {}, error: '' };
@@ -446,20 +446,31 @@ function treeWithoutVirtual(tree, id) {
   return treeWithDevicePlaced({ ...tree, parents, virtual: tree.virtual.filter((v) => v.id !== id), main: tree.main === id ? null : tree.main }, id, null);
 }
 // Home Assistant keeps the sidebar order per account. Client accounts see the
-// packaged portal only; administrator accounts keep the normal HA tools.
-const SIDEBAR = ['energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup'];
-const ADMIN_EXTRA = ['core_configurator', '45df7312_zigbee2mqtt', 'hacs'];
+// packaged portal only; Home Assistant administrators get a separate command
+// centre and keep their normal HA tools.
+const CLIENT_PANELS = ['energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup'];
+const ADMIN_PANELS = ['energy-admin', 'core_configurator', '45df7312_zigbee2mqtt', 'hacs'];
 let sidebarKey = null;
 async function syncSidebar(hass) {
   if (!PORTAL.ready || typeof location === 'undefined') return;
   const setup = portalCanManage();
-  const allowed = new Set(PORTAL.isRoot ? [...SIDEBAR, ...ADMIN_EXTRA] : SIDEBAR.filter((id) => setup || id !== 'energy-setup'));
+  const allowed = new Set(PORTAL.isRoot ? ADMIN_PANELS : CLIENT_PANELS.filter((id) => setup || id !== 'energy-setup'));
+  const order = PORTAL.isRoot ? ADMIN_PANELS : CLIENT_PANELS;
   const key = `${PORTAL.role}|${[...allowed].join(',')}`;
   if (sidebarKey === key) return;
   try {
     const now = (await hass.callWS({ type: 'frontend/get_user_data', key: 'sidebar' }))?.value;
-    const hidden = PORTAL.isRoot ? (now?.hiddenPanels || []) : [...new Set([...(now?.hiddenPanels || []), ...Object.keys(hass.panels || {}).filter((id) => !allowed.has(id))])];
-    if (JSON.stringify(now?.panelOrder) !== JSON.stringify(SIDEBAR) || JSON.stringify(now?.hiddenPanels || []) !== JSON.stringify(hidden)) await hass.callWS({ type: 'frontend/set_user_data', key: 'sidebar', value: { panelOrder: SIDEBAR, hiddenPanels: hidden } });
+    const hidden = new Set(now?.hiddenPanels || []);
+    for (const id of ['energy-admin', ...CLIENT_PANELS]) hidden.delete(id);
+    if (PORTAL.isRoot) {
+      // Keep the normal HA tools visible, but do not put the client portal in
+      // an administrator's sidebar. The admin console has an explicit preview.
+      for (const id of CLIENT_PANELS) hidden.add(id);
+    } else {
+      for (const id of Object.keys(hass.panels || {})) if (!allowed.has(id)) hidden.add(id);
+    }
+    const nextHidden = [...hidden];
+    if (JSON.stringify(now?.panelOrder) !== JSON.stringify(order) || JSON.stringify(now?.hiddenPanels || []) !== JSON.stringify(nextHidden)) await hass.callWS({ type: 'frontend/set_user_data', key: 'sidebar', value: { panelOrder: order, hiddenPanels: nextHidden } });
     sidebarKey = key;
   } catch (e) { /* the order is a nicety, the app works without it */ }
 }
@@ -548,7 +559,13 @@ function ensureTree(hass) {
 }
 // With locations set up, nothing shows until one is chosen, so every page starts from the choice.
 function needLocation() {
-  if (typeof location === 'undefined' || currentLocation || !hasLocations()) return;
+  if (typeof location === 'undefined') return;
+  if (PORTAL.isRoot && /^\/(energy-locations|energy-setup)(?:\/|$)/.test(location.pathname)) {
+    history.replaceState(null, '', ADMIN_HOME_PATH);
+    window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+    return;
+  }
+  if (currentLocation || !hasLocations()) return;
   if (!NEEDS_LOCATION.test(location.pathname)) return;
   history.replaceState(null, '', START_PATH);
   window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
@@ -1466,6 +1483,27 @@ const CHART_CSS = `
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}.seg button{all:unset;cursor:pointer;font-size:12.5px;padding:4px 10px;color:var(--muted)}.seg button.on{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--fg)}.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 `;
 // Categorical colours, in fixed order, validated for colour-blind separation on a dark surface. A ninth device goes into Other.
+const ADMIN_CSS = `
+.admin{max-width:1280px;margin:0 auto;gap:20px}
+.admin-hero{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap;padding:24px 26px;border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 10%,var(--panel)),var(--panel) 62%);box-shadow:var(--shadow)}
+.admin-hero .lede{max-width:720px}.admin-kicker{display:block;color:var(--accent);font-size:11px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;margin-bottom:7px}.admin-hero h1{margin:0;font-size:clamp(25px,3vw,36px);line-height:1.1;letter-spacing:-.035em}.admin-hero p{margin:9px 0 0;max-width:680px;color:var(--muted);font-size:14px;line-height:1.5}
+.admin-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.admin-actions button{white-space:nowrap}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.primary:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 84%,#000)}button.quiet{background:transparent;border-color:var(--line);color:var(--fg)}button.quiet:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 8%,transparent)}button.danger-ghost{background:transparent;border-color:color-mix(in srgb,var(--bad) 45%,var(--line));color:var(--bad)}
+.admin-context{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--panel) 86%,transparent);color:var(--muted);font-size:13px}
+.admin-context .client-select{display:flex;align-items:center;gap:9px}.admin-context .client-select select{min-width:210px}.admin-context strong{color:var(--fg);font-weight:650}.admin-context .context-note{display:flex;align-items:center;gap:7px}.admin-context .context-note::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.admin-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.metric{display:grid;gap:3px;padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}.metric .label{color:var(--muted);font-size:12.5px}.metric .value{font-size:25px;font-weight:700;letter-spacing:-.035em;line-height:1.15}.metric .hint{color:var(--muted);font-size:12px}
+.admin-panel{display:grid;gap:14px;padding:18px 20px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow);min-width:0}.admin-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.admin-panel-head h2{margin:0;font-size:19px;letter-spacing:-.02em}.admin-panel-head p{margin:4px 0 0;color:var(--muted);font-size:13px;line-height:1.45}.admin-panel-head .admin-actions button{font-size:13px;padding:6px 10px}
+.client-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:12px}.client-card{position:relative;display:grid;gap:13px;padding:16px;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--panel) 82%,var(--page));transition:transform .15s,border-color .15s,box-shadow .15s}.client-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent) 42%,var(--line));box-shadow:0 10px 26px rgba(0,0,0,.12)}.client-card.active{border-color:var(--accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent),var(--shadow)}.client-card-head{display:flex;gap:11px;align-items:center;min-width:0}.client-mark{width:42px;height:42px;flex:none;display:grid;place-items:center;border-radius:13px;background:color-mix(in srgb,var(--accent) 18%,var(--panel));color:var(--accent);font-weight:750;font-size:14px;letter-spacing:.02em}.client-card h3{margin:0;font-size:16px;letter-spacing:-.02em;overflow-wrap:anywhere}.client-card p{margin:3px 0 0;color:var(--muted);font-size:12.5px}.client-tags{display:flex;gap:5px;flex-wrap:wrap;min-height:22px}.tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:color-mix(in srgb,var(--fg) 7%,transparent);color:var(--muted);font-size:11.5px}.client-card-actions{display:flex;justify-content:space-between;gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:11px}.client-card-actions button{font-size:12.5px;padding:5px 9px}
+.shortcut-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.shortcut{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:11px;width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:13px;background:color-mix(in srgb,var(--panel) 78%,var(--page));cursor:pointer}.shortcut:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--panel))}.shortcut:focus-visible{outline:2px solid var(--accent)}.shortcut ha-icon{--mdc-icon-size:20px;color:var(--accent);flex:none}.shortcut b{display:block;font-size:13.5px}.shortcut span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.new-client,.add-person{margin:0;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--panel) 76%,var(--page));overflow:hidden}.new-client summary,.add-person summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;padding:11px 14px;font-size:13.5px;font-weight:600}.new-client summary::-webkit-details-marker,.add-person summary::-webkit-details-marker{display:none}.new-client summary::before,.add-person summary::before{content:"+";display:grid;place-items:center;width:24px;height:24px;border-radius:8px;background:var(--accent);color:#fff;font-size:18px;line-height:1}.new-client[open] summary::before,.add-person[open] summary::before{content:"−"}.inline-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;padding:0 14px 14px;border-top:1px solid var(--line);padding-top:13px}.field{display:grid;gap:4px;color:var(--muted);font-size:12px}.field input,.field select{width:100%;box-sizing:border-box;min-width:0}.field.wide{grid-column:1/-1}.form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;align-items:center}
+.people-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.search{display:flex;align-items:center;gap:7px;flex:1 1 220px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:var(--page)}.search ha-icon{--mdc-icon-size:18px;color:var(--muted);flex:none}.search input{border:0;background:transparent;padding:9px 0;min-width:0;width:100%}.people-tools select{min-width:145px}.people-count{color:var(--muted);font-size:12.5px;margin-left:auto}.people-list{display:grid;gap:7px}.person{display:grid;grid-template-columns:42px minmax(170px,1.5fr) minmax(105px,.7fr) minmax(150px,1fr) auto;gap:12px;align-items:center;padding:11px 12px;border:1px solid var(--line);border-radius:13px;background:color-mix(in srgb,var(--panel) 78%,var(--page))}.person.self{border-color:color-mix(in srgb,var(--accent) 48%,var(--line))}.avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:50%;background:color-mix(in srgb,var(--accent) 18%,var(--panel));color:var(--accent);font-size:11px;font-weight:750}.person-name{min-width:0;display:grid;gap:2px}.person-name b{font-size:14px;overflow-wrap:anywhere}.person-name span{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.person-role,.person-location{min-width:0}.person-role select,.person-location select{width:100%;font-size:12.5px;padding:6px 9px}.person-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}.status-dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}.status-dot.off{background:var(--slate)}.person-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap}.person-actions button{font-size:12px;padding:5px 8px}.person-empty{padding:22px 14px;border:1px dashed var(--line);border-radius:13px;color:var(--muted);text-align:center;font-size:13px}
+.label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:8px}.label-choice{display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:13px}.label-choice input{accent-color:var(--accent)}.label-choice small{margin-left:auto;color:var(--muted);font-size:11.5px}.label-choice:has(input:checked){border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background:color-mix(in srgb,var(--accent) 8%,var(--panel))}
+.location-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:11px}.location-card{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--panel) 78%,var(--page))}.location-card h3{margin:0;font-size:16px}.location-card p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.45}.location-stats{display:flex;gap:8px;flex-wrap:wrap}.location-stats span{padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--fg) 7%,transparent);color:var(--muted);font-size:11.5px}.location-actions{display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}.location-actions button{font-size:12px;padding:5px 8px}
+.admin-note{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}.admin-note a{color:var(--accent);text-decoration:none}.flash{min-height:20px;color:var(--ok);font-size:13px}.flash.bad{color:var(--bad)}.flash:empty{display:none}
+.setup-head{padding:2px 0 4px}.setup-head .admin-kicker{margin-bottom:5px}.setup-head h1{margin:0;font-size:clamp(24px,3vw,32px);letter-spacing:-.03em}.setup-head p{margin:6px 0 0;color:var(--muted);font-size:13px}
+@media(max-width:760px){.admin-hero{padding:19px 17px}.admin-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric .value{font-size:22px}.person{grid-template-columns:36px minmax(0,1fr) auto}.person-name{grid-column:2}.person-role,.person-location,.person-status{grid-column:2/-1;grid-row:auto}.person-actions{grid-column:2/-1;justify-content:flex-start}.person-role select,.person-location select{max-width:100%}.admin-panel{padding:14px 13px}.people-count{margin-left:0}.admin-context{align-items:flex-start}.admin-context .client-select{width:100%}.admin-context .client-select select{flex:1;min-width:0}.client-card-actions{flex-wrap:wrap}}
+@media(max-width:430px){.admin-metrics{grid-template-columns:1fr 1fr}.admin-actions{width:100%}.admin-actions button{flex:1}.admin-hero h1{font-size:27px}.client-card-actions button{flex:1}}
+`;
 const SERIES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
 const tipData = (when, note, rows) => encodeURIComponent(JSON.stringify({ when, note, rows }));
 // Stacked bars for today by hour, or the last days. parts are { name, b } with b from bucketEnergy. Total is one bar; By device splits it.
@@ -2900,6 +2938,322 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       r.getElementById('main').innerHTML = `${problems.length ? `<div class="box"><h3>Needs attention (${problems.length})</h3>${problems.map((x) => `<span class="muted">${esc(x)}</span>`).join('')}</div>` : ''}${locs.length ? `<div class="box"><h3>Main device</h3><span class="muted">The device whose figures Overview shows.</span>${locs.map((l) => { const under = placesUnder(l.id), now = TREE.mains?.[l.id] || ''; const opts = allNodes.filter((d) => under.has(d.place) && (d.virtual || kindOf(d) === 'meter' || d.id === now)).sort(byName); return `<label class="f">${esc(l.name)}<select data-main-for="${l.id}"><option value="">None: add up the top devices</option>${opts.map((d) => `<option value="${d.id}"${d.id === now ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>`; }).join('')}</div>` : ''}${this.priceBox(locs)}`;
     }
   }
+  // The Home Assistant administrator's command centre. It deliberately does
+  // not reuse the client location/overview screens: an administrator manages
+  // workspaces, locations and access, then previews the client experience.
+  class AdminConsoleCard extends Base {
+    setConfig(c) {
+      super.setConfig(c);
+      this._section = c?.section || this._section || 'overview';
+      this._scope = c?.scope || this._scope || 'admin';
+    }
+    get noBar() { return this._scope !== 'setup'; }
+    build() {
+      this._users = null;
+      this._summaries = [];
+      this._catalog = [];
+      this._search = '';
+      this._role = 'all';
+      this._confirmDelete = null;
+      this._confirmClientDelete = false;
+      this._error = '';
+      this.shadowRoot.innerHTML = `<style>${BASE}${ADMIN_CSS}</style><div class="w admin"><div id="admin"></div><div class="flash" id="flash" role="status"></div></div>`;
+      const w = this.shadowRoot.querySelector('.w');
+      w.addEventListener('click', (e) => this.onClick(e));
+      w.addEventListener('change', (e) => this.onChange(e));
+      w.addEventListener('input', (e) => this.onInput(e));
+      this.startTimer();
+    }
+    async refresh() { await this.load(); this.paint(); }
+    async load() {
+      if (!PORTAL.ready || !TREE.places.length) await ensureTree(this._hass);
+      const seq = (this._loadSeq || 0) + 1;
+      this._loadSeq = seq;
+      const client = portalClient;
+      const root = PORTAL.isRoot;
+      if (!root && this._scope !== 'setup') {
+        this._users = [];
+        this._error = 'Administration is available to Home Assistant administrators only.';
+        return;
+      }
+      try {
+        const users = await this._hass.callWS({
+          type: 'optim_energy/user/list',
+          ...(root && client ? { client } : {}),
+        });
+        const catalog = root
+          ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }).catch(() => [])
+          : [];
+        let summaries = [];
+        if (root) {
+          summaries = await Promise.all((PORTAL.clients || []).map(async (item) => {
+            try {
+              const [treePayload, clientUsers] = await Promise.all([
+                this._hass.callWS({ type: 'optim_energy/tree/get', client: item.id }),
+                this._hass.callWS({ type: 'optim_energy/user/list', client: item.id }),
+              ]);
+              const tree = treePayload?.tree || {};
+              const places = Array.isArray(tree.places) ? tree.places : [];
+              return {
+                ...item,
+                locations: places.filter((p) => p.kind === 'location').length,
+                groups: places.filter((p) => p.kind === 'group').length,
+                devices: Object.keys(tree.placed || {}).length,
+                people: clientUsers.length,
+                active: clientUsers.filter((u) => u.is_active).length,
+              };
+            } catch (e) {
+              return { ...item, locations: 0, groups: 0, devices: 0, people: 0, active: 0 };
+            }
+          }));
+        }
+        if (seq !== this._loadSeq || client !== portalClient) return;
+        this._users = Array.isArray(users) ? users : [];
+        this._catalog = Array.isArray(catalog) ? catalog : [];
+        this._summaries = summaries;
+        this._error = '';
+      } catch (e) {
+        if (seq !== this._loadSeq || client !== portalClient) return;
+        this._users = [];
+        this._error = e?.message || String(e);
+      }
+    }
+    summary(id = portalClient) {
+      return (this._summaries || []).find((item) => item.id === id) || {};
+    }
+    selectedClient() {
+      return (PORTAL.clients || []).find((item) => item.id === portalClient) || { id: portalClient, name: PORTAL.clientName || portalClient || 'No client' };
+    }
+    locations() { return TREE.places.filter((p) => p.kind === 'location').sort(byName); }
+    initials(name) {
+      const parts = String(name || '?').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+      return parts.map((part) => part[0]).join('').toUpperCase() || '?';
+    }
+    roleName(role) { return role === 'client_admin' ? 'Client admin' : 'User'; }
+    metric(label, value, hint = '') {
+      return `<div class="metric"><span class="label">${esc(label)}</span><b class="value">${esc(value)}</b>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</div>`;
+    }
+    clientCard(item) {
+      const labels = (item.labels || []).map((id) => {
+        const label = (this._catalog || []).find((x) => x.id === id);
+        return label?.name || id;
+      }).filter(Boolean);
+      return `<article class="client-card${item.id === portalClient ? ' active' : ''}">
+        <div class="client-card-head"><div class="client-mark">${esc(this.initials(item.name))}</div><div><h3>${esc(item.name || item.id)}</h3><p>${item.locations || 0} ${item.locations === 1 ? 'location' : 'locations'} · ${item.people || 0} ${item.people === 1 ? 'person' : 'people'}</p></div></div>
+        <div class="client-tags">${labels.length ? labels.map((name) => `<span class="tag">${esc(name)}</span>`).join('') : '<span class="tag">No locations assigned</span>'}</div>
+        <div class="client-card-actions"><button class="quiet" data-select-client="${esc(item.id)}">${item.id === portalClient ? 'Selected' : 'Select'}</button><button class="quiet" data-preview-client="${esc(item.id)}">Preview client view</button>${item.id === portalClient && (this._summaries || []).length > 1 ? `<button class="danger-ghost" data-delete-client="${esc(item.id)}">${this._confirmClientDelete ? 'Confirm delete' : 'Delete client'}</button>` : ''}</div>
+      </article>`;
+    }
+    renderOverview() {
+      const summaries = this._summaries || [];
+      const locations = summaries.reduce((n, c) => n + (c.locations || 0), 0);
+      const people = summaries.reduce((n, c) => n + (c.people || 0), 0);
+      const devices = summaries.reduce((n, c) => n + (c.devices || 0), 0);
+      return `<div class="admin-metrics">${this.metric('Clients', summaries.length, 'Isolated workspaces')}${this.metric('Locations', locations, 'Across every client')}${this.metric('People', people, 'Portal accounts')}${this.metric('Devices', devices, 'In client trees')}</div>
+        <section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Directory</span><h2>Client workspaces</h2><p>Each client has its own locations, people and portal scope.</p></div><div class="admin-actions"><button class="quiet" data-go="clients">Manage clients</button><button class="primary" data-preview-client="${esc(portalClient || '')}">Preview selected client</button></div></div><div class="client-grid">${summaries.map((item) => this.clientCard(item)).join('') || '<div class="person-empty">No clients yet. Create the first client workspace.</div>'}</div></section>
+        <section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Configuration</span><h2>Administrator shortcuts</h2><p>These are the global pieces behind the client experience.</p></div></div><div class="shortcut-grid">
+          <button class="shortcut" data-go="clients"><ha-icon icon="mdi:account-group-outline"></ha-icon><span><b>Clients & access</b><span>Create workspaces and assign portal locations.</span></span></button>
+          <button class="shortcut" data-go="locations"><ha-icon icon="mdi:map-marker-multiple-outline"></ha-icon><span><b>Locations</b><span>Review groups, devices and location labels.</span></span></button>
+          <button class="shortcut" data-go="people"><ha-icon icon="mdi:account-multiple-outline"></ha-icon><span><b>People</b><span>Manage administrators and location-scoped users.</span></span></button>
+          <button class="shortcut" data-nav="/config/areas/dashboard"><ha-icon icon="mdi:home-edit-outline"></ha-icon><span><b>Home Assistant areas</b><span>Create rooms and assign devices natively.</span></span></button>
+          <button class="shortcut" data-nav="/config/labels"><ha-icon icon="mdi:tag-multiple-outline"></ha-icon><span><b>Home Assistant labels</b><span>Create 📍 locations and device type labels.</span></span></button>
+          <button class="shortcut" data-nav="/config/entities"><ha-icon icon="mdi:devices"></ha-icon><span><b>Entities & devices</b><span>Inspect the shared installation.</span></span></button>
+        </div></section>`;
+    }
+    renderClients() {
+      const summaries = this._summaries || [];
+      return `<div class="admin-metrics">${this.metric('Clients', summaries.length, 'Isolated workspaces')}${this.metric('Active people', summaries.reduce((n, c) => n + (c.active || 0), 0), 'Enabled accounts')}${this.metric('Locations', summaries.reduce((n, c) => n + (c.locations || 0), 0), 'Portal entry points')}</div>
+        <section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Client directory</span><h2>Build a workspace per client</h2><p>Select a client to manage its locations and people. Use Preview to inspect exactly what that client sees.</p></div><button class="primary" data-open-create>New client</button></div>
+        <details class="new-client" id="new-client"><summary>Create a client workspace</summary><div class="inline-form"><label class="field wide">Client name<input id="clientName" maxlength="80" placeholder="Example Client" autocomplete="off"></label><div class="form-actions"><button class="primary" data-create-client="1">Create client</button></div></div></details>
+        <div class="client-grid">${summaries.map((item) => this.clientCard(item)).join('') || '<div class="person-empty">No clients yet. Create the first client workspace.</div>'}</div></section>`;
+    }
+    renderLocations() {
+      const locations = this.locations();
+      const selected = this.selectedClient();
+      const count = (id) => {
+        const under = placesUnder(id);
+        return allNodes.filter((d) => !d.virtual && under.has(d.place)).length;
+      };
+      const cards = locations.map((location) => {
+        const groups = placesUnder(location.id).size - 1;
+        const mainId = TREE.mains?.[location.id];
+        const main = allNodes.find((d) => d.id === mainId);
+        return `<article class="location-card"><h3>${esc(location.name)}</h3><p>${main ? `Main device · ${esc(main.name)}` : 'No main device selected'}</p><div class="location-stats"><span>${count(location.id)} devices</span><span>${groups} ${groups === 1 ? 'group' : 'groups'}</span></div><div class="location-actions"><button class="quiet" data-preview-location="${esc(location.id)}">Preview</button><button class="quiet" data-nav="/config/areas/dashboard">Areas & floors</button></div></article>`;
+      }).join('');
+      const selectedLabels = new Set(selected.labels || []);
+      const choices = PORTAL.isRoot
+        ? `<div class="label-grid">${(this._catalog || []).map((item) => `<label class="label-choice"><input type="checkbox" data-client-label="${esc(item.id)}"${selectedLabels.has(item.id) ? ' checked' : ''}${item.client && item.client !== portalClient ? ' disabled' : ''}><span>${esc(item.name)}</span>${item.client && item.client !== portalClient ? `<small>${esc(item.client)}</small>` : ''}</label>`).join('') || '<span class="admin-note">No 📍 location labels exist yet. Create one in Home Assistant labels.</span>'}</div>`
+        : `<p class="admin-note">${locations.map((l) => esc(l.name)).join(' · ') || 'No locations assigned.'}</p>`;
+      return `<div class="admin-metrics">${this.metric('Locations', locations.length, selected.name)}${this.metric('Groups', locations.reduce((n, l) => n + placesUnder(l.id).size - 1, 0), 'Rooms and floors')}${this.metric('Devices', allNodes.filter((d) => !d.virtual).length, 'In this client tree')}</div>
+        <section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Structure</span><h2>Locations in ${esc(selected.name)}</h2><p>Locations stay in Home Assistant; the portal presents their rooms and devices.</p></div><div class="admin-actions"><button class="quiet" data-nav="/config/labels">Labels</button><button class="quiet" data-nav="/config/areas/dashboard">Areas & floors</button></div></div><div class="location-grid">${cards || '<div class="person-empty">No locations yet. Assign a 📍 label to a client.</div>'}</div></section>
+        <section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Access scope</span><h2>Portal locations</h2><p>Choose the map-marker labels that belong to this client. Their areas and floors become groups.</p></div></div>${choices}</section>`;
+    }
+    renderPerson(user, locations) {
+      const root = PORTAL.isRoot;
+      const self = user.id === PORTAL.user_id;
+      const protectedUser = !root && user.role === 'client_admin';
+      const role = this.roleName(user.role);
+      const location = locations.find((item) => item.id === user.location);
+      const locOptions = locations.map((item) => `<option value="${esc(item.id)}"${item.id === user.location ? ' selected' : ''}>${esc(item.name)}</option>`).join('');
+      const roleControl = root && !self
+        ? `<select data-user-role="${esc(user.id)}" aria-label="Role for ${esc(user.name)}"><option value="user"${user.role === 'user' ? ' selected' : ''}>User</option><option value="client_admin"${user.role === 'client_admin' ? ' selected' : ''}>Client admin</option></select>`
+        : `<span class="tag">${esc(role)}${self ? ' · you' : ''}</span>`;
+      const locationControl = user.role === 'client_admin'
+        ? '<span class="tag">All locations</span>'
+        : `<select data-user-loc="${esc(user.id)}" aria-label="Location for ${esc(user.name)}"${protectedUser ? ' disabled' : ''}><option value="">Unassigned</option>${locOptions}</select>`;
+      const actions = protectedUser ? '' : `<button class="quiet" data-toggle="${esc(user.id)}"${self ? ' disabled' : ''}>${user.is_active ? 'Disable' : 'Enable'}</button><button class="danger-ghost" data-delete="${esc(user.id)}"${self ? ' disabled' : ''}>${this._confirmDelete === user.id ? 'Confirm delete' : 'Delete'}</button>`;
+      return `<article class="person${self ? ' self' : ''}"><div class="avatar">${esc(this.initials(user.name || user.username))}</div><div class="person-name"><b>${esc(user.name || user.username || user.id)}</b><span>@${esc(user.username || 'no username')}${self ? ' · you' : ''}</span></div><div class="person-role">${roleControl}</div><div class="person-location">${locationControl}${location && user.role !== 'client_admin' ? `<span class="muted" style="display:block;font-size:11px;margin-top:2px">${esc(location.name)}</span>` : ''}</div><div class="person-status"><i class="status-dot${user.is_active ? '' : ' off'}"></i>${user.is_active ? 'Active' : 'Disabled'}</div><div class="person-actions">${actions}</div></article>`;
+    }
+    renderPeople() {
+      const locations = this.locations();
+      const users = (this._users || []).filter((user) => {
+        const query = this._search.trim().toLowerCase();
+        const matchesSearch = !query || [user.name, user.username, user.role].some((value) => String(value || '').toLowerCase().includes(query));
+        const matchesRole = this._role === 'all' || user.role === this._role;
+        return matchesSearch && matchesRole;
+      });
+      const all = this._users || [];
+      const active = all.filter((user) => user.is_active).length;
+      const admins = all.filter((user) => user.role === 'client_admin').length;
+      const unassigned = all.filter((user) => user.role === 'user' && !user.location).length;
+      const root = PORTAL.isRoot;
+      const addForm = `<details class="add-person" id="add-person"><summary>Add a person to ${esc(this.selectedClient().name)}</summary><div class="inline-form"><label class="field">Name<input id="newName" autocomplete="off" maxlength="80"></label><label class="field">Username<input id="newUsername" autocomplete="off" maxlength="80"></label><label class="field">Password<input id="newPassword" type="password" autocomplete="new-password" minlength="8"></label><label class="field">Role<select id="newRole">${root ? '<option value="user">User</option><option value="client_admin">Client admin</option>' : '<option value="user">User</option>'}</select></label><label class="field">Location<select id="newLocation"><option value="">Choose location</option>${locations.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('')}</select></label><div class="form-actions"><button class="primary" data-create-user="1">Create person</button></div></div></details>`;
+      return `<div class="admin-metrics">${this.metric('People', all.length, 'Assigned to this client')}${this.metric('Active', active, 'Can sign in now')}${this.metric('Client admins', admins, 'Manage this workspace')}${this.metric('Unassigned', unassigned, 'Need a location')}</div>
+        <section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Access & identity</span><h2>People</h2><p>People sign in at this Home Assistant address. Their view is limited to the locations you assign.</p></div><button class="primary" data-add-person>Add person</button></div>${addForm}<div class="admin-context" id="locationmap"><span>Client locations</span><span class="context-note">${locations.map((item) => esc(item.name)).join(' · ') || 'No locations assigned yet'}</span></div><div class="people-tools"><label class="search"><ha-icon icon="mdi:magnify"></ha-icon><input id="peopleSearch" type="search" placeholder="Search people" aria-label="Search people" value="${esc(this._search)}"></label><select id="peopleRole" aria-label="Filter by role"><option value="all"${this._role === 'all' ? ' selected' : ''}>All roles</option><option value="client_admin"${this._role === 'client_admin' ? ' selected' : ''}>Client admins</option><option value="user"${this._role === 'user' ? ' selected' : ''}>Users</option></select><span class="people-count">${users.length} ${users.length === 1 ? 'person' : 'people'}</span></div><div class="people-list" id="people">${users.length ? users.map((user) => this.renderPerson(user, locations)).join('') : '<div class="person-empty">No people match this view.</div>'}</div></section>`;
+    }
+    shell(title, lede, actions, body) {
+      const clients = PORTAL.clients || [];
+      const selected = this.selectedClient();
+      const picker = PORTAL.isRoot && clients.length
+        ? `<label class="client-select"><span>Active client</span><select id="clientSwitch" aria-label="Client">${clients.map((item) => `<option value="${esc(item.id)}"${item.id === portalClient ? ' selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>`
+        : `<span><strong>${esc(selected.name)}</strong></span>`;
+      const context = `<div class="admin-context">${picker}<div class="context-note">${PORTAL.isRoot ? 'Administrator workspace' : 'Client administrator'}</div></div>`;
+      const setup = this._scope === 'setup';
+      if (setup) return `<div class="setup-head"><span class="admin-kicker">Optim Energy · ${esc(selected.name)}</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div>${body}`;
+      return `<section class="admin-hero"><div class="lede"><span class="admin-kicker">Optim Energy · Administration</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${actions || ''}</div></section>${context}${this._error ? `<section class="admin-panel"><span class="err">${esc(this._error)}</span></section>` : body}`;
+    }
+    paint(force = false) {
+      const r = this.shadowRoot;
+      if (!r) return;
+      if (!force && ['INPUT', 'SELECT', 'TEXTAREA'].includes(r.activeElement?.tagName)) return;
+      const body = this._section === 'clients' ? this.renderClients()
+        : this._section === 'locations' ? this.renderLocations()
+          : this._section === 'people' ? this.renderPeople()
+            : this.renderOverview();
+      const copy = {
+        overview: ['Overview', 'Manage the shared installation without dropping into a client workspace.'],
+        clients: ['Clients', 'Create workspaces, assign their locations and preview what each client sees.'],
+        locations: ['Locations', 'Review the structure behind the selected client and control its portal location labels.'],
+        people: ['People', 'Create client administrators and location-scoped users without touching another client.'],
+      }[this._section] || ['Overview', ''];
+      const actions = this._section === 'people' ? `<button class="primary" data-add-person>Add person</button>`
+        : this._section === 'clients' ? `<button class="primary" data-open-create>New client</button>`
+          : this._section === 'locations' ? `<button class="quiet" data-nav="/config/labels">Manage labels</button>`
+            : `<button class="quiet" data-preview-client="${esc(portalClient || '')}">Preview client view</button>`;
+      r.getElementById('admin').innerHTML = this.shell(copy[0], copy[1], actions, body);
+      r.getElementById('flash').textContent = '';
+    }
+    flash(text, bad = false) {
+      const el = this.shadowRoot?.getElementById('flash');
+      if (!el) return;
+      el.textContent = text;
+      el.classList.toggle('bad', bad);
+      clearTimeout(this._msgT);
+      this._msgT = setTimeout(() => { if (el) { el.textContent = ''; el.classList.remove('bad'); } }, 5000);
+    }
+    async selectClient(id) {
+      if (!PORTAL.isRoot || !id || id === portalClient) return;
+      this._users = null;
+      this.paint();
+      await switchPortalClient(this._hass, id);
+      await this.refresh();
+    }
+    async preview(client = portalClient, location = null) {
+      try {
+        if (PORTAL.isRoot && client && client !== portalClient) await switchPortalClient(this._hass, client);
+        const first = location || TREE.places.find((p) => p.kind === 'location')?.id || null;
+        if (first) setLocation(first);
+        navigate(HOME_PATH);
+      } catch (e) { this.flash(e?.message || 'Could not open the client view.', true); }
+    }
+    async onClick(e) {
+      const q = (a) => e.target.closest(a);
+      let b;
+      if ((b = q('[data-go]'))) { navigate(`/energy-admin/${b.dataset.go}`); return; }
+      if (q('[data-open-create]')) { const d = this.shadowRoot.getElementById('new-client'); if (d) { d.open = true; d.querySelector('input')?.focus(); } return; }
+      if (q('[data-add-person]')) { const d = this.shadowRoot.getElementById('add-person'); if (d) { d.open = true; d.querySelector('input')?.focus(); } return; }
+      if ((b = q('[data-select-client]'))) { await this.selectClient(b.dataset.selectClient); return; }
+      if ((b = q('[data-preview-client]'))) { await this.preview(b.dataset.previewClient); return; }
+      if ((b = q('[data-preview-location]'))) { await this.preview(portalClient, b.dataset.previewLocation); return; }
+      if ((b = q('[data-toggle]'))) {
+        const user = this._users?.find((item) => item.id === b.dataset.toggle); if (!user) return;
+        try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: user.id, is_active: !user.is_active }); await this.refresh(); this.flash(`${user.name} ${user.is_active ? 'disabled' : 'enabled'}.`); } catch (x) { this.flash(x?.message || 'Could not update the person.', true); }
+        return;
+      }
+      if ((b = q('[data-delete]'))) {
+        const user = this._users?.find((item) => item.id === b.dataset.delete); if (!user) return;
+        if (this._confirmDelete !== user.id) { this._confirmDelete = user.id; this.paint(true); return; }
+        try { await this._hass.callWS({ type: 'optim_energy/user/delete', user_id: user.id }); this._confirmDelete = null; await this.refresh(); this.flash(`${user.name} deleted.`); } catch (x) { this.flash(x?.message || 'Could not delete the person.', true); }
+        return;
+      }
+      if (q('[data-create-client]')) {
+        const input = this.shadowRoot.getElementById('clientName'), name = input?.value.trim(); if (!name) { input?.focus(); return; }
+        try {
+          const made = await this._hass.callWS({ type: 'optim_energy/client/create', name });
+          whoLoad = null; treeLoad = null; portalClient = made.id;
+          try { localStorage.setItem(CLIENT_KEY, made.id); } catch (x) { /* private window */ }
+          resetPortalTree();
+          await ensureTree(this._hass);
+          await this.refresh(); this.flash(`${made.name} created.`);
+        } catch (x) { this.flash(x?.message || 'Could not create the client.', true); }
+        return;
+      }
+      if (q('[data-delete-client]')) {
+        if (!PORTAL.isRoot || !portalClient) return;
+        if (!this._confirmClientDelete) { this._confirmClientDelete = true; this.paint(true); return; }
+        const current = this.selectedClient();
+        try { await this._hass.callWS({ type: 'optim_energy/client/delete', client: portalClient, delete_users: true }); this._confirmClientDelete = false; whoLoad = null; treeLoad = null; portalClient = null; resetPortalTree(); await ensureTree(this._hass); await this.refresh(); this.flash(`${current.name} and its users deleted.`); } catch (x) { this._confirmClientDelete = false; this.paint(true); this.flash(x?.message || 'Could not delete the client.', true); }
+        return;
+      }
+      if (q('[data-create-user]')) { await this.createUser(); return; }
+    }
+    async onChange(e) {
+      const t = e.target;
+      if (t.id === 'clientSwitch') { await this.selectClient(t.value); return; }
+      if (t.id === 'peopleRole') { this._role = t.value; this.paint(true); return; }
+      if (t.id === 'peopleSearch') { this._search = t.value; this.paint(true); return; }
+      if (t.dataset.clientLabel) {
+        const chosen = [...this.shadowRoot.querySelectorAll('[data-client-label]')].filter((x) => x.checked).map((x) => x.dataset.clientLabel);
+        try {
+          const response = await this._hass.callWS({ type: 'optim_energy/client/set_locations', client: portalClient, labels: chosen });
+          const current = (PORTAL.clients || []).find((item) => item.id === portalClient); if (current) current.labels = response.labels || chosen;
+          whoLoad = null; treeLoad = null; await ensureTree(this._hass); await this.refresh(); this.flash('Client locations updated.');
+        } catch (x) { this.flash(x?.message || 'Could not assign the location.', true); this.paint(true); }
+        return;
+      }
+      if (t.dataset.userLoc) { try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: t.dataset.userLoc, location: t.value }); await this.refresh(); this.flash('Location updated.'); } catch (x) { this.flash(x?.message || 'Could not move the person.', true); } return; }
+      if (t.dataset.userRole) { try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: t.dataset.userRole, role: t.value, location: t.value === 'client_admin' ? '' : this.locations()[0]?.id || '' }); await this.refresh(); this.flash('Role updated.'); } catch (x) { this.flash(x?.message || 'Could not change the role.', true); this.paint(true); } }
+    }
+    onInput(e) {
+      if (e.target.id !== 'peopleSearch') return;
+      this._search = e.target.value;
+      this.paint(true);
+      const input = this.shadowRoot.getElementById('peopleSearch');
+      if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    }
+    async createUser() {
+      const r = this.shadowRoot, value = (id) => r.getElementById(id)?.value.trim() || '';
+      const role = value('newRole') || 'user';
+      const location = role === 'client_admin' ? null : (value('newLocation') || null);
+      const payload = { type: 'optim_energy/user/create', client: portalClient, name: value('newName'), username: value('newUsername'), password: r.getElementById('newPassword')?.value || '', role, ...(location ? { location } : {}) };
+      try {
+        await this._hass.callWS(payload);
+        ['newName', 'newUsername', 'newPassword'].forEach((id) => { const el = r.getElementById(id); if (el) el.value = ''; });
+        await this.refresh(); this.flash('Person created.');
+      } catch (x) { this.flash(x?.message || 'Could not create the person.', true); }
+    }
+  }
+
   // Tenant administration stays in the portal. Client administrators never
   // become Home Assistant administrators and never see another client.
   class TenantAdminCard extends Base {
@@ -3043,7 +3397,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
   }
 
   // The bottom bar on phones and tablets: always at the very bottom, small enough to fit every screen.
-  const NAV = [['Overview', 'mdi:view-dashboard-outline', HOME_PATH], ['Groups', 'mdi:floor-plan', '/energy-groups/groups'], ['Controls', 'mdi:tune-variant', '/energy-controls/controls'], ['Devices', 'mdi:power-plug-outline', '/energy-devices/topology'], ['Reports', 'mdi:chart-box-outline', '/energy-reports/report'], ['Alerts', 'mdi:bell-outline', '/energy-alerts/alerts'], ['Setup', 'mdi:cog-outline', SETUP_PATH, true]];
+  const CLIENT_NAV = [['Overview', 'mdi:view-dashboard-outline', HOME_PATH], ['Groups', 'mdi:floor-plan', '/energy-groups/groups'], ['Controls', 'mdi:tune-variant', '/energy-controls/controls'], ['Devices', 'mdi:power-plug-outline', '/energy-devices/topology'], ['Reports', 'mdi:chart-box-outline', '/energy-reports/report'], ['Alerts', 'mdi:bell-outline', '/energy-alerts/alerts'], ['Setup', 'mdi:cog-outline', SETUP_PATH, true]];
+  const ADMIN_NAV = [['Overview', 'mdi:view-dashboard-outline', ADMIN_HOME_PATH], ['Clients', 'mdi:account-group-outline', '/energy-admin/clients'], ['Locations', 'mdi:map-marker-multiple-outline', '/energy-admin/locations'], ['People', 'mdi:account-multiple-outline', '/energy-admin/people']];
   class NavCard extends HTMLElement {
     setConfig() {}
     getCardSize() { return 1; }
@@ -3060,10 +3415,12 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
 nav{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;background:var(--card-background-color);border-top:1px solid var(--divider-color);padding-bottom:env(safe-area-inset-bottom,0px);overflow-x:auto;font-family:var(--ha-font-family-body,Roboto,sans-serif)}
 a{position:relative;flex:1 1 0;min-width:0;display:grid;justify-items:center;gap:2px;padding:7px 0 6px;color:var(--secondary-text-color);font-size:9.5px;line-height:1.1;text-decoration:none;white-space:nowrap;-webkit-tap-highlight-color:transparent}a.on{color:var(--primary-color);font-weight:600}a:focus-visible{outline:2px solid var(--primary-color);outline-offset:-2px}ha-icon{--mdc-icon-size:21px;display:block;height:21px}
 i{position:absolute;top:3px;left:calc(50% + 5px);min-width:14px;height:14px;border-radius:7px;padding:0 3px;box-sizing:border-box;background:var(--error-color);color:#fff;font:600 9px/14px var(--ha-font-family-body,Roboto,sans-serif);text-align:center}i:empty{display:none}
-@media(min-width:871px){:host{display:none}}</style><nav>${NAV.filter((x) => !x[3] || portalCanManage()).map(([n, icon, p]) => `<a href="${n === 'Devices' && innerWidth <= 870 ? '/energy-devices/list' : p}" data-p="${n === 'Devices' && innerWidth <= 870 ? '/energy-devices/list' : p}"><ha-icon icon="${icon}"></ha-icon>${n}${n === 'Alerts' ? '<i id="count"></i>' : ''}</a>`).join('')}</nav>`;
+@media(min-width:871px){:host{display:none}}</style><nav></nav>`;
         this.shadowRoot.querySelector('nav').addEventListener('click', (e) => { const a = e.target.closest('a'); if (a) { e.preventDefault(); if (a.dataset.p === '/energy-reports/report') openLocationReport(); navigate(a.dataset.p); this.mark(); } });
         this.mark();
       }
+      const nav = PORTAL.isRoot ? ADMIN_NAV : CLIENT_NAV, navKey = nav.map((x) => x.join(':')).join('|');
+      if (this._navKey !== navKey) { this._navKey = navKey; const el = this.shadowRoot.querySelector('nav'); if (el) el.innerHTML = nav.filter((x) => !x[3] || portalCanManage()).map(([n, icon, p]) => `<a href="${p}" data-p="${p}"><ha-icon icon="${icon}"></ha-icon>${n}${n === 'Alerts' ? '<i id="count"></i>' : ''}</a>`).join(''); this.mark(); }
       if (!this._counted || Date.now() - this._counted > 15000) {
         this._counted = Date.now();
         const n = computeActive(h.states, this._counted).filter((a) => a.sev !== 'info').length, c = this.shadowRoot.getElementById('count');
@@ -3257,6 +3614,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
   }
   reg('building-topology-card', TopologyCard, 'Topology');
   reg('building-home-card', HomeCard, 'Home');
+  reg('building-admin-card', AdminConsoleCard, 'Administration');
   reg('building-manage-card', ManageCard, 'Locations and groups');
   reg('energy-nav-card', NavCard, 'Bottom bar');
   reg('building-device-map-card', DeviceMapCard, 'Device map');

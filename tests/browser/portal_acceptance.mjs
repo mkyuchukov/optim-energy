@@ -36,7 +36,7 @@ async function waitCard(page, selector) {
 }
 
 async function waitUsers(page, include, exclude) {
-  const users = page.locator('building-tenant-admin-card #users');
+  const users = page.locator('building-admin-card #people');
   const deadline = Date.now() + 20000;
   let actual = '';
   try {
@@ -57,9 +57,9 @@ let root;
 let adminPage;
 try {
   // Root client switching: A -> B -> A must update the People list atomically.
-  ({ context: rootContext, page: root } = await openPage(state.root, '/energy-setup/people'));
-  const rootCard = await waitCard(root, 'building-tenant-admin-card');
-  await rootCard.getByText('People & clients').waitFor();
+  ({ context: rootContext, page: root } = await openPage(state.root, '/energy-admin/people'));
+  const rootCard = await waitCard(root, 'building-admin-card');
+  await rootCard.getByRole('heading', { level: 1, name: 'People' }).waitFor();
   const clientSwitch = rootCard.locator('#clientSwitch');
   await clientSwitch.waitFor();
   if ((await clientSwitch.inputValue()) !== state.client_a) {
@@ -71,17 +71,24 @@ try {
   await clientSwitch.selectOption(state.client_a);
   await waitUsers(root, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
 
+  // The HA administrator gets the command centre rather than the client pages.
+  for (const [path, title] of [['/energy-admin/overview', 'Overview'], ['/energy-admin/clients', 'Clients'], ['/energy-admin/locations', 'Locations']]) {
+    await root.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
+    const card = await waitCard(root, 'building-admin-card');
+    await card.getByRole('heading', { level: 1, name: title }).waitFor({ timeout: 30000 });
+  }
+
   // Client-admin login and location surface.
   ({ context: adminContext, page: adminPage } = await openPage(state.admin_a, '/energy-locations/start'));
   await adminPage.getByText(state.client_a_name).first().waitFor({ timeout: 30000 });
   assert.equal(await adminPage.getByText(state.client_b_name).count(), 0, 'Client B name leaked to Client A');
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
-  const adminCard = await waitCard(adminPage, 'building-tenant-admin-card');
-  await adminCard.getByText('People & clients').waitFor({ timeout: 30000 });
+  const adminCard = await waitCard(adminPage, 'building-admin-card');
+  await adminCard.getByRole('heading', { level: 1, name: 'People' }).waitFor({ timeout: 30000 });
   assert.equal(await adminCard.locator('#clientSwitch').count(), 0, 'client administrator saw the root client switcher');
   assert.equal(await adminPage.getByText('Settings', { exact: true }).count(), 0, 'client administrator saw HA Settings');
   await waitUsers(adminPage, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
-  const adminUsers = await adminCard.locator('#users').innerText();
+  const adminUsers = await adminCard.locator('#people').innerText();
   assert.match(adminUsers, /Browser Admin A/);
   assert.match(adminUsers, /Browser User A/);
   assert.doesNotMatch(adminUsers, /Browser Admin B|Browser User B/);
@@ -90,28 +97,29 @@ try {
   assert.match(locationText, /Browser A West/);
 
   // Create, disable, enable, move, and delete a location-scoped user.
+  await adminCard.locator('[data-add-person]').click();
   await adminCard.locator('#newName').fill('Browser Created User');
   await adminCard.locator('#newUsername').fill(state.created_user.username);
   await adminCard.locator('#newPassword').fill(state.created_user.password);
   await adminCard.locator('#newLocation').selectOption(state.location_a_west);
   await adminCard.locator('[data-create-user]').click();
   await waitUsers(adminPage, ['Browser Created User'], []);
-  let createdRow = adminCard.locator('.user').filter({ hasText: 'Browser Created User' });
+  let createdRow = adminCard.locator('.person').filter({ hasText: 'Browser Created User' });
   await createdRow.waitFor();
   const createdId = await createdRow.locator('[data-toggle]').getAttribute('data-toggle');
   assert.ok(createdId, 'created user has no id');
 
   await createdRow.locator('[data-toggle]').click();
-  createdRow = adminCard.locator('.user').filter({ hasText: 'Browser Created User' });
+  createdRow = adminCard.locator('.person').filter({ hasText: 'Browser Created User' });
   await createdRow.getByText('disabled', { exact: false }).waitFor({ timeout: 20000 });
   await createdRow.locator('[data-toggle]').click();
-  createdRow = adminCard.locator('.user').filter({ hasText: 'Browser Created User' });
+  createdRow = adminCard.locator('.person').filter({ hasText: 'Browser Created User' });
   await createdRow.locator('[data-toggle]').filter({ hasText: 'Disable' }).waitFor({ timeout: 20000 });
 
   await createdRow.locator('select[data-user-loc]').selectOption(state.location_a_north);
   const moveDeadline = Date.now() + 20000;
   while (Date.now() < moveDeadline) {
-    createdRow = adminCard.locator('.user').filter({ hasText: 'Browser Created User' });
+    createdRow = adminCard.locator('.person').filter({ hasText: 'Browser Created User' });
     if ((await createdRow.locator('select[data-user-loc]').inputValue().catch(() => '')) === state.location_a_north) break;
     await adminPage.waitForTimeout(100);
   }
@@ -140,9 +148,9 @@ try {
 
   // Clean up the browser-created user through the same UI.
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
-  const peopleAgain = await waitCard(adminPage, 'building-tenant-admin-card');
-  await peopleAgain.getByText('People & clients').waitFor({ timeout: 30000 });
-  let deleteRow = peopleAgain.locator('.user').filter({ hasText: 'Browser Created User' });
+  const peopleAgain = await waitCard(adminPage, 'building-admin-card');
+  await peopleAgain.getByRole('heading', { level: 1, name: 'People' }).waitFor({ timeout: 30000 });
+  let deleteRow = peopleAgain.locator('.person').filter({ hasText: 'Browser Created User' });
   await deleteRow.locator('[data-delete]').click();
   await deleteRow.locator('[data-delete]').click();
   await deleteRow.waitFor({ state: 'detached', timeout: 20000 });

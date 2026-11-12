@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Give Home Assistant owners and administrators a separate Administration console with overview, clients, locations and people views instead of the client portal.
+- Redesign People management with client context, role/location controls, search and a focused add-person flow.
+- Keep client-facing dashboards and Setup for client administrators while hiding them from administrators' sidebar.
+
 ## 0.3.1
 
 - Preserve `name_by_user`, model metadata and device relationships in the tenant-filtered registry so portal names, device types and switch detection remain correct.

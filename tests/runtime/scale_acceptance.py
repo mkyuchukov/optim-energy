@@ -34,6 +34,7 @@ from ha_client import Http, WebSocket, wait_ready, wait_server
 VERSION_FILE = Path(__file__).with_name("HA_VERSION")
 PASSWORD = "Scale-Test-2026!"
 PORTAL_DASHBOARDS = {
+    "energy-admin",
     "energy-locations",
     "energy-home",
     "energy-groups",
@@ -126,8 +127,10 @@ def assert_role_scope(
             raise AssertionError(f"foreign {command['type']} was allowed")
 
 
-def assert_dashboards(ws: WebSocket) -> None:
+def assert_dashboards(ws: WebSocket, *, include_admin: bool = False) -> None:
     for url_path in PORTAL_DASHBOARDS:
+        if url_path == "energy-admin" and not include_admin:
+            continue
         config = ws.command({"type": "lovelace/config", "url_path": url_path})
         assert_true(isinstance(config, dict), f"dashboard {url_path} did not load")
     home = ws.command({"type": "lovelace/config", "url_path": "energy-home"})
@@ -169,6 +172,7 @@ def run(version: str, *, keep: bool = False) -> None:
             {"late": True},
             "late-registered fixture command",
         )
+        assert_dashboards(root, include_admin=True)
 
         label_specs = {
             "a_north": ("Scale A North", "scale_a_north"),

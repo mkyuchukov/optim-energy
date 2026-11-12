@@ -31,8 +31,10 @@ This runbook validates the Optim Energy package on a separate Home Assistant VM.
 
 ## Verify
 
-- The admin test user sees the Optim Energy dashboards plus normal HA maintenance tools.
+- The Home Assistant administrator sees the separate **Administration** console plus normal HA maintenance tools, not the client sidebar.
+- The client administrator sees the client portal and **Setup**, but not Administration.
 - The non-admin client sees only Locations, Overview, Help, Groups, Controls, Devices, Reports and Alerts.
+- Administration opens without browser console errors and exposes Overview, Clients, Locations and People.
 - Overview opens without browser console errors.
 - Help opens and is readable.
 - Setup is absent for the non-admin client.
@@ -60,7 +62,7 @@ Only after the clean install passes:
 1. Restore a copy of the main VM into an isolated network.
 2. Disable production MQTT, Zigbee, cloud services and automations before starting.
 3. Install Optim Energy on the isolated copy.
-4. Confirm the known portal dashboards are replaced with the bundled layouts.
+4. Confirm the known portal dashboards, including Administration, are replaced with the bundled layouts.
 5. Confirm the existing locations, groups, main meters and prices survive through `device_tree`.
 6. Confirm old portal resources and duplicate sidebar entries are removed.
 7. Load all portal pages against copied data.
