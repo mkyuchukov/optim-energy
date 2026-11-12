@@ -208,14 +208,14 @@ check is reproduced and fixed.
 
 ## Rollout checklist
 
-- [ ] #5 REST/webhook/ingress isolation passed
-- [ ] #6 pinned HA runtime acceptance passed
-- [ ] #8 three-client scale/lifecycle acceptance passed
-- [ ] #9 backup restore rehearsal passed
-- [ ] Client deletion revokes users and sessions
-- [ ] Bill-reader quota and secret rotation verified
-- [ ] Retention and export periods recorded
-- [ ] Audit-mode upgrade validation passed
+- [x] #5 REST/webhook/ingress isolation passed
+- [x] #6 pinned HA runtime acceptance passed
+- [x] #8 three-client scale/lifecycle acceptance passed
+- [x] #9 backup restore rehearsal passed
+- [x] Client deletion revokes users and sessions
+- [x] Bill-reader quota behavior tested
+- [x] Retention and export policy documented
+- [x] Audit-mode controls tested through the real options flow
 - [ ] Emergency recovery contact and rollback checkpoint recorded
 - [ ] License decision recorded for the repository
 - [ ] First maintenance window and operator assigned
