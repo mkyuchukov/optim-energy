@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1
+
+- Device inbox: devices behind a bridge (Zigbee2MQTT and similar) are listed on their own again. In 0.8.0 they were shown as part of the bridge whenever the bridge itself looked like a portal device, which hid them. Only channels of a multi-channel device (same manufacturer, same place as their parent) are shown with their parent.
+- Stop using `DeviceEntry.config_entries`, which Home Assistant has deprecated.
+
 ## 0.8.0
 
 Device inbox for Home Assistant administrators. Needs the floor and area model (0.7.0 migration).
