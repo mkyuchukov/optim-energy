@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+
+- Fix the administrator Preview client view action and cover it in browser acceptance.
+
 ## 0.4.2
 
 - Polish the Administration directory layouts: align person controls on one row and remove duplicate client/person actions.
