@@ -344,9 +344,160 @@ class TenancyTests(unittest.TestCase):
         else:
             raise AssertionError("schedule builder accepted an unsupported target domain")
 
-    def test_automation_reference_walker(self) -> None:
-        refs = set()
-        portal_ops._walk_entity_references(
-            {"actions": [{"target": {"entity_id": ["switch.a", "light.b"]}}]}, refs
+    def test_client_admin_tree_save_changes_prices_only(self) -> None:
+        stored = {
+            "places": [{"id": "loc:a", "kind": "location"}],
+            "placed": {"d:a": "loc:a"},
+            "virtual": [{"id": "virt:a"}],
+            "sums": {"virt:a": {"energy": {"entry": "own", "entity": "sensor.a"}}},
+            "automations": [{"entity": "automation.a"}],
+            "parents": {},
+            "mains": {"loc:a": "d:a"},
+            "prices": {},
+        }
+        hostile = {
+            "places": [{"id": "area_of_b", "kind": "location"}],
+            "placed": {"d:b": "loc:a"},
+            "virtual": [{"id": "virt:x"}],
+            "sums": {"virt:x": {"energy": {"entry": "mqtt_entry", "entity": "sensor.b"}}},
+            "automations": [{"entity": "automation.b"}],
+            "parents": {"d:b": "d:a"},
+            "mains": {"loc:a": "d:b"},
+            "prices": {"loc:a": {"mode": "fixed", "fixed": 0.2}},
+        }
+        clean = tenancy._client_tree_update(stored, hostile, {"loc:a"})
+        assert clean == {**stored, "prices": {"loc:a": {"mode": "fixed", "fixed": 0.2}}}
+        for bad in (
+            {"loc:b": {"mode": "fixed"}},  # another client's location
+            {"loc:a": {"mode": "exchange", "sensor": "sensor.x') }}{{ states('sensor.b"}},
+            {"loc:a": "fixed"},
+            {"loc:a": {"deep": {"a": {"b": {"c": {"d": {}}}}}}},
+        ):
+            with self.assertRaises(RuntimeError):
+                tenancy._client_tree_update(stored, {"prices": bad}, {"loc:a"})
+
+    def test_alert_template_takes_no_free_text(self) -> None:
+        text = portal_ops.alert_message("warn", "binary_sensor.rule", "sensor.a_power", "W")
+        assert "states('sensor.a_power')" in text
+        for rule, sensor, unit in (
+            ("binary_sensor.rule", "sensor.a", "}}{{ states('sensor.b') }}"),
+            ("binary_sensor.rule", "sensor.a') }}{{ states('sensor.b", "W"),
+            ("binary_sensor.r') }}", "sensor.a", "W"),
+        ):
+            with self.assertRaises(RuntimeError):
+                portal_ops.alert_message("warn", rule, sensor, unit)
+
+    def test_helpers_and_automations_need_recorded_ownership(self) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        entries = {
+            "own": SimpleNamespace(entry_id="own", domain="threshold"),
+            "foreign": SimpleNamespace(entry_id="foreign", domain="threshold"),
+            "mqtt": SimpleNamespace(entry_id="mqtt", domain="mqtt"),
+        }
+        registry = {
+            "binary_sensor.own": SimpleNamespace(config_entry_id="own"),
+            "binary_sensor.foreign": SimpleNamespace(config_entry_id="foreign"),
+        }
+        portal_ops.er.async_get = lambda hass: SimpleNamespace(async_get=registry.get)
+
+        class Tenancy:
+            def __init__(self, role: str, fail: bool = False) -> None:
+                self.role, self.fail = role, fail
+                self.owned = {"entries": {"own"}, "automations": {"portal_own"}}
+                self.tree = {"sums": {"virt:a": {"energy": {"entry": "mqtt"}}}}
+                self.stored = None
+
+            def is_root(self, user: _User) -> bool:
+                return user.is_admin
+
+            def require_client_value(self, user: _User, client: str | None = None):
+                return "a", {"is_root": user.is_admin, "role": self.role}
+
+            def tree_for(self, user: _User, client: str | None = None):
+                return {"tree": self.tree}
+
+            def owns(self, client_id: str, kind: str, value: str) -> bool:
+                return value in self.owned[kind]
+
+            async def async_set_owned(self, client_id, kind, value, present) -> None:
+                if self.fail:
+                    raise OSError("disk full")
+                (self.owned[kind].add if present else self.owned[kind].discard)(value)
+
+            async def async_store_tree(self, client_id, tree) -> None:
+                self.stored = tree
+
+        def ops_for(role: str, fail: bool = False):
+            hass = SimpleNamespace(
+                config_entries=SimpleNamespace(
+                    async_get_entry=entries.get, async_remove=AsyncMock()
+                ),
+                states=SimpleNamespace(get=lambda entity_id: SimpleNamespace(
+                    attributes={"id": {"automation.own": "portal_own", "automation.root": "root_made"}.get(entity_id)}
+                )),
+                data={},
+            )
+            return portal_ops.PortalOperations(hass, Tenancy(role, fail)), hass
+
+        everything = {"binary_sensor.own", "binary_sensor.foreign"}
+        # A plain user cannot delete a helper, even one it can read.
+        ops, hass = ops_for("user")
+        with self.assertRaises(RuntimeError):
+            asyncio.run(ops.async_delete_helper(_User(everything), "binary_sensor.own"))
+        hass.config_entries.async_remove.assert_not_called()
+        # A client admin cannot delete a helper it can read but did not create.
+        ops, hass = ops_for("client_admin")
+        with self.assertRaises(RuntimeError):
+            asyncio.run(ops.async_delete_helper(_User(everything), "binary_sensor.foreign"))
+        hass.config_entries.async_remove.assert_not_called()
+        asyncio.run(ops.async_delete_helper(_User(everything), "binary_sensor.own"))
+        hass.config_entries.async_remove.assert_called_once_with("own")
+        # A tree that names a shared integration as a Sum never gets it removed.
+        ops, hass = ops_for("client_admin")
+        with self.assertRaises(RuntimeError):
+            asyncio.run(ops.async_delete_sum(_User(), "virt:a", "energy"))
+        hass.config_entries.async_remove.assert_not_called()
+        # Automations: only what this client's commands created.
+        with self.assertRaises(RuntimeError):
+            asyncio.run(ops.async_automation_get(_User(), "automation.root"))
+        # A failed ownership save leaves no helper behind.
+        ops, hass = ops_for("client_admin", fail=True)
+        undo = AsyncMock()
+        with self.assertRaises(OSError):
+            asyncio.run(ops._async_record_owned("a", "entries", "new", undo))
+        undo.assert_awaited_once()
+
+    def test_guard_is_closed_before_tenancy_loads(self) -> None:
+        # Stage one of startup: the guard wraps a manager with no data. If
+        # loading the store then fails, this is what tenants keep getting.
+        manager = tenancy.TenancyManager.__new__(tenancy.TenancyManager)
+        manager.data = {}
+        guard = firewall.WebsocketFirewall(MagicMock(), manager)
+        tenant = _Connection(_User({"light.a"}))
+        for msg in (
+            {"type": "get_states"},
+            {"type": "subscribe_entities"},
+            {"type": "call_service", "domain": "light", "service": "turn_on"},
+            {"type": "history/history_during_period", "entity_ids": ["light.a"]},
+            {"type": "config/entity_registry/list"},
+            {"type": "optim_energy/tree/get"},
+            {"type": "optim_energy/registry/list", "kind": "device"},
+        ):
+            assert not guard.decision(tenant, msg)[0], msg
+        assert guard.decision(_Connection(_User(admin=True)), {"type": "get_states"})[0]
+        assert not firewall._rest_request_decision("/api/states", authenticated=True, root=False)[0]
+
+    def test_every_command_has_a_capability_row(self) -> None:
+        import re
+
+        registered: set[str] = set()
+        for name in ("tenancy.py", "portal_ops.py"):
+            registered.update(
+                re.findall(r'Required\("type"\): f"\{DOMAIN\}/([a-z_/]+)"', (COMPONENT / name).read_text())
+            )
+        documented = set(
+            re.findall(r"^\| `([a-z_/]+)` \|", (ROOT / "docs" / "CAPABILITIES.md").read_text(), re.M)
         )
-        assert refs == {"switch.a", "light.b"}
+        assert registered and registered == documented, registered ^ documented

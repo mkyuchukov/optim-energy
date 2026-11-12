@@ -26,6 +26,8 @@ const LOCATION_KEY = 'portalLocation', CLIENT_KEY = 'portalClient', START_PATH =
 // client administrator is a portal role and never receives HA's admin flag.
 const PORTAL = { ready: false, isRoot: false, role: null, client: null, clientName: '', location: null, clients: [], capabilities: {}, error: '' };
 const portalCanManage = () => !!PORTAL.capabilities.manage_tree;
+// Wiring, main devices and virtual devices decide what a client can see; the server only takes them from root.
+const portalCanWire = () => !!PORTAL.capabilities.manage_wiring;
 const portalCanManageHA = () => !!PORTAL.capabilities.manage_ha;
 const portalCanManageUsers = () => !!PORTAL.capabilities.manage_users;
 const portalTenantMode = () => !PORTAL.isRoot;
@@ -1718,14 +1720,14 @@ function drawerHtml(d, st, now, totals) {
   const last = fresh.length ? Math.round((now - Math.max(...fresh)) / 60000) : null;
   const up = nodeById(parentOf(d.id)), under = childrenOf(d.id), inTree = nodeIds.has(d.id);
   const u = inTree && totals ? unmeasuredOf([d.id], (id) => totals.devices[id]?.today ?? null, totals.stale) : null;
-  const wiring = inTree ? `<div><span>Supplied by</span><span>${up ? up.name : TREE.main === d.id ? 'The grid (main device)' : 'Top of the building'}</span></div>${under.length ? `<div><span>Supplies</span><span>${under.length} ${under.length === 1 ? 'device' : 'devices'}</span></div>` : ''}${u?.nodes[0]?.kwh != null ? `<div><span>Today</span><span>${u.nodes[0].kwh.toFixed(2)} kWh</span></div>` : ''}${u?.applies ? `<div><span>Unmeasured today</span><span>${u.gap ? 'Partial: a device has no reading' : `${u.kwh.toFixed(2)} kWh`}</span></div>` : ''}` : '';
+  const wiring = inTree ? `<div><span>Supplied by</span><span>${up ? esc(up.name) : TREE.main === d.id ? 'The grid (main device)' : 'Top of the building'}</span></div>${under.length ? `<div><span>Supplies</span><span>${under.length} ${under.length === 1 ? 'device' : 'devices'}</span></div>` : ''}${u?.nodes[0]?.kwh != null ? `<div><span>Today</span><span>${u.nodes[0].kwh.toFixed(2)} kWh</span></div>` : ''}${u?.applies ? `<div><span>Unmeasured today</span><span>${u.gap ? 'Partial: a device has no reading' : `${u.kwh.toFixed(2)} kWh`}</span></div>` : ''}` : '';
   // What a client looks at first: power and energy. Everything else is for whoever looks after the installation.
   const KEY = /^(Power|Total energy|Channel \d+ power|Channel \d+ total energy)$/;
   const row = ([k, id, u]) => { const v = st[id]?.state; const ok = v != null && v !== 'unknown' && v !== 'unavailable'; return `<div><span>${k}</span><span>${ok ? valueText(v, u) : '—'}</span></div>`; };
   const rows = (d.readings || []).filter(([k]) => KEY.test(k)).map(row).join(''), tech = (d.readings || []).filter(([k]) => !KEY.test(k)).map(row).join('');
-  return `<div class="dhead"><div><h2 style="font-size:24px">${d.name}</h2><span class="muted">${d.place ? esc(placeLabel(d.place)) : 'Not placed'}</span></div><button data-close aria-label="Close">Close</button></div>
+  return `<div class="dhead"><div><h2 style="font-size:24px">${esc(d.name)}</h2><span class="muted">${d.place ? esc(placeLabel(d.place)) : 'Not placed'}</span></div><button data-close aria-label="Close">Close</button></div>
   <div class="dline"><span class="pill ${s.key}">${s.label}</span>${last == null ? '' : `<span class="muted">${last < 1 ? 'just now' : `${last} min ago`}</span>`}</div>
-  <div class="kvl"><div><span>Type</span><span>${typeLabel(d)}</span></div><div><span>Model</span><span>${d.model}</span></div>${wiring}</div>
+  <div class="kvl"><div><span>Type</span><span>${typeLabel(d)}</span></div><div><span>Model</span><span>${esc(d.model || '')}</span></div>${wiring}</div>
   ${rows ? `<h3>Latest readings</h3><div class="kvl">${rows}</div>` : ''}
   ${tech ? `<details class="tech"><summary>Technical details</summary><div class="kvl">${tech}</div></details>` : ''}
   ${d.report ? `<button class="gold" data-report="${d.report}">Open report</button>` : ''}`;
@@ -2650,7 +2652,7 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
     paint() {
       const r = this.shadowRoot, active = r.activeElement;
       if (active && (active.tagName === 'SELECT' || (active.tagName === 'INPUT' && active.type !== 'checkbox'))) return;
-      const st = this._hass.states, now = Date.now(), admin = this._c?.manage && portalCanManage(), canName = portalCanManage(), t = this._totals, main = mainDevice();
+      const st = this._hass.states, now = Date.now(), admin = this._c?.manage && portalCanWire(), canName = portalCanManage(), t = this._totals, main = mainDevice();
       const tops = topNodes(), others = main ? tops.filter((d) => d.id !== main.id) : tops;
       const energy = (key) => { const out = new Map(); const flat = (n) => { out.set(n.id, n); n.kids.forEach(flat); }; if (t) tops.forEach((d) => flat(nodeEnergy(d.id, (id) => t.devices[id]?.[key] ?? null, t.stale))); return out; };
       const today = energy('today'), month = energy('month');
@@ -2678,7 +2680,7 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
       };
       r.getElementById('sum').textContent = main ? `Main device: ${main.name}` : 'No main device set';
       r.getElementById('warn').textContent = main && others.length ? `Not counted: ${others.map((d) => d.name).join(', ')}.` : '';
-      r.getElementById('add').innerHTML = `${admin ? '<input id="vname" type="text" placeholder="Name of virtual device" aria-label="Name of virtual device"><button class="gold" data-new="1">Add virtual device</button><span class="muted">It adds up the devices you tick under it, and appears in Home Assistant as a Sum helper for energy and power.</span>' : portalCanManage() ? '<button data-wiring="1">Change the wiring</button>' : ''}<button data-fold-all="open">Expand all</button><button data-fold-all="shut">Collapse all</button>`;
+      r.getElementById('add').innerHTML = `${admin ? '<input id="vname" type="text" placeholder="Name of virtual device" aria-label="Name of virtual device"><button class="gold" data-new="1">Add virtual device</button><span class="muted">It adds up the devices you tick under it, and appears in Home Assistant as a Sum helper for energy and power.</span>' : portalCanWire() ? '<button data-wiring="1">Change the wiring</button>' : ''}<button data-fold-all="open">Expand all</button><button data-fold-all="shut">Collapse all</button>`;
       r.getElementById('tree').innerHTML = [...(main ? [main] : []), ...others].map(row).join('') || '<li class="muted">No devices in this location yet. An administrator adds them under Setup.</li>';
       if (focusNow) { const i = r.querySelector(`input[data-rename="${CSS.escape(this._hl)}"]`); if (i) { i.focus({ preventScroll: true }); i.select(); setTimeout(() => i.scrollIntoView({ block: 'center' }), 500); } }
     }
@@ -3003,7 +3005,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const branch = (parent) => { const kids = placeChildren(parent); return kids.length ? `<ul>${kids.map((p) => `<li><div class="n"><span>${esc(p.name)}</span><span class="muted">${count(p.id)}</span></div>${branch(p.id)}</li>`).join('')}</ul>` : ''; };
       const locs = TREE.places.filter((p) => p.kind === 'location').sort(byName), problems = NATIVE ? nativeProblems(h.devices, NATIVE) : [];
       r.getElementById('tree').innerHTML = `<h3>Locations and groups</h3><ul class="t">${locs.map((l) => `<li><div class="n"><b>${esc(l.name)}</b><span class="muted">${count(l.id)}</span></div>${branch(l.id)}</li>`).join('') || '<li class="muted">None yet.</li>'}</ul><div class="cfg-hint">📍 labels define locations; areas and floors define groups.</div><div class="two"><button data-nav="/config/areas/dashboard">Areas and floors ›</button><button data-nav="/config/labels">Labels ›</button></div>`;
-      r.getElementById('main').innerHTML = `${problems.length ? `<div class="box"><h3>Needs attention (${problems.length})</h3>${problems.map((x) => `<span class="muted">${esc(x)}</span>`).join('')}</div>` : ''}${locs.length ? `<div class="box"><h3>Main device</h3><span class="muted">The device whose figures Overview shows.</span>${locs.map((l) => { const under = placesUnder(l.id), now = TREE.mains?.[l.id] || ''; const opts = allNodes.filter((d) => under.has(d.place) && (d.virtual || kindOf(d) === 'meter' || d.id === now)).sort(byName); return `<label class="f">${esc(l.name)}<select data-main-for="${l.id}"><option value="">None: add up the top devices</option>${opts.map((d) => `<option value="${d.id}"${d.id === now ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>`; }).join('')}</div>` : ''}${this.priceBox(locs)}`;
+      r.getElementById('main').innerHTML = `${problems.length ? `<div class="box"><h3>Needs attention (${problems.length})</h3>${problems.map((x) => `<span class="muted">${esc(x)}</span>`).join('')}</div>` : ''}${locs.length && portalCanWire() ? `<div class="box"><h3>Main device</h3><span class="muted">The device whose figures Overview shows.</span>${locs.map((l) => { const under = placesUnder(l.id), now = TREE.mains?.[l.id] || ''; const opts = allNodes.filter((d) => under.has(d.place) && (d.virtual || kindOf(d) === 'meter' || d.id === now)).sort(byName); return `<label class="f">${esc(l.name)}<select data-main-for="${l.id}"><option value="">None: add up the top devices</option>${opts.map((d) => `<option value="${d.id}"${d.id === now ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>`; }).join('')}</div>` : ''}${this.priceBox(locs)}`;
     }
   }
   // A table-first administration surface. The old client-facing cards are
@@ -3160,7 +3162,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const current = e.user;
         title = current ? 'Edit person' : 'New person';
         const selected = current?.locations || (current?.location ? [current.location] : []);
-        fields = `<label class="field">Name<input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field">Username<input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label>${current ? '' : '<label class="field">Password<input id="editorPassword" type="password" minlength="8" autocomplete="new-password"></label>'}<label class="field">Role<select id="editorRole">${PORTAL.isRoot ? '<option value="user">User</option><option value="client_admin">Client admin</option>' : '<option value="user">User</option>'}</select></label><label class="field wide">Locations<select id="editorLocations" multiple size="${Math.max(2, Math.min(5, locations.length))}">${locations.map((p) => `<option value="${esc(p.id)}"${selected.includes(p.id) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join('')}</select></label>`;
+        fields = `<label class="field">Name<input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field">Username<input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label>${current ? '' : '<label class="field">Password<input id="editorPassword" type="password" minlength="8" autocomplete="new-password"></label>'}<label class="field">Role<select id="editorRole">${PORTAL.isRoot ? `<option value="user">User</option><option value="client_admin"${current?.role === 'client_admin' ? ' selected' : ''}>Client admin</option>` : '<option value="user">User</option>'}</select></label><label class="field wide">Locations<select id="editorLocations" multiple size="${Math.max(2, Math.min(5, locations.length))}">${locations.map((p) => `<option value="${esc(p.id)}"${selected.includes(p.id) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join('')}</select></label>`;
       } else if (e.kind === 'device') {
         title = e.move ? 'Move device' : 'Add device to group or location';
         const devices = this.deviceRows().filter((x) => !x.virtual);
@@ -3175,7 +3177,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       return `<div class="admin-editor"><div class="admin-editor-head"><div><span class="admin-kicker">${e.kind === 'person' ? 'Access' : e.kind === 'device' || e.kind === 'virtual' || e.kind === 'device-name' ? 'Devices' : 'Client setup'}</span><h3>${esc(title)}</h3></div></div><div class="form-grid">${fields}</div><div class="form-actions"><button class="quiet" data-cancel-editor="1">Cancel</button><button class="primary" data-save-editor="1">${esc(save)}</button></div></div>`;
     }
     renderClients() {
-      const rows = (this._summaries || []).map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}<small>${esc(item.slug || item.id)}</small></button></td><td>${item.locations || 0}</td><td>${item.people || 0}</td><td>${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action('Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
+      const rows = (this._summaries || []).map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}<small>${esc(item.slug || item.id)}</small></button></td><td>${item.locations || 0}</td><td>${item.people || 0}</td><td>${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action(this._confirmClientDelete === item.id ? 'Confirm delete' : 'Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
       return `${this.renderEditor()}${this.table(['Client', 'Locations', 'People', 'Devices', 'Actions'], rows)}<p class="admin-note">Select a client to manage its locations and people.</p>`;
     }
     renderPeople() {
@@ -3183,7 +3185,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const q = this._search.trim().toLowerCase(), role = this._role;
         return (!q || [u.name, u.username].some((x) => String(x || '').toLowerCase().includes(q))) && (role === 'all' || u.role === role);
       });
-      const rows = users.map((u) => `<td><b>${esc(u.name || u.username || u.id)}</b><small class="table-sub">@${esc(u.username || 'no username')}</small></td><td>${esc(this.roleName(u.role))}</td><td>${esc(this.userLocations(u))}</td><td>${u.is_active ? 'Active' : 'Disabled'}</td><td><div class="table-actions">${this.action('Edit', `data-edit-person="${esc(u.id)}"`)}${this.action(u.is_active ? 'Disable' : 'Enable', `data-toggle="${esc(u.id)}"`)}${this.action('Delete', `data-delete="${esc(u.id)}"`, 'table-action danger')}</div></td>`);
+      const rows = users.map((u) => `<td><b>${esc(u.name || u.username || u.id)}</b><small class="table-sub">@${esc(u.username || 'no username')}</small></td><td>${esc(this.roleName(u.role))}</td><td>${esc(this.userLocations(u))}</td><td>${u.is_active ? 'Active' : 'Disabled'}</td><td><div class="table-actions">${this.action('Edit', `data-edit-person="${esc(u.id)}"`)}${this.action(u.is_active ? 'Disable' : 'Enable', `data-toggle="${esc(u.id)}"`)}${this.action(this._confirmDelete === u.id ? 'Confirm delete' : 'Delete', `data-delete="${esc(u.id)}"`, 'table-action danger')}</div></td>`);
       return `${this.renderEditor()}<div class="admin-toolbar compact" id="locationmap"><span class="toolbar-label">Client locations: <b>${esc(this.locations().map((x) => x.name).join(' · ') || 'None')}</b></span></div><div class="admin-toolbar compact"><label class="field">Search<input id="peopleSearch" type="search" value="${esc(this._search)}" placeholder="Name or username"></label><label class="field">Role<select id="peopleRole"><option value="all"${this._role === 'all' ? ' selected' : ''}>All roles</option><option value="user"${this._role === 'user' ? ' selected' : ''}>Users</option><option value="client_admin"${this._role === 'client_admin' ? ' selected' : ''}>Client admins</option></select></label><span class="toolbar-count">${users.length} ${users.length === 1 ? 'person' : 'people'}</span></div>${this.table(['Person', 'Role', 'Locations', 'Status', 'Actions'], rows, 'people')}`;
     }
     deviceRowsHtml(locationId = null) {
@@ -3192,7 +3194,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const main = root ? TREE.mains?.[root] === d.id : false;
         const parts = placeParts(d.place);
         const parentOptions = this.deviceRows().filter((x) => x.id !== d.id && !wouldLoop(d.id, x.id)).map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
-        return `<td><b>${esc(d.name)}</b><small class="table-sub">${esc(d.model || (d.virtual ? 'Virtual device' : ''))}</small></td><td>${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}</td><td>${esc(parts.group || '—')}</td><td><select class="table-select" data-device-parent="${esc(d.id)}"><option value="">Top level</option>${parentOptions}</select></td><td>${main ? 'Main' : '—'}</td><td><div class="table-actions">${this.action('Move', `data-move-device="${esc(d.id)}"`)}${this.action('Set main', `data-set-main="${esc(d.id)}"`)}${this.action('Rename', `data-edit-device="${esc(d.id)}" data-name="${esc(d.name)}"`)}${d.virtual ? this.action('Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
+        return `<td><b>${esc(d.name)}</b><small class="table-sub">${esc(d.model || (d.virtual ? 'Virtual device' : ''))}</small></td><td>${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}</td><td>${esc(parts.group || '—')}</td><td><select class="table-select" data-device-parent="${esc(d.id)}"><option value="">Top level</option>${parentOptions}</select></td><td>${main ? 'Main' : '—'}</td><td><div class="table-actions">${this.action('Move', `data-move-device="${esc(d.id)}"`)}${this.action('Set main', `data-set-main="${esc(d.id)}"`)}${this.action('Rename', `data-edit-device="${esc(d.id)}" data-name="${esc(d.name)}"`)}${d.virtual ? this.action(this._confirmVirtualDelete === d.id ? 'Confirm delete' : 'Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
       });
       return this.table(['Device', 'Type', 'Location', 'Group', 'Parent', 'Main', 'Actions'], rows);
     }
@@ -3200,7 +3202,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const selected = this._selectedLocation && this.locations().find((p) => p.id === this._selectedLocation);
       const rows = this.locations().map((l) => {
         const groups = placesUnder(l.id).size - 1, devices = this.deviceRows(l.id).length, main = TREE.mains?.[l.id] ? (this.deviceRows().find((d) => d.id === TREE.mains[l.id])?.name || TREE.mains[l.id]) : '—';
-        return `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}<small>${esc(l.id)}</small></button></td><td>${groups}</td><td>${devices}</td><td>${esc(main)}</td><td><div class="table-actions">${this.action('Devices', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${this.action('Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>`;
+        return `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}<small>${esc(l.id)}</small></button></td><td>${groups}</td><td>${devices}</td><td>${esc(main)}</td><td><div class="table-actions">${this.action('Devices', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${this.action(this._confirmLocationDelete === l.id ? 'Confirm delete' : 'Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>`;
       });
       const devices = selected ? `<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Devices</span><h2>${esc(selected.name)}</h2><p>Assign devices here, set the main device and maintain the parent tree.</p></div><div class="admin-actions">${this.action('Add device', `data-add-device="${esc(selected.id)}"`)}${this.action('Virtual device', 'data-new-virtual="1"')}</div></div>${this.deviceRowsHtml(selected.id)}</section>` : '<p class="admin-note">Select a location to manage its devices.</p>';
       return `${this.renderEditor()}${this.table(['Location', 'Groups', 'Devices', 'Main device', 'Actions'], rows)}${devices}`;
@@ -3388,7 +3390,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         return;
       }
       if ((b = q('[data-delete-client]'))) {
-        if (!this._confirmClientDelete) { this._confirmClientDelete = true; this.paint(true); return; }
+        if (this._confirmClientDelete !== b.dataset.deleteClient) { this._confirmClientDelete = b.dataset.deleteClient; this.paint(true); return; }
         const id = b.dataset.deleteClient, name = (PORTAL.clients || []).find((x) => x.id === id)?.name || id;
         try {
           await this._hass.callWS({ type: 'optim_energy/client/delete', client: id, delete_users: true });
@@ -3424,7 +3426,11 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         if (location) await this.saveAdminTree(treeWithLocationMain(TREE, location, d.id));
         return;
       }
-      if ((b = q('[data-delete-virtual]'))) { await this.saveAdminTree(treeWithoutVirtual(TREE, b.dataset.deleteVirtual)); return; }
+      if ((b = q('[data-delete-virtual]'))) {
+        if (this._confirmVirtualDelete !== b.dataset.deleteVirtual) { this._confirmVirtualDelete = b.dataset.deleteVirtual; this.paint(true); return; }
+        this._confirmVirtualDelete = null;
+        await this.saveAdminTree(treeWithoutVirtual(TREE, b.dataset.deleteVirtual)); return;
+      }
     }
     async onChange(e) {
       const t = e.target;

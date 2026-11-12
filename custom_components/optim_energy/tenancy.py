@@ -265,6 +265,62 @@ def _guard_tree(tree: dict[str, Any]) -> dict[str, Any]:
     return clean
 
 
+# The only tree key a client administrator may write. Everything else in the
+# tree decides permissions or ownership, so it is written by root or by the
+# checked server commands, never taken from a tenant browser.
+_ENTITY_ID_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
+_MAX_PRICE_DEPTH = 4
+
+
+def _plain_json(value: Any, depth: int = 0) -> bool:
+    """Return whether value is small, plain JSON data."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return True
+    if isinstance(value, str):
+        return len(value) <= 300
+    if depth >= _MAX_PRICE_DEPTH:
+        return False
+    if isinstance(value, list):
+        return len(value) <= 200 and all(_plain_json(x, depth + 1) for x in value)
+    if isinstance(value, dict):
+        return len(value) <= 40 and all(
+            isinstance(k, str) and len(k) <= 60 and _plain_json(v, depth + 1)
+            for k, v in value.items()
+        )
+    return False
+
+
+def _guard_prices(prices: Any, locations: set[str]) -> dict[str, Any]:
+    """Validate the price settings a client administrator sends."""
+    if not isinstance(prices, dict):
+        raise HomeAssistantError("Prices must be an object")
+    clean: dict[str, Any] = {}
+    for location, price in prices.items():
+        if location not in locations:
+            raise HomeAssistantError("A price is set for a location outside this client")
+        if not isinstance(price, dict) or not _plain_json(price):
+            raise HomeAssistantError("Price settings are not valid")
+        sensor = price.get("sensor")
+        # The sensor is only ever read by the browser with the caller's own
+        # permissions, so its shape is all that needs checking here.
+        if sensor is not None and not (isinstance(sensor, str) and _ENTITY_ID_RE.match(sensor)):
+            raise HomeAssistantError("The price sensor is not valid")
+        clean[str(location)] = copy.deepcopy(price)
+    return clean
+
+
+def _client_tree_update(
+    stored: dict[str, Any], incoming: Any, locations: set[str]
+) -> dict[str, Any]:
+    """Apply what a client administrator may change to the stored tree."""
+    if not isinstance(incoming, dict):
+        raise HomeAssistantError("Dashboard settings must be an object")
+    clean = copy.deepcopy(stored)
+    if "prices" in incoming:
+        clean["prices"] = _guard_prices(incoming["prices"], locations)
+    return clean
+
+
 class TenancyManager:
     """Own the shared tenant store and keep it synchronized with HA auth."""
 
@@ -303,6 +359,7 @@ class TenancyManager:
                 "users": {},
                 "trees": {DEFAULT_CLIENT: _copy_tree(initial_tree, site_name)},
                 "groups": {},
+                "owned": {},
             }
             changed = True
         else:
@@ -330,6 +387,9 @@ class TenancyManager:
         self.data.setdefault("users", {})
         self.data.setdefault("trees", {})
         self.data.setdefault("groups", {})
+        if not isinstance(self.data.get("owned"), dict):
+            self.data["owned"] = self._seed_owned()
+            changed = True
         for client_id, client in list(self.data["clients"].items()):
             if not isinstance(client, dict):
                 client = {"id": client_id, "name": str(client), "slug": client_id}
@@ -343,6 +403,57 @@ class TenancyManager:
                 self.data["trees"][client_id] = _copy_tree(None, str(client["name"]))
                 changed = True
         return changed
+
+    def _seed_owned(self) -> dict[str, dict[str, list[str]]]:
+        """Record the helpers and automations each client already has.
+
+        ponytail: one-time trust of trees written before ownership moved to the
+        server. From here on only the checked commands add to this map.
+        """
+        registry = er.async_get(self.hass)
+        owned: dict[str, dict[str, list[str]]] = {}
+        for client_id in self.data.get("clients", {}):
+            tree = self.data.get("trees", {}).get(client_id)
+            if not isinstance(tree, dict):
+                continue
+            visible = self._tree_visible_entities(client_id)
+            entries: set[str] = set()
+            automations: set[str] = set()
+            for entity_id in visible:
+                entry = registry.async_get(entity_id)
+                if entry is not None and entry.platform == "threshold" and entry.config_entry_id:
+                    entries.add(str(entry.config_entry_id))
+            for item in tree.get("automations") or []:
+                entry = registry.async_get(str(item.get("entity"))) if isinstance(item, dict) else None
+                if entry is not None and entry.domain == "automation" and entry.unique_id:
+                    automations.add(str(entry.unique_id))
+            for entry in registry.entities.values():
+                unique_id = str(entry.unique_id or "")
+                if (
+                    entry.domain == "automation"
+                    and unique_id.startswith("portal_alert_")
+                    and f"binary_sensor.{unique_id[13:]}" in visible
+                ):
+                    automations.add(unique_id)
+            owned[client_id] = {"entries": sorted(entries), "automations": sorted(automations)}
+        return owned
+
+    def owns(self, client_id: str, kind: str, value: str) -> bool:
+        """Return whether a helper entry or automation id belongs to a client."""
+        return bool(value) and value in self.data.get("owned", {}).get(client_id, {}).get(kind, [])
+
+    async def async_set_owned(self, client_id: str, kind: str, value: str, present: bool) -> None:
+        """Add or drop one owned helper entry or automation id, and persist it."""
+        record = self.data.setdefault("owned", {}).setdefault(
+            client_id, {"entries": [], "automations": []}
+        )
+        values = set(record.setdefault(kind, []))
+        if present:
+            values.add(value)
+        else:
+            values.discard(value)
+        record[kind] = sorted(values)
+        await self.async_save()
 
     def _refresh_location_index(self) -> None:
         """Rebuild the UI index of locations from trees and assigned labels."""
@@ -551,8 +662,23 @@ class TenancyManager:
         client_id, ctx = self.require_client_value(user, requested_client)
         if not self.can_manage_tree(ctx):
             raise HomeAssistantError("Only a client administrator can change the dashboard")
-        clean = self._merge_native_places(_guard_tree(tree), client_id)
-        self.data["trees"][client_id] = clean
+        if ctx["is_root"]:
+            clean = _guard_tree(tree)
+        else:
+            locations = {
+                str(location_id)
+                for location_id, entry in self.data.get("locations", {}).items()
+                if entry.get("client") == client_id
+            }
+            stored = self.data["trees"].get(client_id) or _copy_tree(None, str(ctx["client_name"] or client_id))
+            clean = _client_tree_update(stored, tree, locations)
+        return await self.async_store_tree(client_id, clean)
+
+    async def async_store_tree(self, client_id: str, tree: dict[str, Any]) -> dict[str, Any]:
+        """Store a tree built by root or by a checked server command."""
+        if client_id not in self.data.get("clients", {}):
+            raise HomeAssistantError("Client not found")
+        self.data["trees"][client_id] = self._merge_native_places(_guard_tree(tree), client_id)
         self._refresh_location_index()
         await self.async_save()
         self._schedule_group_sync()
@@ -688,6 +814,7 @@ class TenancyManager:
                 targets.append(target)
         del self.data["clients"][client_id]
         self.data["trees"].pop(client_id, None)
+        self.data.get("owned", {}).pop(client_id, None)
         for target in targets:
             await self.hass.auth.async_remove_user(target)
             self.data["users"].pop(target.id, None)
@@ -823,11 +950,15 @@ class TenancyManager:
         record = self.data.get("users", {}).get(user_id)
         if not record:
             raise HomeAssistantError("User is not assigned to Optim Energy")
-        actor_client, ctx = self.require_client_value(actor)
+        actor_client, ctx = self.require_client_value(
+            actor, str(record.get("client") or "") if self.is_root(actor) else None
+        )
         if not (ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN):
             raise HomeAssistantError("Only a client administrator can change users")
         if record.get("client") != actor_client:
             raise HomeAssistantError("User belongs to another client")
+        if not ctx["is_root"] and target.is_admin:
+            raise HomeAssistantError("A Home Assistant administrator cannot be changed here")
         if not ctx["is_root"] and record.get("role") == ROLE_CLIENT_ADMIN:
             raise HomeAssistantError("Only the global administrator can change a client administrator")
         target_role = role if role is not None else record.get("role")
@@ -870,11 +1001,15 @@ class TenancyManager:
         record = self.data.get("users", {}).get(user_id)
         if target is None or not record or target.system_generated or target.is_owner:
             raise HomeAssistantError("User cannot be deleted")
-        actor_client, ctx = self.require_client_value(actor)
+        actor_client, ctx = self.require_client_value(
+            actor, str(record.get("client") or "") if self.is_root(actor) else None
+        )
         if not (ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN):
             raise HomeAssistantError("Only a client administrator can delete users")
         if record.get("client") != actor_client:
             raise HomeAssistantError("User belongs to another client")
+        if not ctx["is_root"] and target.is_admin:
+            raise HomeAssistantError("A Home Assistant administrator cannot be deleted here")
         if not ctx["is_root"] and record.get("role") == ROLE_CLIENT_ADMIN:
             raise HomeAssistantError("Only the global administrator can delete a client administrator")
         await self.hass.auth.async_remove_user(target)
@@ -1129,15 +1264,6 @@ class TenancyManager:
         self._unsubscribers.clear()
 
 
-async def async_setup_tenancy(
-    hass: HomeAssistant, site_name: str, initial_tree: dict[str, Any] | None
-) -> TenancyManager:
-    """Create and initialize the tenant manager."""
-    manager = TenancyManager(hass)
-    await manager.async_initialize(site_name, initial_tree)
-    return manager
-
-
 def _register_ws(hass: HomeAssistant, handler: Any) -> None:
     websocket_api.async_register_command(hass, handler)
 
@@ -1164,6 +1290,9 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
                 "clients": manager.client_list(connection.user),
                 "capabilities": {
                     "manage_tree": manager.can_manage_tree(ctx),
+                    # Wiring, main devices and virtual devices decide what a
+                    # client can see, so only root changes them.
+                    "manage_wiring": ctx["is_root"],
                     "manage_ha": ctx["is_root"],
                     "manage_users": ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN,
                 },
