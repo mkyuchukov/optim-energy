@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Preserve `name_by_user`, model metadata and device relationships in the tenant-filtered registry so portal names, device types and switch detection remain correct.
+
 ## 0.3.0
 
 - Promote shared-instance multitenancy after REST, webhook and ingress hardening.
