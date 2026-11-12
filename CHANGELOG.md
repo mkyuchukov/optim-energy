@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- Fix the entity list a Home Assistant administrator gets when viewing one client after the switch to floors and areas: it held only the entities that have no device, so Administration and client previews were missing device readings. Client accounts were not affected.
+
 ## 0.7.0
 
 Adds a new placement model, switched on once by a Home Assistant administrator. Installing this version changes nothing until then.
