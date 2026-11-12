@@ -125,11 +125,16 @@ function nativePlaced(devices, nat) {
 const PORTAL_TYPE_LABELS = new Set(['light', 'socket', 'relay', 'ac', 'energy_meter']);
 function adminDeviceCatalog(devices, entities, placed) {
   const placedIds = new Set(Object.keys(placed || {}));
+  const byId = new Map((devices || []).filter((d) => d?.id).map((d) => [d.id, d]));
   const portalEntityDevices = new Set((entities || []).filter((e) => ['mqtt', 'shelly'].includes(e.platform) && e.device_id && /_(power|energy)$/.test(e.entity_id || '')).map((e) => e.device_id));
   return (devices || []).filter((d) => {
-    if (!d?.id || d.via_device_id) return false;
+    if (!d?.id || d.disabled_by) return false;
+    // Shelly phase/meter children are represented by their parent device.
+    // A real device below a non-meter bridge must not be folded away with them.
+    const parent = d.via_device_id ? byId.get(d.via_device_id) : null;
+    if (parent && placedIds.has(parent.id) && portalEntityDevices.has(parent.id)) return false;
     if (placedIds.has(d.id)) return true;
-    if (d.entry_type === 'service' || d.disabled_by) return false;
+    if (d.entry_type === 'service') return false;
     return portalEntityDevices.has(d.id) || (d.labels || []).some((x) => PORTAL_TYPE_LABELS.has(x));
   });
 }
