@@ -217,7 +217,7 @@ check is reproduced and fixed.
 - [x] Retention and export policy documented
 - [x] Audit-mode controls tested through the real options flow
 - [ ] Emergency recovery contact and rollback checkpoint recorded
-- [ ] License decision recorded for the repository
+- [x] Repository licensed under Apache License 2.0
 - [ ] First maintenance window and operator assigned
 - [x] Stable `0.3.x` release published as `v0.3.0`
 
@@ -235,3 +235,11 @@ check is reproduced and fixed.
 | Client verification | |
 | Rollback checkpoint | |
 | Incidents / follow-up | |
+
+## Repository protection
+
+Branch creation, updates, deletion and force pushes are restricted by the
+`Owner-only branch updates` ruleset. Repository administrators are the only
+bypass actors. The public default branch remains forkable for pull requests, but
+only the repository owner can create or update branches in the origin
+repository.
