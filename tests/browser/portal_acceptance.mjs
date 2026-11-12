@@ -177,17 +177,14 @@ try {
   await manage.locator('#typed').fill('0.31');
   await manage.locator(`[data-type-save="${state.location_a_north}"]`).click();
   await manage.getByText('€ 0.310').first().waitFor({ timeout: 20000 });
-  await manage.locator(`select[data-main-for="${state.location_a_north}"]`).selectOption(state.virtual_main);
+  // The main device decides what the client sees, so only root may change it.
+  assert.equal(await manage.locator('select[data-main-for]').count(), 0, 'client admin was offered the main-device control');
   await adminPage.waitForTimeout(500);
   await adminPage.reload({ waitUntil: 'domcontentloaded' });
   const manageReloaded = await waitCard(adminPage, 'building-manage-card');
   await manageReloaded.getByText('Price per kWh').waitFor({ timeout: 30000 });
   await manageReloaded.getByText('€ 0.310').first().waitFor({ timeout: 20000 });
-  assert.equal(
-    await manageReloaded.locator(`select[data-main-for="${state.location_a_north}"]`).inputValue(),
-    state.virtual_main,
-    'main-device tree edit did not persist',
-  );
+
 
   // Clean up the browser-created user through the same UI.
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });

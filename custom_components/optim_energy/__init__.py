@@ -28,7 +28,7 @@ from .const import (
 from .dashboards import DASHBOARD_SPECS, build_dashboard_configs
 from .firewall import RestFirewall, WebsocketFirewall
 from .portal_ops import async_register_portal_commands
-from .tenancy import TenancyManager, async_register_commands, async_setup_tenancy
+from .tenancy import TenancyManager, async_register_commands
 
 _LOGGER = logging.getLogger(__name__)
 _FRONTEND_KEY = f"{DOMAIN}_frontend"
@@ -46,18 +46,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     initial_tree, legacy_dashboard = await _async_existing_device_tree(hass)
     if initial_tree is not None and legacy_dashboard is not None:
         await _async_backup_legacy_dashboard(hass, legacy_dashboard)
-    manager = await async_setup_tenancy(hass, entry.data[CONF_SITE_NAME], initial_tree)
+    # Stage one: guard first, around a manager that knows no tenant yet. With
+    # no assignments every non-admin account is refused, so if anything below
+    # raises, the instance stays closed to tenants instead of open.
+    manager = TenancyManager(hass)
+    websocket_firewall: WebsocketFirewall | None = hass.data.get(_FIREWALL_KEY)
+    if websocket_firewall is None:
+        websocket_firewall = WebsocketFirewall(hass, manager)
+        websocket_firewall.install()
+        hass.data[_FIREWALL_KEY] = websocket_firewall
+    rest_firewall: RestFirewall | None = hass.data.get(_REST_FIREWALL_KEY)
+    if rest_firewall is None:
+        rest_firewall = RestFirewall(hass, manager)
+        await rest_firewall.install()
+        hass.data[_REST_FIREWALL_KEY] = rest_firewall
+    websocket_firewall.manager = rest_firewall.manager = manager
+    websocket_firewall.audit = rest_firewall.audit = False
+
+    # Stage two: the same guards start answering from real tenant data.
+    await manager.async_initialize(entry.data[CONF_SITE_NAME], initial_tree)
     async_register_commands(hass, manager)
     async_register_portal_commands(hass, manager)
-
     audit = bool(entry.options.get("audit", False))
-    websocket_firewall = WebsocketFirewall(hass, manager, audit=audit)
-    websocket_firewall.install()
-    hass.data[_FIREWALL_KEY] = websocket_firewall
-
-    rest_firewall = RestFirewall(hass, manager, audit=audit)
-    await rest_firewall.install()
-    hass.data[_REST_FIREWALL_KEY] = rest_firewall
+    websocket_firewall.audit = rest_firewall.audit = audit
 
     await _async_replace_dashboards(hass, entry.data[CONF_SITE_NAME])
     await _async_set_portal_default(hass)

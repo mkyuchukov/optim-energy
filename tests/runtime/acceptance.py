@@ -824,6 +824,51 @@ def run(version: str, *, keep: bool = False) -> None:
         finally:
             b.close()
 
+        # A client administrator sends a tree that claims Client B's device,
+        # area and entity. Only its own price may land; nothing of B's opens.
+        location_a = location_for_label(client_tree(root, client_a), "runtime_client_a")
+        b_device = devices_by_name["Runtime Client B Label Device"]["id"]
+        admin_a = WebSocket(http.host, http.port)
+        try:
+            admin_a.auth(http.login(*CLIENT_ADMIN_A)["access_token"])
+            hostile = admin_a.command({"type": "optim_energy/tree/get"})["tree"]
+            hostile["placed"] = {b_device: location_a}
+            hostile["places"] = [*hostile["places"], {"id": "kitchen", "name": "Kitchen", "kind": "location", "parent": None}]
+            hostile["virtual"] = [{"id": "virt:x", "name": "X"}]
+            hostile["sums"] = {"virt:x": {"energy": {"entry": entry_id, "entity": "input_boolean.runtime_b_toggle"}}}
+            hostile["automations"] = [{"entity": "automation.anything", "place": location_a}]
+            hostile["prices"] = {location_a: {"mode": "fixed", "fixed": 0.31}}
+            admin_a.command({"type": "optim_energy/tree/save", "tree": hostile})
+            time.sleep(4)  # longer than the debounced permission sync
+            saved = admin_a.command({"type": "optim_energy/tree/get"})["tree"]
+            assert_equal(saved["prices"], {location_a: {"mode": "fixed", "fixed": 0.31}}, "client admin price save")
+            assert_true(b_device not in (saved.get("placed") or {}), "foreign device was accepted into the tree")
+            assert_true(not saved.get("sums") and not saved.get("virtual"), "foreign Sum was accepted into the tree")
+            assert_true(
+                "kitchen" not in {place["id"] for place in saved["places"]},
+                "foreign area was accepted as a location",
+            )
+            assert_true(
+                "input_boolean.runtime_b_toggle"
+                not in {state["entity_id"] for state in admin_a.command({"type": "get_states"})},
+                "hostile tree opened Client B's entity",
+            )
+            for refused in (
+                {"type": "optim_energy/helper/sum/delete", "virtual_id": "virt:x", "kind": "energy"},
+                {"type": "optim_energy/tree/save", "tree": {"prices": {location_b: {"mode": "fixed", "fixed": 1}}}},
+            ):
+                try:
+                    admin_a.command(refused)
+                except RuntimeError:
+                    continue
+                raise AssertionError(f"{refused['type']} was not refused")
+        finally:
+            admin_a.close()
+        assert_true(
+            any(entry["entry_id"] == entry_id for entry in root.command({"type": "config_entries/get"})),
+            "a client administrator removed a config entry",
+        )
+
         set_audit_mode(http, root_token, entry_id, True)
         wait_until(
             lambda: http.request("GET", "/api/states", token=token_a)[0] == 200,
