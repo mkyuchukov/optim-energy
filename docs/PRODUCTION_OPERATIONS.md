@@ -88,9 +88,28 @@ disposable VM before relying on it.
 Restoring `.storage/auth` also rewinds passwords and refresh tokens. Revoke and
 recreate any account that may have been compromised after the backup timestamp.
 
+## Day-to-day administration
+
+All of this is in **Administration**, as a Home Assistant administrator.
+
+| Task | Where |
+| --- | --- |
+| Add a client | Clients → New client. A floor with the client's name is created in Home Assistant |
+| Add a location | Locations → choose the client → New location. An area is created on the client's floor |
+| Add a person | People → New person. Tick the locations an ordinary user may see; a client administrator sees all of them |
+| Add a device | Pair or add it in Home Assistant as usual. It appears under Devices → "Not assigned yet". Assign → client, location, group. Picking the location's area in Home Assistant's own add-device dialog does the same thing |
+| Move a device | Devices → Move. A move to another client is refused while a virtual device, schedule or alert rule of the old client still uses the device; the message names it |
+| Bridges and coordinators | Devices → Ignore. They leave the "Not assigned yet" list |
+| Groups | Locations → a location → Groups, or the client administrator's Setup → Locations |
+| Wiring, main device, virtual devices | Devices → "Wiring and main devices" |
+
+A device with no power or energy sensor, no switch, light or climate entity is listed under "Not portal devices"; there is nothing to show a client.
+
+Deleting a client leaves its floor and areas in Home Assistant; remove them under Settings → Areas if they are no longer wanted.
+
 ## Client deletion and data retention
 
-**Setup → People & clients → Delete client** removes the client tree, portal user
+**Administration → Clients → Delete** removes the client tree, portal user
 assignments, managed HA groups and all HA users assigned to the client. It also
 revokes their active sessions. At least one client must remain.
 
@@ -383,6 +402,21 @@ check is reproduced and fixed.
 | Client verification | After 0.7.1 an administrator's view of the client lists all 815 entities (14 before). After 0.8.0 the inbox lists 79 devices: 42 assigned, 2 not assigned yet, 35 not portal devices. Client, locations, groups, people and settings unchanged. No client-account login was performed |
 | Rollback checkpoint | Reinstall the previous tag from the Marketplace; the backups above hold the migrated configuration |
 | Incidents / follow-up | 0.8.0 hides devices behind the Zigbee2MQTT bridge in the inbox (display only); fixed in 0.8.1, which was published but not installed on its own. After the 23:02 restart the ENTSO-e integration failed its fetches for about twenty minutes and one Shelly device ("OSV row 8 NE") did not reconnect. Six restarts in two hours; later releases are batched |
+
+### 2026-11-12 v0.9.0 client-administrator screens
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 23:27–23:32 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.8.0 / 0.9.0 (includes the 0.8.1 inbox fix), installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-optim-energy-v0.9.0-2026-11-12`, configuration only, on the VM |
+| Runtime suites | Unit, HA runtime, three-client scale, browser on both models, hassfest and HACS: PASS |
+| VM smoke result | N/A |
+| Client verification | Inbox lists 82 devices: 45 assigned (42 Shelly in one location, 3 Zigbee meters in the other), 2 not assigned yet, 35 not portal devices. Client, groups, people and settings unchanged. The client-administrator screens were not exercised on production: it has no client administrator account |
+| Rollback checkpoint | Reinstall `v0.8.0` from the Marketplace |
+| Incidents / follow-up | The ENTSO-e integration again failed its fetches after the restart; "OSV row 8 NE" was already offline before it |
 
 ## Repository protection
 

@@ -330,7 +330,7 @@ class TenancyTests(unittest.TestCase):
             "portal_1", "Evening", "off", "18:30", ["mon", "fri"], ["switch.a"]
         )
         assert config["triggers"] == [{"trigger": "time", "at": "18:30:00"}]
-        assert config["actions"][0]["action"] == "switch.turn_off"
+        assert config["actions"][0]["action"] == "homeassistant.turn_off"
         assert config["actions"][0]["target"]["entity_id"] == ["switch.a"]
         assert config["conditions"][0]["weekday"] == ["mon", "fri"]
 

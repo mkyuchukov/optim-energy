@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.1
+
+Cleanup. No change to stored data.
+
+- Schedules switch lights, fans and helpers as well as switches (`homeassistant.turn_on` and `turn_off` instead of `switch.*`). A schedule is rewritten the next time it is saved.
+- Administration shows a notice on installations that still place devices by label, with "See what would change" and "Switch now".
+- The wiring table and the device inbox name a device's type by the same rule.
+- Removed the unused legacy "People and clients" card, an unused help dashboard file and other dead code.
+- Help text, README and the operations guide describe the floor and area model, with a day-to-day administration table.
+
 ## 0.9.0
 
 Screens for client administrators. Needs the floor and area model.

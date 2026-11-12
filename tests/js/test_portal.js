@@ -1,4 +1,4 @@
-// Run: node test_schedule.js
+// Run: node tests/js/test_portal.js (or make test-js)
 const assert = require('assert');
 const { scheduleConfig, daysText } = require('../../custom_components/optim_energy/frontend/building-cards.js');
 const days = ['mon', 'tue', 'wed', 'thu', 'fri'];

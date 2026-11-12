@@ -5,7 +5,7 @@ Optim Energy is a Home Assistant portal package for commercial energy monitoring
 ## What it installs
 
 - The Optim Energy building, controls, alerts and report cards.
-- Nine replacement Home Assistant dashboards:
+- Ten replacement Home Assistant dashboards:
   - Administration — table-first clients, locations, people and devices for Home Assistant administrators
   - Locations
   - Overview and Help
@@ -25,8 +25,8 @@ Optim Energy runs multiple clients in one Home Assistant instance, but it does *
 
 - A Home Assistant owner or administrator is the global root and uses the separate **Administration** console rather than the client portal.
 - A client administrator is a portal role. It is never added to Home Assistant's global `Administrators` group.
-- An ordinary client user is assigned to one location.
-- Authentication groups are generated from the client's areas and entities for Home Assistant's native state, history and entity-service filtering.
+- An ordinary client user is assigned to one or more locations.
+- Each location has an authentication group that covers exactly its area, for Home Assistant's native state, history and entity-service filtering.
 - A websocket firewall allows only the portal command surface and checks history, statistics and logbook requests against the tenant.
 - Raw REST API access, templates, Assist, arbitrary services and native configuration commands remain outside the client surface.
 - Webhook IDs and Supervisor ingress routes do not carry tenant identity. They are blocked unless the request presents a valid Home Assistant root bearer token.
@@ -35,6 +35,14 @@ Optim Energy runs multiple clients in one Home Assistant instance, but it does *
 Home Assistant administrators use the table-first **Administration** console to create and edit clients, locations, people and devices, including virtual devices and the device tree. A client administrator can use **Setup → People** to manage ordinary users inside its own client. Only a Home Assistant administrator can create clients or client administrators.
 
 The following remain shared: the recorder database, backups, logs, `/local` files, restarts and Home Assistant updates. Do not use this as a hostile-tenant boundary or expose secrets in shared files. For strict isolation, use one Home Assistant instance per client. Do not enable generic or companion-app webhooks, and do not expose add-on ingress, on a shared instance unless every caller is trusted to use the global root identity.
+
+## Clients, locations, groups and devices
+
+- A **client** is a floor in Home Assistant. A **location** is one area on that floor. **Groups** live in the portal and only organise devices.
+- A device belongs to the location whose area it has. Giving a device that area in Home Assistant's own add-device flow assigns it, for any integration.
+- **Administration → Devices** lists every Home Assistant device with what it looks like and where it is. A Home Assistant administrator assigns, moves, removes or ignores devices there.
+- A client administrator renames devices, moves them between its own locations and groups, manages its groups and its people, and edits its own prices, alerts and schedules. It cannot create locations or take devices from another client.
+- An installation created before 0.7.0 places devices by label. Administration shows a notice with "See what would change" and "Switch now"; `tools/migration_dry_run.py` gives the same report offline. See `docs/CAPABILITIES.md` for who may call what.
 
 ## Requirements
 

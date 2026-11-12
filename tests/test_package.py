@@ -30,7 +30,7 @@ class PackageTests(unittest.TestCase):
 
     def test_manifest_and_hacs_versions(self) -> None:
         self.assertEqual(MANIFEST["domain"], "optim_energy")
-        self.assertEqual(MANIFEST["version"], "0.9.0")
+        self.assertEqual(MANIFEST["version"], "0.9.1")
         self.assertTrue(MANIFEST["config_flow"])
         self.assertEqual(HACS["homeassistant"], "2026.11.0")
 
@@ -80,7 +80,6 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Object.keys(hass.panels || {})", source)
         self.assertIn("allowed.has(id)", source)
         self.assertIn("optim_energy/whoami", source)
-        self.assertIn("building-tenant-admin-card", source)
 
     def test_server_tenancy_files_are_present(self) -> None:
         for name in ("tenancy.py", "firewall.py", "sidebar.py"):
