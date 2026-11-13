@@ -24,7 +24,9 @@
           "column_span": 4,
           "cards": [
             {
-              "type": "custom:building-manage-card",
+              "type": "custom:building-admin-table-card",
+              "section": "locations",
+              "scope": "setup",
               "grid_options": {
                 "columns": "full",
                 "rows": "auto"
@@ -35,8 +37,8 @@
       ]
     },
     {
-      "title": "Wiring",
-      "path": "wiring",
+      "title": "Devices",
+      "path": "devices",
       "type": "sections",
       "max_columns": 4,
       "footer": {
@@ -57,8 +59,9 @@
           "column_span": 4,
           "cards": [
             {
-              "type": "custom:building-device-map-card",
-              "manage": true,
+              "type": "custom:building-admin-table-card",
+              "section": "devices",
+              "scope": "setup",
               "grid_options": {
                 "columns": "full",
                 "rows": "auto"

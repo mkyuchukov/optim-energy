@@ -983,6 +983,11 @@ def run(version: str, *, keep: bool = False) -> None:
                 }
             )
             wait_until(lambda: user_a_reads("sensor.exchange_market_price"), "a tenant's user cannot read the market price", timeout=20)
+            # What the server remembers of the market prices is the same for every tenant; an account
+            # with no tenant gets nothing.
+            memory = admin_a.command({"type": "optim_energy/price/last"})
+            assert_true({"at", "values", "today", "tomorrow", "live"} <= set(memory), f"the price memory is incomplete: {memory}")
+            assert_equal(memory["live"], False, "prices are reported live although the fixture sensor has no reading")
             wait_until(lambda: area_of_device(channel) == area_a, "a channel device did not follow its meter into the location", timeout=20)
             assert_equal(area_of_device(guest), None, "a device of another model was pulled along with its parent")
             wait_until(lambda: user_a_reads("sensor.phase_meter_a_power"), "the tenant's user cannot read a channel of their own meter", timeout=20)
