@@ -41,7 +41,8 @@ def build_sidebar_preferences(
     client_panels = [
         panel
         for panel in CLIENT_PANELS
-        if panel != "energy-locations" or not single_location_user
+        # "energy-start" only redirects; it is nobody's tab.
+        if panel != "energy-start" and (panel != "energy-locations" or not single_location_user)
     ]
     if not manage_tree:
         client_panels = [panel for panel in client_panels if panel != "energy-setup"]

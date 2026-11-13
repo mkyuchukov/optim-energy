@@ -27,6 +27,7 @@ CLIENT_ADMIN_A = ("runtime_admin_a", "Runtime-AdminA-2026!")
 # Registry-only sensors the fixture hangs on each client's device.
 A_DEVICE_SENSOR = "sensor.client_a_area_device_power"
 B_DEVICE_SENSOR = "sensor.client_b_area_device_power"
+MARKET_SENSOR = "sensor.exchange_market_price"
 
 
 
@@ -438,7 +439,8 @@ def assert_tenant_ws(
         registry = tenant.command(
             {"type": "config/entity_registry/list_for_display"}
         )["entities"]
-        registry_ids = {entry["entity_id"] for entry in registry}
+        # The market price is shared by every tenant; it is checked on its own further down.
+        registry_ids = {entry["entity_id"] for entry in registry} - {MARKET_SENSOR}
         assert_equal(
             registry_ids,
             expected_entities | {A_DEVICE_SENSOR},
@@ -448,7 +450,7 @@ def assert_tenant_ws(
             {"type": "optim_energy/registry/list", "kind": "device"}
         )
         assert_equal(
-            {device["id"] for device in devices},
+            {device["id"] for device in devices if device["name"] != "Runtime Exchange"},
             expected_devices,
             "tenant-filtered device registry",
         )
@@ -972,12 +974,19 @@ def run(version: str, *, keep: bool = False) -> None:
                 finally:
                     ws.close()
 
+            # The exchange price belongs to no location, and every tenant's price is worked out from it.
+            root.command(
+                {
+                    "type": "optim_runtime_fixture/create_devices",
+                    "config_entry_id": fixture_entry_id,
+                    "devices": [{"key": "exchange", "name": "Runtime Exchange", "market": True}],
+                }
+            )
+            wait_until(lambda: user_a_reads("sensor.exchange_market_price"), "a tenant's user cannot read the market price", timeout=20)
             wait_until(lambda: area_of_device(channel) == area_a, "a channel device did not follow its meter into the location", timeout=20)
             assert_equal(area_of_device(guest), None, "a device of another model was pulled along with its parent")
             wait_until(lambda: user_a_reads("sensor.phase_meter_a_power"), "the tenant's user cannot read a channel of their own meter", timeout=20)
-            assert_equal(root.command({"type": "optim_energy/health"})["problems"], [], "health problems on a consistent installation")
-            refused(admin_a, {"type": "optim_energy/health"}, "a tenant admin running the checks")
-            # Taken out of its area by hand, the channel is put back, and the check would have named it.
+            # Taken out of its area by hand, the channel is put back.
             root.command({"type": "config/device_registry/update", "device_id": channel, "area_id": None})
             wait_until(lambda: area_of_device(channel) == area_a, "a channel that lost its area was not put back", timeout=20)
             # The meter leaves the tenant: its channel goes with it, and the user stops reading it.

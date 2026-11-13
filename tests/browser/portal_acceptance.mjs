@@ -99,9 +99,6 @@ try {
   }
   await root.goto(`${base}/energy-admin/clients`, { waitUntil: 'domcontentloaded' });
   const overviewAgain = await waitCard(root, 'building-admin-table-card');
-  // The Tenants page says whether every user can read what their locations hold.
-  await overviewAgain.locator('#health').waitFor({ timeout: 30000 });
-  assert.match(await overviewAgain.locator('#health').innerText(), /All checks passed/, 'the checks report a problem on a consistent installation');
   await root.locator('dialog-http-pending-config').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
   await root.waitForTimeout(500);
   await overviewAgain.getByRole('button', { name: 'Preview' }).first().dispatchEvent('click');

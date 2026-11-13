@@ -30,7 +30,7 @@ class PackageTests(unittest.TestCase):
 
     def test_manifest_and_hacs_versions(self) -> None:
         self.assertEqual(MANIFEST["domain"], "optim_energy")
-        self.assertEqual(MANIFEST["version"], "0.15.0")
+        self.assertEqual(MANIFEST["version"], "0.15.1")
         self.assertTrue(MANIFEST["config_flow"])
         self.assertEqual(HACS["homeassistant"], "2026.11.0")
 
@@ -90,7 +90,8 @@ class PackageTests(unittest.TestCase):
         single = sidebar.build_sidebar_preferences(
             "user", ["loc:one"], panels, manage_tree=False
         )
-        self.assertEqual(single["panelOrder"][0], "energy-start")
+        self.assertEqual(single["panelOrder"][0], "energy-home")
+        self.assertIn("energy-start", single["hiddenPanels"])
         self.assertNotIn("energy-locations", single["panelOrder"])
         self.assertIn("energy-locations", single["hiddenPanels"])
         self.assertIn("energy-admin", single["hiddenPanels"])

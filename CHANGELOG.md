@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.1
+
+- Fixed: a tenant account did not see the exchange (IBEX) price chart, and its exchange price fell back to the helper. The market price sensors belong to no location, so tenants were not allowed to read them; every tenant can read them now.
+- The "Home" tab is gone for tenant accounts. It only redirected to Overview; they now land on Overview directly.
+- Removed the checks box from Administration, Tenants, and the `health` command behind it. The repair from 0.14.1 stays: a channel device is still kept in the area of the device it is part of.
+
 ## 0.15.0
 
 Preview of a tenant, fixed.

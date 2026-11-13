@@ -55,6 +55,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     probatio.Optional("meter"): bool,
                     probatio.Optional("light"): bool,
                     probatio.Optional("model"): str,
+                    probatio.Optional("market"): bool,
                     probatio.Optional("via"): str,
                 }
             ],
@@ -98,6 +99,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     device_id=device.id,
                     suggested_object_id=f"{spec['key']}_power",
                     original_device_class="power",
+                )
+            if spec.get("market"):
+                # A market price sensor as the ENTSO-e integration registers it: no area, no location.
+                er.async_get(hass).async_get_or_create(
+                    "sensor",
+                    "entsoe",
+                    f"{spec['key']}_market_price",
+                    device_id=device.id,
+                    suggested_object_id=f"{spec['key']}_market_price",
                 )
             if spec.get("light"):
                 # A light with no metering at all.
