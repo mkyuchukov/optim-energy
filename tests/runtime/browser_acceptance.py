@@ -218,8 +218,15 @@ def run(version: str, *, keep: bool = False) -> None:
                     "devices": [
                         {"key": "browser_spare", "name": "Browser Spare Meter", "entity": True},
                         {"key": "browser_meter_a", "name": "Browser Meter A", "meter": True},
+                        {"key": "browser_lamp_a", "name": "Browser Lamp A", "light": True},
                     ],
                 }
+            )
+            lamp_a = next(
+                d["id"] for d in migrate.command({"type": "optim_energy/device/inbox"}) if d["name"] == "Browser Lamp A"
+            )
+            migrate.command(
+                {"type": "optim_energy/device/assign", "client": client_a, "device_id": lamp_a, "place": location_a_north}
             )
             # A metered device that already belongs to Client A, for the client administrator to manage.
             meter_a = next(
