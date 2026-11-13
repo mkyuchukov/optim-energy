@@ -686,7 +686,9 @@ def run(version: str, *, keep: bool = False) -> None:
         try:
             admin_a.auth(http.login(*CLIENT_ADMIN_A)["access_token"])
             hostile = admin_a.command({"type": "optim_energy/tree/get"})["tree"]
-            hostile["placed"] = {b_device: location_a}
+            hostile["placed"] = {b_device: location_a, "virt:x": location_a}
+            hostile["parents"] = {b_device: "virt:x", a_device: "virt:x"}
+            hostile["mains"] = {location_a: b_device}
             hostile["places"] = [*hostile["places"], {"id": "loc:stolen", "name": "Stolen", "kind": "location", "parent": None, "area_id": area_b}]
             hostile["virtual"] = [{"id": "virt:x", "name": "X"}]
             hostile["sums"] = {"virt:x": {"energy": {"entry": entry_id, "entity": "input_boolean.runtime_b_toggle"}}}
@@ -697,7 +699,11 @@ def run(version: str, *, keep: bool = False) -> None:
             saved = admin_a.command({"type": "optim_energy/tree/get"})["tree"]
             assert_equal(saved["prices"], {location_a: {"mode": "fixed", "fixed": 0.31}}, "client admin price save")
             assert_true(b_device not in (saved.get("placed") or {}), "foreign device was accepted into the tree")
-            assert_true(not saved.get("sums") and not saved.get("virtual"), "foreign Sum was accepted into the tree")
+            assert_true(not saved.get("sums"), "a Sum sent by the browser was accepted into the tree")
+            # Its own virtual device and its own device's parent are taken; Client B's device is left out of both.
+            assert_equal(saved.get("virtual"), [{"id": "virt:x", "name": "X"}], "a tenant admin's virtual device")
+            assert_equal(saved.get("parents"), {a_device: "virt:x"}, "parent devices saved by a tenant admin")
+            assert_equal(saved.get("mains") or {}, {}, "a foreign device was accepted as the main device")
             assert_true(
                 "loc:stolen" not in {place["id"] for place in saved["places"]},
                 "foreign area was accepted as a location",
@@ -722,6 +728,11 @@ def run(version: str, *, keep: bool = False) -> None:
             any(entry["entry_id"] == entry_id for entry in root.command({"type": "config_entries/get"})),
             "a client administrator removed a config entry",
         )
+        # Put the tree back as it was for the checks that follow.
+        tidy = client_tree(root, client_a)
+        tidy["virtual"], tidy["parents"] = [], {}
+        tidy["placed"] = {k: v for k, v in tidy["placed"].items() if not k.startswith("virt:")}
+        root.command({"type": "optim_energy/tree/save", "client": client_a, "tree": tidy})
 
         set_audit_mode(http, root_token, entry_id, True)
         wait_until(

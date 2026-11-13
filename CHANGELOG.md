@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0
+
+- **Tenant admins can create virtual devices and choose a parent device** (and the main device) for each of their devices, under Setup, Devices. The server accepts only the tenant's own devices and places; anything else in the request is left out. Sum helpers are still made by the checked commands, never taken from the browser.
+- **Device maps: four views.** Two switches on Devices, Map: what is shown, "Connection" or "Power", and how it is arranged, "By group" or "By device". By device follows the parent devices; a device with devices under it holds itself and them. In Power by group, a group shows what its devices draw together.
+- **Reports count devices, not channels.** A group with a two-channel meter and one other device said "Sum of 3 devices"; it now says 2.
+- Fixed: a virtual device made in Administration got its sum helpers only after the old Wiring page was opened. They are made right after saving.
+
 ## 0.16.0
 
 Setup for tenant admins, rebuilt; prices that survive an outage; real device names.

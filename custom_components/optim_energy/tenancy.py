@@ -331,8 +331,73 @@ def _guard_prices(prices: Any, locations: set[str]) -> dict[str, Any]:
     return clean
 
 
+_VIRTUAL_ID_RE = re.compile(r"^virt:[A-Za-z0-9_-]{1,40}$")
+_MAX_VIRTUAL = 100
+
+
+def _guard_wiring(clean: dict[str, Any], incoming: dict[str, Any], locations: set[str], devices: set[str]) -> None:
+    """Apply a tenant admin's virtual devices, parent devices and main devices.
+
+    These only arrange the tenant's own devices: who may read a device is
+    decided by its area, not by anything here. So the rule is simply that
+    every id must be one of the tenant's devices or virtual devices; what is
+    not is left out rather than taken on trust. Sums are never accepted from
+    the browser: they are written by the checked helper commands.
+    """
+    places = {str(p.get("id")) for p in _tree_places(clean)}
+    old_placed = {str(k): str(v) for k, v in (clean.get("placed") or {}).items()}
+    asked_placed = incoming.get("placed") if isinstance(incoming.get("placed"), dict) else {}
+    virtual = [v for v in clean.get("virtual") or [] if isinstance(v, dict)]
+    if "virtual" in incoming:
+        items = incoming["virtual"]
+        if not isinstance(items, list) or len(items) > _MAX_VIRTUAL:
+            raise HomeAssistantError("Virtual devices are not valid")
+        virtual, seen = [], set()
+        for item in items:
+            vid, name = (item.get("id"), item.get("name")) if isinstance(item, dict) else (None, None)
+            if not isinstance(vid, str) or not _VIRTUAL_ID_RE.match(vid) or vid in seen:
+                raise HomeAssistantError("A virtual device is not valid")
+            if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
+                raise HomeAssistantError("Enter a virtual device name of up to 80 characters")
+            seen.add(vid)
+            virtual.append({"id": vid, "name": name.strip()})
+        clean["virtual"] = virtual
+    virtual_ids = {str(v["id"]) for v in virtual}
+    nodes = devices | virtual_ids
+    # Real devices stay where the server has them; only virtual devices are placed from here.
+    placed = {k: v for k, v in old_placed.items() if not k.startswith("virt:")}
+    for vid in virtual_ids:
+        place = asked_placed.get(vid) or old_placed.get(vid)
+        if place not in places:
+            raise HomeAssistantError("Choose a location or group of this tenant for the virtual device")
+        placed[vid] = str(place)
+    clean["placed"] = placed
+    asked_parents = incoming["parents"] if isinstance(incoming.get("parents"), dict) else clean.get("parents") or {}
+    parents = {
+        str(child): str(parent)
+        for child, parent in asked_parents.items()
+        if str(child) in nodes and str(parent) in nodes and str(child) != str(parent)
+    }
+    for child in list(parents):
+        walk, seen_up = parents[child], {child}
+        while walk in parents and walk not in seen_up:
+            seen_up.add(walk)
+            walk = parents[walk]
+        if walk in seen_up:
+            raise HomeAssistantError("A device cannot be its own parent")
+    clean["parents"] = parents
+    asked_mains = incoming["mains"] if isinstance(incoming.get("mains"), dict) else clean.get("mains") or {}
+    clean["mains"] = {
+        str(location): str(device)
+        for location, device in asked_mains.items()
+        if str(location) in locations and str(device) in nodes
+    }
+    if clean.get("main") is not None and str(clean["main"]) not in nodes:
+        clean["main"] = None
+
+
 def _client_tree_update(
-    stored: dict[str, Any], incoming: Any, locations: set[str]
+    stored: dict[str, Any], incoming: Any, locations: set[str], devices: set[str] | None = None
 ) -> dict[str, Any]:
     """Apply what a client administrator may change to the stored tree."""
     if not isinstance(incoming, dict):
@@ -340,6 +405,8 @@ def _client_tree_update(
     clean = copy.deepcopy(stored)
     if "prices" in incoming:
         clean["prices"] = _guard_prices(incoming["prices"], locations)
+    if devices is not None and any(key in incoming for key in ("virtual", "parents", "mains")):
+        _guard_wiring(clean, incoming, locations, devices)
     return clean
 
 
@@ -792,7 +859,9 @@ class TenancyManager:
                 if entry.get("client") == client_id
             }
             stored = self.data["trees"].get(client_id) or _copy_tree(None, str(ctx["client_name"] or client_id))
-            clean = _client_tree_update(stored, tree, locations)
+            area_ids = {place.get("area_id") for place in _place_locations(stored)} - {None}
+            devices = {d.id for d in dr.async_get(self.hass).devices if d.area_id in area_ids}
+            clean = _client_tree_update(stored, tree, locations, devices)
         return await self.async_store_tree(client_id, clean)
 
     async def async_store_tree(self, client_id: str, tree: dict[str, Any]) -> dict[str, Any]:
@@ -1814,9 +1883,10 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
                 "clients": manager.client_list(connection.user),
                 "capabilities": {
                     "manage_tree": manager.can_manage_tree(ctx),
-                    # Wiring, main devices and virtual devices decide what a
-                    # client can see, so only root changes them.
-                    "manage_wiring": ctx["is_root"],
+                    # Parent devices, main devices and virtual devices only arrange a tenant's
+                    # own devices (who sees a device is decided by its area), so whoever
+                    # manages the tenant may change them.
+                    "manage_wiring": manager.can_manage_tree(ctx),
                     "manage_ha": ctx["is_root"],
                     "manage_users": ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN,
                 },

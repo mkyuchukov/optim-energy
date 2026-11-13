@@ -347,8 +347,8 @@ class TenancyTests(unittest.TestCase):
     def test_client_admin_tree_save_changes_prices_only(self) -> None:
         stored = {
             "places": [{"id": "loc:a", "kind": "location"}],
-            "placed": {"d:a": "loc:a"},
-            "virtual": [{"id": "virt:a"}],
+            "placed": {"d:a": "loc:a", "virt:a": "loc:a"},
+            "virtual": [{"id": "virt:a", "name": "A"}],
             "sums": {"virt:a": {"energy": {"entry": "own", "entity": "sensor.a"}}},
             "automations": [{"entity": "automation.a"}],
             "parents": {},
@@ -367,6 +367,35 @@ class TenancyTests(unittest.TestCase):
         }
         clean = tenancy._client_tree_update(stored, hostile, {"loc:a"})
         assert clean == {**stored, "prices": {"loc:a": {"mode": "fixed", "fixed": 0.2}}}
+        # With the tenant's own devices known, its virtual devices, parent devices and main devices are
+        # taken; anything naming a device of another tenant is left out, and sums never come from the browser.
+        own = {"d:a", "d:a2"}
+        wired = tenancy._client_tree_update(
+            stored,
+            {
+                "virtual": [{"id": "virt:a", "name": "A"}, {"id": "virt:new", "name": " New "}],
+                "placed": {"virt:new": "loc:a", "d:b": "loc:a", "d:a": "loc:elsewhere"},
+                "parents": {"d:a": "virt:new", "d:a2": "d:a", "d:b": "d:a", "d:a3": "d:b"},
+                "mains": {"loc:a": "virt:new", "loc:b": "d:a"},
+                "sums": {"virt:new": {"energy": {"entry": "mqtt_entry", "entity": "sensor.b"}}},
+            },
+            {"loc:a"},
+            own,
+        )
+        assert wired["virtual"] == [{"id": "virt:a", "name": "A"}, {"id": "virt:new", "name": "New"}]
+        assert wired["placed"] == {"d:a": "loc:a", "virt:a": "loc:a", "virt:new": "loc:a"}, wired["placed"]
+        assert wired["parents"] == {"d:a": "virt:new", "d:a2": "d:a"}, wired["parents"]
+        assert wired["mains"] == {"loc:a": "virt:new"}
+        assert wired["sums"] == stored["sums"]
+        for bad in (
+            {"virtual": [{"id": "device:b", "name": "X"}]},
+            {"virtual": [{"id": "virt:x", "name": ""}]},
+            {"virtual": [{"id": "virt:x", "name": "X"}]},  # no place
+            {"virtual": [{"id": "virt:x", "name": "X"}], "placed": {"virt:x": "loc:b"}},
+            {"parents": {"d:a": "d:a2", "d:a2": "d:a"}},
+        ):
+            with self.assertRaises(RuntimeError):
+                tenancy._client_tree_update(stored, bad, {"loc:a"}, own)
         for bad in (
             {"loc:b": {"mode": "fixed"}},  # another client's location
             {"loc:a": {"mode": "exchange", "sensor": "sensor.x') }}{{ states('sensor.b"}},

@@ -261,13 +261,28 @@ try {
     await setupDevices.getByRole('heading', { level: 1, name: 'Devices' }).waitFor({ timeout: 30000 });
     const meterRow = setupDevices.locator('#admin tbody tr').filter({ hasText: 'Browser Meter A' }).first();
     await meterRow.waitFor({ timeout: 30000 });
-    assert.equal(await setupDevices.locator('[data-new-virtual], [data-delete-virtual], [data-inbox-remove], [data-device-view], [data-add-device]').count(), 0, 'a tenant admin is offered an administrator\'s device controls');
+    assert.equal(await setupDevices.locator('[data-inbox-remove], [data-device-view], [data-add-device]').count(), 0, 'a tenant admin is offered an administrator\'s device controls');
+    // A tenant admin makes a virtual device and puts a device under it as its parent.
+    await setupDevices.locator('[data-new-virtual]').click();
+    await setupDevices.locator('#editorName').fill('Admin Virtual');
+    await setupDevices.locator('dialog[open] [data-save-editor]').click();
+    const virtualRow = setupDevices.locator('#admin tbody tr').filter({ hasText: 'Virtual device' }).filter({ hasText: 'Admin Virtual' }).first();
+    await virtualRow.waitFor({ timeout: 20000 });
     await meterRow.locator('[data-edit-device]').click();
     await setupDevices.locator('dialog[open] #deviceLocation').waitFor({ timeout: 10000 });
-    assert.equal(await setupDevices.locator('dialog[open] #deviceGroup').count(), 1, 'the device dialog has no group field');
-    assert.equal(await setupDevices.locator('dialog[open] #editorParent, dialog[open] #editorMain, dialog[open] #deviceClient').count(), 0, 'a tenant admin is offered wiring, the main device or another tenant');
+    assert.equal(await setupDevices.locator('dialog[open] #deviceGroup, dialog[open] #editorParent, dialog[open] #editorMain').count(), 3, 'the device dialog lacks group, parent device or main device');
+    assert.equal(await setupDevices.locator('dialog[open] #deviceClient').count(), 0, 'a tenant admin is offered another tenant');
+    await setupDevices.locator('dialog[open] #editorParent').selectOption({ label: 'Admin Virtual' });
     await shot(adminPage, 'setup-device-dialog');
-    await setupDevices.locator('dialog[open] .form-actions [data-cancel-editor]').click();
+    await setupDevices.locator('dialog[open] [data-save-editor]').click();
+    await meterRow.getByText('Admin Virtual').waitFor({ timeout: 20000 });
+    // The parent survives a reload, so the server took it.
+    await adminPage.reload({ waitUntil: 'domcontentloaded' });
+    const setupDevicesAgain = await waitCard(adminPage, 'building-admin-table-card');
+    await setupDevicesAgain.locator('#admin tbody tr').filter({ hasText: 'Browser Meter A' }).first().getByText('Admin Virtual').waitFor({ timeout: 30000 });
+    await setupDevicesAgain.locator('#admin tbody tr').filter({ hasText: 'Virtual device' }).filter({ hasText: 'Admin Virtual' }).first().locator('[data-delete-virtual]').click();
+    await setupDevicesAgain.locator('dialog[open] [data-save-editor]').click();
+    await setupDevicesAgain.locator('#admin tbody tr').filter({ hasText: 'Virtual device' }).filter({ hasText: 'Admin Virtual' }).first().waitFor({ state: 'detached', timeout: 20000 });
 
     // ... and renames a device and moves it into that group from the device's own page.
     await adminPage.goto(`${base}/energy-locations/start`, { waitUntil: 'domcontentloaded' });
@@ -290,6 +305,20 @@ try {
       await adminPage.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
       await adminPage.waitForTimeout(2500);
     }
+    // The device map: connection or power, each arranged by group or by device. All four draw.
+    await adminPage.goto(`${base}/energy-devices/topology`, { waitUntil: 'domcontentloaded' });
+    const map = await waitCard(adminPage, 'building-topology-card');
+    for (const [mode, by] of [['network', 'group'], ['network', 'device'], ['wiring', 'group'], ['wiring', 'device']]) {
+      await map.locator(`[data-mode="${mode}"]`).click();
+      await map.locator(`[data-by="${by}"]`).click();
+      await map.locator('#world [data-id="root"]').waitFor({ timeout: 20000 });
+      await adminPage.waitForTimeout(600);
+      const drawn = await map.locator('#world [data-id]').count();
+      assert.ok(drawn >= 3, `the ${mode} map by ${by} drew ${drawn} nodes`);
+      assert.equal(await map.locator(`[data-mode="${mode}"][aria-pressed="true"], [data-by="${by}"][aria-pressed="true"]`).count(), 2, 'the map does not show which view is chosen');
+      await shot(adminPage, `map-${mode}-${by}`);
+    }
+    assert.ok(await map.locator('#world [data-id]').filter({ hasText: 'Renamed Meter' }).count(), 'a device is missing from the map');
     await adminPage.goto(`${base}/energy-devices/list`, { waitUntil: 'domcontentloaded' });
     const withLamp = await waitCard(adminPage, 'building-devices-card');
     await withLamp.locator('[data-device]').filter({ hasText: 'Browser Lamp A' }).first().waitFor({ timeout: 20000 });
