@@ -598,6 +598,21 @@ What the start-up changed in Home Assistant: 51 channel devices of Cleverpine's 
 | Rollback checkpoint | Reinstall `v0.14.1` from the Marketplace; no stored data changed |
 | Incidents / follow-up | None |
 
+### 2026-11-13 v0.15.1, market price for tenants
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.15.0 / 0.15.1, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.15.1-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | After the restart each tenant's entity list holds the nine ENTSO-e price sensors, including the one Cleverpine's price uses (1,175 and 66 entities, 9 more each). The checks box and its command are gone. No channel device is out of its meter's area. Device list totals and groups unchanged. No client-account login was performed, so the chart itself and the landing page were not seen as a tenant user |
+| Rollback checkpoint | Reinstall `v0.15.0` from the Marketplace; no stored data changed |
+| Incidents / follow-up | Found by the user: a tenant user had no exchange price chart on Overview |
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
