@@ -1537,7 +1537,7 @@ const ADMIN_TABLE_CSS = `
 .admin-head .admin-actions{gap:8px}.admin-head .admin-actions button{height:36px;padding:0 14px;font-size:13px}
 .admin-control{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.admin-control select{height:36px;min-width:180px;max-width:260px}
 .toolbar-label{font-size:12.5px;color:var(--muted)}.toolbar-label b{color:var(--fg)}
-.admin-banner{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:14px 16px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--accent) 6%,var(--panel))}.admin-banner>div{flex:1 1 320px;display:grid;gap:4px}
+.admin-banner{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:14px 16px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--accent) 6%,var(--panel))}.admin-banner>div{flex:1 1 320px;display:grid;gap:4px}.admin-banner.ok{border-color:color-mix(in srgb,var(--ok) 40%,var(--line));background:color-mix(in srgb,var(--ok) 6%,var(--panel))}.admin-banner.bad{border-color:color-mix(in srgb,var(--bad) 45%,var(--line));background:color-mix(in srgb,var(--bad) 6%,var(--panel))}.admin-banner .admin-note b{color:var(--fg)}
 .admin-card{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden;min-width:0}
 .admin-card-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}.admin-card-head .sp{flex:1}
 .admin-card-head h2{margin:0;font-size:15px;letter-spacing:-.01em}.admin-card-head h2 small{display:block;margin-top:2px;font-weight:400;font-size:12px;color:var(--muted)}
@@ -3156,6 +3156,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         ]);
         // Every Home Assistant device with where it is.
         const inbox = root ? await this._hass.callWS({ type: 'optim_energy/device/inbox' }).catch(() => null) : null;
+        // What every tenant user should see against what they can actually read, checked by the server.
+        const health = root && this._section === 'clients' ? await this._hass.callWS({ type: 'optim_energy/health' }).catch(() => null) : null;
         let summaries = [];
         if (root) {
           summaries = await Promise.all((PORTAL.clients || []).map(async (item) => {
@@ -3185,6 +3187,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         this._users = Array.isArray(users) ? users : [];
         this._summaries = summaries;
         this._inbox = Array.isArray(inbox) ? inbox : null;
+        this._health = health;
         this._picked = new Set([...this._picked].filter((id) => (this._inbox || []).some((d) => d.id === id)));
         // The wiring table and its Add dialog offer what the inbox recognised, from any integration,
         // on top of the older Zigbee2MQTT and Shelly rule.
@@ -3341,7 +3344,17 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const rows = list.map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}</button></td><td class="num">${item.locations || 0}</td><td class="num">${item.people || 0}</td><td class="num">${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action('Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
       const head = `${this.search('clientSearch', 'Search tenants')}<span class="sp"></span><span class="toolbar-label">${list.length} ${list.length === 1 ? 'tenant' : 'tenants'}</span>`;
       const empty = this._q.clientSearch ? 'No tenant matches the search.' : 'No tenants yet. Start with New tenant.';
-      return this.card(head, this.table(['Tenant', { text: 'Locations', cls: 'num' }, { text: 'Users', cls: 'num' }, { text: 'Devices', cls: 'num' }, 'Actions'], rows, '', empty), 'Open a tenant to manage its locations, users and devices. Preview shows the portal as that tenant sees it.');
+      const table = this.card(head, this.table(['Tenant', { text: 'Locations', cls: 'num' }, { text: 'Users', cls: 'num' }, { text: 'Devices', cls: 'num' }, 'Actions'], rows, '', empty), 'Open a tenant to manage its locations, users and devices. Preview shows the portal as that tenant sees it.');
+      return `${this.renderHealth()}${table}`;
+    }
+    // The server compares what each user should see with what Home Assistant lets them read, so a
+    // user seeing less than the administrator shows up here instead of having to be noticed by hand.
+    renderHealth() {
+      const h = this._health;
+      if (!h) return '';
+      const n = h.problems.length, c = h.checked || {};
+      if (!n) return `<div class="admin-banner ok" id="health"><div><b>All checks passed</b><p class="admin-note">Every user can read all devices of their locations. Checked ${c.devices} devices and ${c.users} ${c.users === 1 ? 'user' : 'users'}.</p></div></div>`;
+      return `<div class="admin-banner bad" id="health"><div><b>${n} ${n === 1 ? 'thing needs' : 'things need'} attention</b>${h.problems.slice(0, 12).map((x) => `<p class="admin-note"><b>${esc(x.where)}</b> ${esc(x.text)}</p>`).join('')}${n > 12 ? `<p class="admin-note">And ${n - 12} more.</p>` : ''}</div></div>`;
     }
     renderPeople() {
       const all = this._users || [], n = (role) => all.filter((u) => u.role === role).length;
