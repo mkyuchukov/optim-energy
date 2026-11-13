@@ -457,7 +457,7 @@ Other changes on 2026-11-13, all through Administration commands and none needin
 - Three manual backups from the first rollouts (`before-optim-energy-v0.3.0`, `-v0.3.1` and `-v0.4.0`, all dated 2026-11-12) were deleted from the VM, freeing about 3.4 GB.
 - The Zigbee coordinator ("Dongle-M_C3A0") and the Zigbee2MQTT bridge were marked Ignore in the device inbox.
 
-Open operational items: every backup is stored on the VM itself, so an off-VM backup location still has to be added; and the labels and areas kept by the 0.7.0 migration are still in place as its rollback path.
+Open operational items: every backup is stored on the VM itself, so an off-VM backup location still has to be added; and the labels and areas kept by the 0.7.0 migration were still in place as its rollback path (removed later the same day, see below).
 
 ### 2026-11-13 v0.11.0 and the split into two clients
 
@@ -480,6 +480,23 @@ The split, done with Administration commands and no restart. The single client "
 - The remaining client was renamed "Cleverpine": 43 devices, 758 entities, 5 groups, 4 virtual devices, 4 schedules, its exchange price, and the one person.
 - Both locations were renamed "Sofia". Their Home Assistant areas are "Sofia (Cleverpine)" and "Sofia (Optimal Industries)", each on its client's floor, because Home Assistant does not allow two areas with one name.
 - Totals did not change: 134 devices, 1,486 entities, 45 assigned in the device list.
+
+### 2026-11-13 old areas removed, v0.11.1
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, afternoon |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.11.0 / 0.11.1, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-old-areas-cleanup-2026-11-13` before the cleanup and `before-0.11.1-2026-11-13` before the install, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | After both steps: 758 and 57 entities, 5 and 4 groups, 47 and 4 placements, 45 assigned / 2 ignored / 35 not portal devices, one person. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.11.0` from the Marketplace; for the cleanup, restore `before-old-areas-cleanup-2026-11-13` with Home Assistant stopped |
+| Incidents / follow-up | The cleanup script stopped on a result-handling error after its deletions; the state was re-read and the one remaining label deleted by hand |
+
+The cleanup removed what the 0.7.0 migration had kept as its rollback path: eight empty Home Assistant areas (the old rooms, which are now plugin groups) and the two old location labels. Home Assistant now has exactly two areas, one per client, and no "Other areas".
 
 ## Repository protection
 
