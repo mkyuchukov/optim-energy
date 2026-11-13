@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from acceptance import (
-    seed_legacy_dashboard,
     OWNER_PASSWORD,
     OWNER_USERNAME,
     RuntimeHarness,
@@ -20,14 +19,12 @@ from acceptance import (
     complete_onboarding,
     create_config_entry,
     create_fixture_entry,
-    ensure_area,
+    ensure_location,
     ensure_client,
-    ensure_label,
     ensure_user,
     free_port,
-    location_for_label,
     read_policy_group,
-    set_entity_place,
+    set_entity_area,
     wait_until,
 )
 from ha_client import Http, WebSocket, wait_ready, wait_server
@@ -164,8 +161,6 @@ def run(version: str, *, keep: bool = False) -> None:
     try:
         harness.start()
         root_token = complete_onboarding(http)
-        # These flows start on the label model and migrate, so the instance needs an older tree.
-        seed_legacy_dashboard(harness, http, root_token)
         entry_id = create_config_entry(http, root_token)
         fixture_entry_id = create_fixture_entry(http, root_token)
         root = WebSocket(http.host, http.port)
@@ -178,23 +173,15 @@ def run(version: str, *, keep: bool = False) -> None:
         )
         assert_dashboards(root, include_admin=True)
 
-        label_specs = {
-            "a_north": ("Scale A North", "scale_a_north"),
-            "a_south": ("Scale A South", "scale_a_south"),
-            "a_west": ("Scale A West", "scale_a_west"),
-            "b": ("Scale B", "scale_b"),
-            "c": ("Scale C", "scale_c"),
-        }
-        labels = {scope: spec[1] for scope, spec in label_specs.items()}
-        for name, label_id in label_specs.values():
-            ensure_label(root, label_id, name)
-        areas = {
-            "a_north": ensure_area(root, "living_room", "Living Room", labels["a_north"]),
-            "a_south": ensure_area(root, "scale_a_south", "A South", labels["a_south"]),
-            "a_west": ensure_area(root, "scale_a_west", "A West", labels["a_west"]),
-            "b": ensure_area(root, "kitchen", "Kitchen", labels["b"]),
-            "c": ensure_area(root, "bedroom", "Bedroom", labels["c"]),
-        }
+        client_a, _ = ensure_client(root, "Scale Client A")
+        client_b, _ = ensure_client(root, "Scale Client B")
+        client_c, _ = ensure_client(root, "Scale Client C")
+        root.command({"type": "optim_energy/client/delete", "client": "default"})
+        client_of = {"a_north": client_a, "a_south": client_a, "a_west": client_a, "b": client_b, "c": client_c}
+        location_ids: dict[str, str] = {}
+        areas: dict[str, str] = {}
+        for scope, name in (("a_north", "Scale A North"), ("a_south", "Scale A South"), ("a_west", "Scale A West"), ("b", "Scale B"), ("c", "Scale C")):
+            location_ids[scope], areas[scope] = ensure_location(root, client_of[scope], name)
 
         entity_scopes: dict[str, set[str]] = {
             "a_north": set(),
@@ -211,16 +198,16 @@ def run(version: str, *, keep: bool = False) -> None:
             else:
                 scope, area_id = "a_west", areas["a_west"]
             entity_id = f"input_boolean.runtime_a_{index:03d}"
-            set_entity_place(root, entity_id, area_id, labels[scope])
+            set_entity_area(root, entity_id, area_id)
             entity_scopes[scope].add(entity_id)
         for client in ("b", "c"):
             for index in range(120):
                 entity_id = f"input_boolean.runtime_{client}_{index:03d}"
-                set_entity_place(root, entity_id, areas[client], labels[client])
+                set_entity_area(root, entity_id, areas[client])
                 entity_scopes[client].add(entity_id)
         for client, scope in (("a", "a_north"), ("b", "b"), ("c", "c")):
             sensor = f"sensor.runtime_{client}_energy"
-            set_entity_place(root, sensor, areas[scope], labels[scope])
+            set_entity_area(root, sensor, areas[scope])
             entity_scopes[scope].add(sensor)
 
         fixture = root.command(
@@ -229,45 +216,26 @@ def run(version: str, *, keep: bool = False) -> None:
                 "config_entry_id": fixture_entry_id,
                 "devices": [
                     {"key": "a_area", "name": "Scale A Area Device", "area_id": areas["a_north"]},
-                    {"key": "a_label", "name": "Scale A Label Device", "labels": [labels["a_north"]]},
+                    {"key": "a_second", "name": "Scale A Second Device", "area_id": areas["a_north"]},
                     {"key": "b_area", "name": "Scale B Area Device", "area_id": areas["b"]},
-                    {"key": "b_label", "name": "Scale B Label Device", "labels": [labels["b"]]},
+                    {"key": "b_second", "name": "Scale B Second Device", "area_id": areas["b"]},
                     {"key": "c_area", "name": "Scale C Area Device", "area_id": areas["c"]},
-                    {"key": "c_label", "name": "Scale C Label Device", "labels": [labels["c"]]},
+                    {"key": "c_second", "name": "Scale C Second Device", "area_id": areas["c"]},
                 ],
             }
         )
         device_ids = {item["name"]: item["id"] for item in fixture}
 
-        client_a, _ = ensure_client(root, "Scale Client A")
-        client_b, _ = ensure_client(root, "Scale Client B")
-        client_c, _ = ensure_client(root, "Scale Client C")
-        root.command({"type": "optim_energy/client/delete", "client": "default"})
-        client_scopes = {
-            client_a: ["a_north", "a_south", "a_west"],
-            client_b: ["b"],
-            client_c: ["c"],
-        }
-        for client_id, scopes in client_scopes.items():
-            root.command(
-                {
-                    "type": "optim_energy/client/set_locations",
-                    "client": client_id,
-                    "labels": [labels[scope] for scope in scopes],
-                }
-            )
+        def save_trees() -> None:
+            # Saving a tree queues the permission sync, as any change does.
+            for client_id in (client_a, client_b, client_c):
+                root.command({"type": "optim_energy/tree/save", "client": client_id, "tree": client_tree(root, client_id)})
 
         sync_started = time.monotonic()
         for _ in range(3):
-            for client_id, scopes in client_scopes.items():
-                root.command(
-                    {
-                        "type": "optim_energy/client/set_locations",
-                        "client": client_id,
-                        "labels": [labels[scope] for scope in scopes],
-                    }
-                )
+            save_trees()
         sync_seconds = round(time.monotonic() - sync_started, 3)
+        time.sleep(5)  # longer than the debounced permission sync
         baseline_policy = wait_until(
             lambda: (
                 snapshot
@@ -276,32 +244,13 @@ def run(version: str, *, keep: bool = False) -> None:
             ),
             "initial scale policies were not persisted",
         )
-        root.command(
-            {
-                "type": "optim_energy/client/set_locations",
-                "client": client_a,
-                "labels": [labels["a_north"], labels["a_south"], labels["a_west"]],
-            }
-        )
+        save_trees()
+        time.sleep(5)
         assert_equal(
             policy_snapshot(harness),
             baseline_policy,
             "permission synchronization is idempotent",
         )
-
-        trees = {
-            scope: client_tree(
-                root,
-                client_a
-                if scope.startswith("a_")
-                else client_b if scope == "b" else client_c,
-            )
-            for scope in entity_scopes
-        }
-        location_ids = {
-            scope: location_for_label(tree, labels[scope])
-            for scope, tree in trees.items()
-        }
 
         user_specs: list[dict[str, Any]] = []
         for index in (1, 2):
@@ -384,31 +333,27 @@ def run(version: str, *, keep: bool = False) -> None:
                 )
                 expected_devices = {
                     device_ids["Scale A Area Device"],
-                    device_ids["Scale A Label Device"],
+                    device_ids["Scale A Second Device"],
                 }
                 expected_areas = {areas["a_north"], areas["a_south"], areas["a_west"]}
-                expected_labels = {labels["a_north"], labels["a_south"], labels["a_west"]}
             else:
                 scope = spec["scope"]
                 expected_entities = entity_scopes[scope]
                 expected_areas = {areas[scope]}
-                # Ordinary users must only receive labels for their own
-                # assigned location, even when their client owns more.
-                expected_labels = {labels[scope]}
                 if spec["client"] == client_a and scope != "a_north":
                     expected_devices = set()
                 else:
                     prefix = client_key
                     expected_devices = {
                         device_ids[f"Scale {prefix} Area Device"],
-                        device_ids[f"Scale {prefix} Label Device"],
+                        device_ids[f"Scale {prefix} Second Device"],
                     }
             assert_role_scope(
                 ws,
                 expected_entities=expected_entities,
                 expected_devices=expected_devices,
                 expected_areas=expected_areas,
-                expected_labels=expected_labels,
+                expected_labels=set(),  # no type labels in this suite, and a location is not a label
                 foreign_entity="input_boolean.runtime_c_000"
                 if spec["client"] != client_c
                 else "input_boolean.runtime_a_000",
@@ -476,7 +421,6 @@ def run(version: str, *, keep: bool = False) -> None:
                     "type": "config/entity_registry/update",
                     "entity_id": entity_id,
                     "area_id": areas["a_south"],
-                    "labels": [labels["a_south"]],
                 }
             )
             entity_scopes["a_west"].remove(entity_id)
@@ -519,13 +463,12 @@ def run(version: str, *, keep: bool = False) -> None:
         finally:
             south_ws.close()
 
-        root.command(
-            {
-                "type": "optim_energy/client/set_locations",
-                "client": client_c,
-                "labels": [labels["c"], labels["b"]],
-            }
-        )
+        # A location moves to another client once nobody is assigned to it; its old client loses it at once.
+        for spec, user in zip(user_specs, users):
+            if spec["client"] == client_b and spec["role"] == "user":
+                root.command({"type": "optim_energy/user/delete", "user_id": user["id"]})
+        root.command({"type": "optim_energy/location/move", "client": client_b, "location": location_ids["b"], "target": client_c})
+        time.sleep(5)
         b_admin_spec = next(
             spec for spec in user_specs if spec["username"].startswith("scale_b_admin")
         )
@@ -536,7 +479,7 @@ def run(version: str, *, keep: bool = False) -> None:
                 for state in b_admin_ws.command({"type": "get_states"})
                 if state["entity_id"].startswith("input_boolean.")
             }
-            assert_equal(b_input_states, set(), "moved client labels revoked access")
+            assert_equal(b_input_states, set(), "a moved location revoked access")
         finally:
             b_admin_ws.close()
         b_admin_token = http.login(b_admin_spec["username"], PASSWORD)["access_token"]

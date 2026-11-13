@@ -103,31 +103,20 @@ assert.ok(Math.abs(spr.reduce((t, r) => t + r.change, 0) - 11.5) < 1e-9, 'no ene
 assert.strictEqual(spr.find((r) => +new Date(r.start) === T0 + 5 * Hr).state, 100, 'the reading stays on the row it came from');
 assert.deepStrictEqual(m.spreadCatchUp([{ start: T0 + 5 * Hr, change: 500 }], pw), [{ start: T0 + 5 * Hr, change: 500 }], 'impossible jump left for the spike filter');
 console.log('catch-up ok');
-// Sites from Home Assistant: a map-pin label is a location, its areas are groups, a floor holding them is the group above.
-const labs = [{ label_id: 'sofia', name: '📍 Example Site', icon: 'mdi:map-marker' }, { label_id: 'plovdiv', name: 'Other Site', icon: 'mdi:map-marker-outline' }, { label_id: 'energy_meter', name: 'energy-meter', icon: null }];
-const floors = [{ floor_id: 'f1', name: 'Floor 1' }, { floor_id: 'f9', name: 'Unused' }];
-const areas = [{ area_id: 'hall', name: 'Hallway', labels: ['sofia'], floor_id: 'f1' }, { area_id: 'kit', name: 'Kitchen', labels: ['sofia'] }, { area_id: 'pd', name: 'Shop', labels: ['plovdiv'] }, { area_id: 'loose', name: 'Garage', labels: [] }];
-const nat = m.nativePlaces(labs, floors, areas);
-assert.deepStrictEqual(nat.places.map((x) => `${x.id}<${x.parent}`), ['loc:sofia<null', 'loc:plovdiv<null', 'floor:f1<loc:sofia', 'area:hall<floor:f1', 'area:kit<loc:sofia', 'area:pd<loc:plovdiv']);
-assert.strictEqual(nat.places[0].name, 'Example Site', 'the pin is not part of the name');
-const devs = { a: { id: 'a', area_id: 'hall' }, b: { id: 'b', labels: ['plovdiv'] }, c: { id: 'c', area_id: 'loose' }, d: { id: 'd', area_id: 'kit', disabled_by: 'user' }, e: { id: 'e', area_id: 'pd', labels: ['exclude_from_portal'] }, f: { id: 'f', area_id: 'kit', labels: ['plovdiv'], name: 'F' } };
-assert.deepStrictEqual(m.nativePlaced(devs, nat), { a: 'area:hall', b: 'loc:plovdiv', f: 'area:kit' });
-assert.strictEqual(m.nativePlaces([{ label_id: 'x', name: 'x' }], [], []), null, 'no location label: the portal keeps its own');
-assert.deepStrictEqual(m.nativeProblems({ ...devs, g: { id: 'g', area_id: 'loose', name: 'G' } }, nat).length, 2);
-console.log('native sites ok');
-// Automations come from Home Assistant by area or 📍 label; a timed switch one is read as a schedule, anything else is listed as made in Home Assistant.
+// Places come from the server: locations and groups from its tree, each device's place from its list.
+const srvTree = { places: [{ id: 'loc:sofia', name: 'Sofia', kind: 'location', parent: null, area_id: 'sofia_a' }, { id: 'grp:hall', name: 'Hallway', kind: 'group', parent: 'loc:sofia' }], placed: { a: 'grp:hall', d: 'loc:sofia', e: 'loc:sofia' } };
+const nat = m.serverPlaces(srvTree, [{ label_id: 'sock', name: 'Socket' }, { label_id: 'em', name: 'Energy meter' }, { label_id: 'other', name: 'Whatever' }]);
+assert.deepStrictEqual(nat.places.map((x) => x.id), ['loc:sofia', 'grp:hall']);
+assert.deepStrictEqual(nat.locByArea, { sofia_a: 'loc:sofia' });
+assert.deepStrictEqual(nat.kinds, { sock: 'socket', em: 'meter' }, 'a label named for a type sets the type');
+const devs = { a: { id: 'a' }, c: { id: 'c' }, d: { id: 'd', disabled_by: 'user' }, e: { id: 'e', labels: ['exclude_from_portal'] } };
+assert.deepStrictEqual(m.nativePlaced(devs, nat), { a: 'grp:hall' }, 'unplaced, disabled and excluded devices are left out');
+assert.deepStrictEqual(m.serverPlaces(null, null).places, []);
+console.log('server places ok');
+// A timed switch automation is read as a schedule.
 const cfg = { triggers: [{ trigger: 'time', at: '18:30:00' }], conditions: [{ condition: 'time', weekday: ['fri', 'mon'] }], actions: [{ action: 'switch.turn_off', target: { entity_id: ['switch.a'] } }] };
 assert.deepStrictEqual(m.parseSchedule(cfg), { at: '18:30', how: 'off', days: ['mon', 'fri'] });
 assert.strictEqual(m.parseSchedule({ triggers: [{ trigger: 'state', entity_id: 'x' }], actions: [{ action: 'switch.turn_on' }] }), null);
-const ents = { 'automation.a': { entity_id: 'automation.a', area_id: 'hall' }, 'automation.b': { entity_id: 'automation.b', labels: ['plovdiv'] }, 'automation.c': { entity_id: 'automation.c', area_id: 'loose' }, 'sensor.x': { entity_id: 'sensor.x', area_id: 'hall' } };
-const sts = { 'automation.b': { attributes: { friendly_name: 'Motion' } } };
-const asAdmin = m.nativeAutomations(ents, sts, nat, [{ entity: 'automation.a', at: '07:00' }], { 'automation.a': cfg, 'automation.b': { triggers: [{ trigger: 'state' }] } });
-assert.deepStrictEqual(asAdmin.map((a) => [a.entity, a.place, a.at, a.custom]), [['automation.a', 'area:hall', '18:30', false], ['automation.b', 'loc:plovdiv', undefined, true]]);
-const asUser = m.nativeAutomations(ents, sts, nat, [{ entity: 'automation.a', at: '07:00' }], {});
-assert.deepStrictEqual(asUser.map((a) => [a.at, a.custom]), [['07:00', false], [undefined, true]], 'without settings: the time last saved, or made in HA');
-const natK = m.nativePlaces([...labs, { label_id: 'sock', name: 'Socket' }, { label_id: 'em', name: 'Energy meter' }], floors, areas);
-assert.deepStrictEqual(natK.kinds, { sock: 'socket', em: 'meter' });
-console.log('native automations and types ok');
 // A virtual device is a Sum helper of the real devices it adds up; a deleted one's helpers go.
 const plan = m.sumPlan({ virtual: [{ id: 'virt:a', name: 'A' }, { id: 'virt:far', name: 'Far' }], sums: { 'virt:gone': { energy: { entry: 'e1' }, power: { entry: 'e2' } }, 'virt:far': { energy: { entry: 'e3' } } } },
   [{ id: 'virt:a' }], () => [{ energy: 'sensor.b_e', power: 'sensor.b_p' }, { energy: 'sensor.a_e', power: null }, { energy: 'sensor.a_e' }]);

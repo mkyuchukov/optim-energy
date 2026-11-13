@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0
+
+The label model is gone. A client is a floor, a location is an area, and that is the only way the portal works now.
+
+- Removed: placing devices by location label, the "Switch now" migration and its notice, the commands `client/set_locations`, `location/catalog`, `migration/plan` and `migration/apply`, the offline dry-run tool, and the import of the pre-tenancy dashboard tree.
+- An installation that never switched must install 0.11.1 and switch under Administration first. On 0.12.0 such a store is not loaded: the integration fails to start and client accounts stay closed, with the reason in the log.
+- Fixed: an alert rule saved by a Home Assistant administrator is put in its location's area. It used to be given the id of the device's group, which is not an area.
+- No change for an installation already on floors and areas.
+
 ## 0.11.1
 
 - Devices: the "Looks like" column shows only the type. The entity that gave the device away is on hover.

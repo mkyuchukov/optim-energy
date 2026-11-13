@@ -42,7 +42,7 @@ The following remain shared: the recorder database, backups, logs, `/local` file
 - A device belongs to the location whose area it has. Giving a device that area in Home Assistant's own add-device flow assigns it, for any integration.
 - **Administration → Devices** lists every Home Assistant device with what it looks like and where it is. A Home Assistant administrator assigns, moves, removes or ignores devices there.
 - A client administrator renames devices, moves them between its own locations and groups, manages its groups and its people, and edits its own prices, alerts and schedules. It cannot create locations or take devices from another client.
-- An installation created before 0.7.0 places devices by label. Administration shows a notice with "See what would change" and "Switch now"; `tools/migration_dry_run.py` gives the same report offline. See `docs/CAPABILITIES.md` for who may call what.
+- An installation that still places devices by label (created before 0.7.0 and never switched) must install 0.11.1 and switch under Administration before upgrading to 0.12.0 or later. Until then the integration refuses to load and client accounts stay closed. See `docs/CAPABILITIES.md` for who may call what.
 
 ## Requirements
 
@@ -62,7 +62,7 @@ The following remain shared: the recorder database, backups, logs, `/local` file
 7. Enter the first client or site name.
 8. Open **Administration → People** to add client administrators and users. Client administrators use **Setup → People** for their own client.
 
-The integration replaces the known Optim Energy dashboards with the bundled layouts, repairs legacy dashboard resources, migrates the old `device_tree` into the tenant store, serves the portal assets and gives Home Assistant administrators an Administration console. Client accounts still land on their location picker.
+The integration replaces the known Optim Energy dashboards with the bundled layouts, repairs legacy dashboard resources, serves the portal assets and gives Home Assistant administrators an Administration console. Client accounts still land on their location picker.
 
 ## Updates
 
