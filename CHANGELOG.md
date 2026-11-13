@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.1
+
+- Devices, Map, Connection by device shows no groups. The location is at the centre, the top devices hang from it (the main device first, with a heavier ring), and each device carries the devices it is the parent of. A device that carries others is still a device: it opens its details and its name sits under it. A virtual device is a node of its own, marked Σ with a dashed ring.
+
 ## 0.17.0
 
 - **Tenant admins can create virtual devices and choose a parent device** (and the main device) for each of their devices, under Setup, Devices. The server accepts only the tenant's own devices and places; anything else in the request is left out. Sum helpers are still made by the checked commands, never taken from the browser.
