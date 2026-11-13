@@ -856,6 +856,19 @@ def run(version: str, *, keep: bool = False) -> None:
             else:
                 raise AssertionError("the old password still logs in")
             admin_a.command({"type": "optim_energy/user/update", "user_id": user_a["id"], "password": CLIENT_A_USER[1]})
+            # A group moves to another location of the tenant and takes its device, and that device's area, along.
+            other, other_area = ensure_location(root, client_a, "Runtime Site A2")
+            admin_a.command({"type": "optim_energy/group/save", "group": group, "name": "Lab", "parent": other})
+            moved_tree = admin_a.command({"type": "optim_energy/tree/get"})["tree"]
+            assert_equal(moved_tree["placed"].get(a_device), group, "the device left its group when the group moved")
+            assert_equal(
+                next(d["area_id"] for d in root.command({"type": "config/device_registry/list"}) if d["id"] == a_device),
+                other_area,
+                "the device did not follow its group to the new location",
+            )
+            refused(admin_a, {"type": "optim_energy/group/save", "group": group, "name": "Lab", "parent": location_b}, "moving a group into another tenant")
+            admin_a.command({"type": "optim_energy/group/save", "group": group, "name": "Lab", "parent": location_a})
+            root.command({"type": "optim_energy/location/delete", "client": client_a, "location": other})
             admin_a.command({"type": "optim_energy/group/delete", "group": group})
             assert_equal(admin_a.command({"type": "optim_energy/tree/get"})["tree"]["placed"].get(a_device), location_a, "device left a deleted group")
 

@@ -290,6 +290,30 @@ try {
       throw new Error(`group row did not appear; page says: ${(await locs.evaluate((el) => [...(el.shadowRoot || el).children].filter((x) => x.tagName !== 'STYLE').map((x) => x.textContent).join(' ')).catch(() => '')).replace(/\s+/g, ' ').slice(0, 1500)}`, { cause: error });
     });
     await shot(root, 'locations-managed');
+    // Edit, not Rename: one dialog with the group's name, its location and the devices in it.
+    const tick = (locator, on) => locator.evaluate((el, value) => { el.checked = value; el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); }, on);
+    assert.equal(await locs.locator('#admin').getByText('Devices in Browser A North').count(), 0, 'the Locations page still lists devices');
+    await groupRow.locator('[data-edit-group]').dispatchEvent('click');
+    await locs.locator('dialog[open] #groupLocation').waitFor({ timeout: 10000 });
+    assert.equal(await locs.locator('#groupLocation').inputValue(), state.location_a_north, 'the group dialog does not open on the group\'s location');
+    await tick(locs.locator('#groupDevices label').filter({ hasText: 'Browser Lamp A' }).locator('input'), true);
+    assert.match(await locs.locator('#groupCount').innerText(), /^1 of \d+$/, 'the dialog does not count the chosen devices');
+    await shot(root, 'group-dialog');
+    await locs.locator('[data-save-editor]').dispatchEvent('click');
+    await groupRow.locator('td.num').filter({ hasText: /^1$/ }).waitFor({ timeout: 20000 });
+    // The same dialog moves the group to another location, and its device goes along.
+    await groupRow.locator('[data-edit-group]').dispatchEvent('click');
+    await locs.locator('dialog[open] #groupLocation').selectOption(state.location_a_west);
+    await locs.locator('[data-save-editor]').dispatchEvent('click');
+    await groupRow.waitFor({ state: 'detached', timeout: 20000 });
+    await locs.locator(`[data-select-location="${state.location_a_west}"]`).first().dispatchEvent('click');
+    await groupRow.locator('td.num').filter({ hasText: /^1$/ }).waitFor({ timeout: 20000 });
+    await groupRow.locator('[data-edit-group]').dispatchEvent('click');
+    await locs.locator('dialog[open] #groupLocation').selectOption(state.location_a_north);
+    await locs.locator('[data-save-editor]').dispatchEvent('click');
+    await groupRow.waitFor({ state: 'detached', timeout: 20000 });
+    await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().dispatchEvent('click');
+    await groupRow.waitFor({ timeout: 20000 });
     await groupRow.locator('[data-delete-group]').dispatchEvent('click');
     await locs.locator('dialog[open] .confirm-text').waitFor({ timeout: 10000 });
     await shot(root, 'confirm-dialog');
@@ -303,7 +327,7 @@ try {
     await annex().waitFor({ timeout: 20000 });
     // A new, empty location says what to do next and shows a name, not an internal id.
     await annex().locator('[data-select-location]').first().dispatchEvent('click');
-    await locs.getByText('No devices in this location yet.', { exact: false }).first().waitFor({ timeout: 10000 });
+    await locs.getByText('No groups yet.', { exact: false }).first().waitFor({ timeout: 10000 });
     assert.doesNotMatch(await annex().innerText(), /loc:/, 'a location row shows its internal id');
     await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().dispatchEvent('click');
 
@@ -384,6 +408,13 @@ try {
     assert.equal(await devs.locator('#admin select[data-device-parent], #admin [data-set-main]').count(), 0, 'a device is still edited inside the table');
     await devs.locator('[data-edit-device]').first().dispatchEvent('click');
     await devs.locator('dialog[open] #editorParent').waitFor({ timeout: 10000 });
+    // Edit and Move are one dialog: tenant, location and group are separate fields, and the group follows the location.
+    assert.equal(await devs.locator('#admin [data-inbox-assign]').count(), 0, 'a separate Move button is still offered');
+    assert.equal(await devs.locator('dialog[open] #deviceClient, dialog[open] #deviceLocation, dialog[open] #deviceGroup').count(), 3, 'the device dialog lacks tenant, location or group');
+    assert.equal((await devs.locator('dialog[open] label:has(#editorMain)').innerText()).trim(), 'Main device', 'the main-device checkbox is wordy');
+    assert.equal(await devs.locator('dialog[open]').getByText('Supplied by').count(), 0, 'the old wording for the parent device is still used');
+    await devs.locator('dialog[open] #deviceLocation').selectOption(state.location_a_west);
+    assert.equal(await devs.locator('dialog[open] #deviceGroup option').count(), 1, 'groups of the previous location are still offered');
     await shot(root, 'device-dialog');
     await devs.locator('dialog[open] .form-actions [data-cancel-editor]').dispatchEvent('click');
     await devs.locator('dialog[open]').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
@@ -392,6 +423,14 @@ try {
     await root.goto(`${base}/energy-admin/people`, { waitUntil: 'domcontentloaded' });
     const rootPeople = await waitCard(root, 'building-admin-table-card');
     await rootPeople.locator('#people tbody tr').first().waitFor({ timeout: 20000 });
+    // All tenants: every user in one list, with the tenant named.
+    await rootPeople.locator('#clientSwitch').selectOption('');
+    await rootPeople.locator('#people tbody tr').filter({ hasText: 'Browser Admin B' }).first().waitFor({ timeout: 20000 });
+    assert.ok(await rootPeople.locator('#people tbody tr').filter({ hasText: 'Browser Admin A' }).count(), 'not every tenant\'s users are listed');
+    assert.match(await rootPeople.locator('#people thead').innerText(), /Tenant/i, 'the list does not say which tenant a user belongs to');
+    await shot(root, 'users-all-tenants');
+    await rootPeople.locator('#clientSwitch').selectOption(state.client_a);
+    await rootPeople.locator('#people tbody tr').filter({ hasText: 'Browser Admin B' }).first().waitFor({ state: 'detached', timeout: 20000 });
     await shot(root, 'people');
     await rootPeople.locator('[data-edit-person]').first().dispatchEvent('click');
     await rootPeople.locator('dialog[open] #editorRole').waitFor({ timeout: 10000 });

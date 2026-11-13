@@ -1570,17 +1570,17 @@ const ADMIN_TABLE_CSS = `
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted)}.dot.ok{background:var(--ok)}
 dialog.admin-modal{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:0;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--fg);box-shadow:0 24px 64px rgba(0,0,0,.35);overflow:auto}
 dialog.admin-modal::backdrop{background:rgba(0,0,0,.5)}
-.admin-editor{display:grid;gap:16px;padding:20px}
-.admin-editor header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.admin-editor h3{margin:0;font-size:18px;letter-spacing:-.02em;line-height:1.25;overflow-wrap:anywhere}
+.admin-editor{display:grid;gap:20px;padding:20px 24px 20px}
+.admin-editor header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 -24px;padding:0 24px 16px;border-bottom:1px solid var(--line)}.admin-editor h3{margin:0;font-size:18px;letter-spacing:-.02em;line-height:1.25;overflow-wrap:anywhere}
 .admin-editor .x{all:unset;cursor:pointer;width:28px;height:28px;display:grid;place-items:center;border-radius:7px;color:var(--muted);font-size:20px;line-height:1;flex:none}.admin-editor .x:hover{background:color-mix(in srgb,var(--fg) 8%,transparent);color:var(--fg)}
-.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-grid .wide,.form-grid p{grid-column:1/-1}
-.form-grid .field{display:grid;gap:6px;color:var(--muted);font-size:12px;min-width:0}.form-grid input:not([type=checkbox]),.form-grid select{width:100%;box-sizing:border-box;height:38px}
-.inline-action{all:unset;cursor:pointer;color:var(--accent);font-size:12px;font-weight:600;justify-self:start}.inline-action:hover{text-decoration:underline}
-.checks{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;max-height:180px;overflow:auto}.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--fg)}.check input{width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 12px;align-items:start}.form-grid .wide,.form-grid p{grid-column:1/-1}
+.form-grid .field{display:grid;gap:6px;color:var(--muted);font-size:12px;line-height:16px;min-width:0;align-content:start}.field-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;min-height:16px}.field-hint{font-variant-numeric:tabular-nums}.form-grid .admin-note{margin:-4px 0 0}.form-grid>.check{min-height:24px}.form-grid input:not([type=checkbox]),.form-grid select{width:100%;box-sizing:border-box;height:38px}
+.inline-action{all:unset;cursor:pointer;color:var(--accent);font-size:12px;line-height:16px;font-weight:600}.inline-action:hover{text-decoration:underline}
+.checks{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:8px;max-height:180px;overflow:auto;background:var(--page)}.checks.tall{max-height:min(280px,40vh)}.check{display:flex;gap:8px;align-items:center;font-size:13px;line-height:18px;color:var(--fg);min-width:0;cursor:pointer}.check>span{min-width:0;overflow-wrap:anywhere}.check-sub{margin-left:auto;padding-left:8px;color:var(--muted);font-size:11.5px;white-space:nowrap;flex:none}.check input{width:16px;height:16px;margin:0;accent-color:var(--accent)}
 .confirm-text{margin:0;font-size:14px;line-height:1.5;color:var(--fg)}
 .form-error{margin:0;color:var(--bad);font-size:13px}.form-error:empty{display:none}
-.form-actions{display:flex;justify-content:flex-end;gap:8px}.form-actions button{height:38px;padding:0 16px;font-size:13px}
-@media(max-width:700px){.admin-head{align-items:flex-start}.admin-head .admin-actions{width:100%}.admin-control{flex:1}.admin-control select{flex:1;min-width:0;max-width:none}.admin-card-head{padding:12px}.admin-search{flex:1 1 100%}.admin-table th,.admin-table td{padding:10px 8px}.admin-table th:first-child,.admin-table td:first-child{padding-left:12px}.admin-table th:last-child,.admin-table td:last-child{padding-right:12px}.admin-table .hide-s{display:none}.table-actions{flex-wrap:wrap}.form-grid{grid-template-columns:minmax(0,1fr)}.flash{bottom:96px}}
+.form-actions{display:flex;justify-content:flex-end;gap:8px;margin:0 -24px;padding:16px 24px 0;border-top:1px solid var(--line)}.form-actions button{height:38px;padding:0 16px;font-size:13px}
+@media(max-width:700px){.admin-head{align-items:flex-start}.admin-head .admin-actions{width:100%}.admin-control{flex:1}.admin-control select{flex:1;min-width:0;max-width:none}.admin-card-head{padding:12px}.admin-search{flex:1 1 100%}.admin-table th,.admin-table td{padding:10px 8px}.admin-table th:first-child,.admin-table td:first-child{padding-left:12px}.admin-table th:last-child,.admin-table td:last-child{padding-right:12px}.admin-table .hide-s{display:none}.table-actions{flex-wrap:wrap}.form-grid{grid-template-columns:minmax(0,1fr)}.admin-editor{padding:16px}.admin-editor header{margin:0 -16px;padding:0 16px 12px}.form-actions{margin:0 -16px;padding:12px 16px 0}.form-actions button{flex:1}.flash{bottom:96px}}
 `;
 
 const SERIES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
@@ -1773,7 +1773,7 @@ function drawerHtml(d, st, now, totals) {
   const last = fresh.length ? Math.round((now - Math.max(...fresh)) / 60000) : null;
   const up = nodeById(parentOf(d.id)), under = childrenOf(d.id), inTree = nodeIds.has(d.id);
   const u = inTree && totals ? unmeasuredOf([d.id], (id) => totals.devices[id]?.today ?? null, totals.stale) : null;
-  const wiring = inTree ? `<div><span>Supplied by</span><span>${up ? esc(up.name) : TREE.main === d.id ? 'The grid (main device)' : 'Top of the building'}</span></div>${under.length ? `<div><span>Supplies</span><span>${under.length} ${under.length === 1 ? 'device' : 'devices'}</span></div>` : ''}${u?.nodes[0]?.kwh != null ? `<div><span>Today</span><span>${u.nodes[0].kwh.toFixed(2)} kWh</span></div>` : ''}${u?.applies ? `<div><span>Unmeasured today</span><span>${u.gap ? 'Partial: a device has no reading' : `${u.kwh.toFixed(2)} kWh`}</span></div>` : ''}` : '';
+  const wiring = inTree ? `<div><span>Parent device</span><span>${up ? esc(up.name) : TREE.main === d.id ? 'The grid (main device)' : 'Top of the building'}</span></div>${under.length ? `<div><span>Supplies</span><span>${under.length} ${under.length === 1 ? 'device' : 'devices'}</span></div>` : ''}${u?.nodes[0]?.kwh != null ? `<div><span>Today</span><span>${u.nodes[0].kwh.toFixed(2)} kWh</span></div>` : ''}${u?.applies ? `<div><span>Unmeasured today</span><span>${u.gap ? 'Partial: a device has no reading' : `${u.kwh.toFixed(2)} kWh`}</span></div>` : ''}` : '';
   // What a client looks at first: power and energy. Everything else is for whoever looks after the installation.
   const KEY = /^(Power|Total energy|Channel \d+ power|Channel \d+ total energy)$/;
   const row = ([k, id, u]) => { const v = st[id]?.state; const ok = v != null && v !== 'unknown' && v !== 'unavailable'; return `<div><span>${k}</span><span>${ok ? valueText(v, u) : '—'}</span></div>`; };
@@ -3113,6 +3113,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       this._adminDevices = {};
       this._editor = null;
       this._role = 'all';
+      this._allTenants = false;
       this._error = '';
       this._inbox = null;
       this._inboxFilter = 'waiting';
@@ -3148,7 +3149,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const [users, allDevices, allEntities] = await Promise.all([
           this._hass.callWS({
             type: 'optim_energy/user/list',
-            ...(root && client ? { client } : {}),
+            ...(root && client && !this.everyTenant() ? { client } : {}),
           }),
           root ? this._hass.callWS({ type: 'optim_energy/registry/list', kind: 'device' }).catch(() => []) : [],
           root ? this._hass.callWS({ type: 'optim_energy/registry/list', kind: 'entity' }).catch(() => []) : [],
@@ -3207,9 +3208,12 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       return out;
     }
     placeName(id) { return id ? (placeById(id)?.name || placeLabel(id) || id) : '—'; }
+    // Users of every tenant at once: only on the Users page, and only for a Home Assistant administrator.
+    everyTenant() { return this._allTenants && PORTAL.isRoot && this._section === 'people'; }
+    anyPlaceName(id) { return placeById(id)?.name || (this._summaries || []).flatMap((x) => x.places || []).find((p) => p.id === id)?.name || id; }
     userLocations(user) {
       const list = Array.isArray(user?.locations) ? user.locations : user?.location ? [user.location] : [];
-      return list.map((id) => this.placeName(id)).filter(Boolean).join(' · ') || 'Unassigned';
+      return list.map((id) => this.anyPlaceName(id)).filter(Boolean).join(' · ') || 'Unassigned';
     }
     roleName(role) { return role === 'client_admin' ? 'Tenant admin' : 'User'; }
     typeOf(device) {
@@ -3281,10 +3285,14 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         fields = `${pick('editorClient', 'New tenant', clients.filter((x) => x.id !== portalClient).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join(''))}<p class="admin-note">The location moves with its groups, devices, price, schedules and alert rules. Its users stay with the old tenant, so remove it from them first.</p>`;
       } else if (e.kind === 'person') {
         const current = e.user, role = e.role || current?.role || 'user';
-        title = current ? `Edit ${current.name || current.username}` : `New user for ${this.selectedClient().name}`;
+        // With all tenants listed, the user's own tenant decides which locations are offered.
+        const tenant = current?.client || e.client || portalClient, tenantName = clients.find((x) => x.id === tenant)?.name || this.selectedClient().name;
+        const sites = PORTAL.isRoot && tenant !== portalClient ? this.clientPlaces(tenant).filter((p) => p.kind === 'location') : locations;
+        title = current ? `Edit ${current.name || current.username}` : `New user for ${tenantName}`;
         save = current ? 'Save' : 'Create user';
         const selected = e.locations || current?.locations || (current?.location ? [current.location] : []);
-        fields = `<label class="field">Name<input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field">Username<input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label><label class="field">${current ? 'New password' : 'Password'}<input id="editorPassword" type="${e.shown ? 'text' : 'password'}" minlength="8" autocomplete="new-password" placeholder="${current ? 'Leave empty to keep it' : 'At least 8 characters'}"><button type="button" class="inline-action" data-generate-password="1">Generate one</button></label><label class="field">Role<select id="editorRole"><option value="user">User</option>${PORTAL.isRoot ? `<option value="client_admin"${role === 'client_admin' ? ' selected' : ''}>Tenant admin</option>` : ''}</select></label>${role === 'client_admin' ? '<p class="admin-note">A tenant admin sees every location of the tenant and manages its users, groups and settings.</p>' : `<div class="field wide"><span>Locations this user can see</span><div class="checks" id="editorLocations">${locations.map((p) => `<label class="check"><input type="checkbox" data-loc-check="${esc(p.id)}"${selected.includes(p.id) ? ' checked' : ''}> ${esc(placeLabel(p.id))}</label>`).join('') || '<span class="admin-note">This tenant has no location yet. Add one under Locations first.</span>'}</div></div>`}`;
+        const pickTenant = !current && this._allTenants ? pick('personClient', 'Tenant', clients.map((x) => `<option value="${esc(x.id)}"${x.id === tenant ? ' selected' : ''}>${esc(x.name)}</option>`).join('')) : '';
+        fields = `${pickTenant}<label class="field"><span class="field-top">Name</span><input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field"><span class="field-top">Username</span><input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label><div class="field"><span class="field-top"><label for="editorPassword">${current ? 'New password' : 'Password'}</label><button type="button" class="inline-action" data-generate-password="1">Generate</button></span><input id="editorPassword" type="${e.shown ? 'text' : 'password'}" minlength="8" autocomplete="new-password" placeholder="${current ? 'Leave empty to keep it' : 'At least 8 characters'}"></div><label class="field"><span class="field-top">Role</span><select id="editorRole"><option value="user">User</option>${PORTAL.isRoot ? `<option value="client_admin"${role === 'client_admin' ? ' selected' : ''}>Tenant admin</option>` : ''}</select></label>${role === 'client_admin' ? '<p class="admin-note">A tenant admin sees every location of the tenant and manages its users, groups and settings.</p>' : `<div class="field wide"><span class="field-top">Locations this user can see</span><div class="checks" id="editorLocations">${sites.map((p) => `<label class="check"><input type="checkbox" data-loc-check="${esc(p.id)}"${selected.includes(p.id) ? ' checked' : ''}> ${esc(p.name)}</label>`).join('') || '<span class="admin-note">This tenant has no location yet. Add one under Locations first.</span>'}</div></div>`}`;
       } else if (e.kind === 'assign') {
         const names = e.devices.map((id) => (this._inbox || []).find((d) => d.id === id)?.name || id);
         title = names.length === 1 ? `Assign ${names[0]}` : `Assign ${names.length} devices`;
@@ -3295,23 +3303,34 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const groups = location ? under(location) : [];
         fields = `${pick('assignClient', 'Tenant', clients.map((x) => `<option value="${esc(x.id)}"${x.id === client ? ' selected' : ''}>${esc(x.name)}</option>`).join(''))}${pick('assignLocation', 'Location', sites.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join(''), false)}${pick('assignGroup', 'Group', `<option value="">No group</option>${groups.map((p) => `<option value="${esc(p.id)}"${p.id === e.group ? ' selected' : ''}>${esc(this.placeNameIn(places, p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}`, false)}${sites.length ? '' : '<p class="admin-note">This tenant has no location yet. Add one under Locations first.</p>'}${names.length > 1 ? `<p class="admin-note">${esc(names.join(', '))}</p>` : ''}`;
       } else if (e.kind === 'group') {
-        title = e.id ? 'Rename group' : 'New group'; save = e.id ? 'Save' : 'Create group';
-        const inside = [...placesUnder(e.location)].filter((id) => id !== e.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean);
-        fields = `${text('editorName', 'Group name', e.name || '')}${e.id ? '' : pick('editorPlace', 'Inside', inside.map((p) => `<option value="${esc(p.id)}">${esc(placeLabel(p.id))}</option>`).join(''))}<p class="admin-note">A group only organises devices. It does not change who can see them.</p>`;
+        title = e.id ? `Edit ${e.name || 'group'}` : 'New group'; save = e.id ? 'Save' : 'Create group';
+        const location = locations.some((p) => p.id === e.location) ? e.location : locations[0]?.id || '';
+        const own = e.id ? placesUnder(e.id) : new Set();
+        const inside = [...placesUnder(location)].filter((id) => id !== location && !own.has(id)).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean);
+        const parent = inside.some((p) => p.id === e.parent) ? e.parent : '';
+        const devices = this.sorted(this.deviceRows(location).filter((d) => !d.virtual), (d) => d.name);
+        const inGroup = devices.filter((d) => e.members.has(d.id)).length;
+        fields = `${text('editorName', 'Group name', e.name || '')}${pick('groupLocation', 'Location', locations.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join(''), false)}${pick('groupParent', 'Inside group', `<option value="">None</option>${inside.map((p) => `<option value="${esc(p.id)}"${p.id === parent ? ' selected' : ''}>${esc(placeLabel(p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}`, false)}<div class="field wide"><span class="field-top">Devices in this group<span class="field-hint" id="groupCount">${inGroup} of ${devices.length}</span></span><div class="checks tall" id="groupDevices">${devices.map((d) => `<label class="check"><input type="checkbox" data-group-device="${esc(d.id)}"${e.members.has(d.id) ? ' checked' : ''}> <span>${esc(d.name)}</span>${d.place && d.place !== location && d.place !== e.id ? `<span class="check-sub">${esc(placeById(d.place)?.name || '')}</span>` : ''}</label>`).join('') || '<span class="admin-note">This location has no devices yet.</span>'}</div></div>`;
       } else if (e.kind === 'device') {
         // For a client administrator, who has no device list: pick a device and where it goes.
         title = 'Add device to a location or group'; save = 'Add device';
         const devices = this.sorted(this.deviceRows().filter((x) => !x.virtual), (x) => x.name);
         fields = `${pick('editorDevice', 'Device', devices.map((x) => `<option value="${esc(x.id)}"${x.id === e.device ? ' selected' : ''}>${esc(x.name)}${x.place ? ` · ${esc(this.placeName(x.place))}` : ''}</option>`).join(''))}${pick('editorPlace', 'Location or group', locs.map((p) => `<option value="${esc(p.id)}"${p.id === (e.place || this._selectedLocation) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join(''))}`;
       } else if (e.kind === 'device-edit') {
-        // Everything about one device in one place: its name, where it is, what feeds it, and whether it is the main device.
-        const d = this.deviceRows().find((x) => x.id === e.device) || { id: e.device, name: '' }, site = placePath(d.place)[0];
+        // Everything about one device in one place: its name, where it is, its parent device, and whether it is the main one.
+        const d = this.deviceRows().find((x) => x.id === e.device) || { id: e.device, name: '' }, was = placePath(d.place)[0]?.id || '';
         title = `Edit ${d.name}`;
+        const tenant = e.client || portalClient, elsewhere = tenant !== portalClient;
+        const places = elsewhere ? this.clientPlaces(tenant) : TREE.places, sites = this.sorted(places.filter((p) => p.kind === 'location'), (p) => p.name);
+        const location = sites.some((p) => p.id === e.location) ? e.location : (!elsewhere && sites.some((p) => p.id === was) ? was : sites[0]?.id || '');
+        const under = (id) => places.filter((p) => p.parent === id).flatMap((p) => [p, ...under(p.id)]);
+        const groups = location ? under(location) : [], group = groups.some((p) => p.id === e.group) ? e.group : '';
         const others = this.sorted(this.deviceRows().filter((x) => x.id !== d.id && !wouldLoop(d.id, x.id)), (x) => x.name);
-        fields = `${text('editorName', 'Name', d.name)}${pick('editorPlace', 'Location or group', `${d.place ? '' : '<option value="">Not placed</option>'}${locs.map((p) => `<option value="${esc(p.id)}"${p.id === d.place ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join('')}`)}${pick('editorParent', 'Supplied by', `<option value="">Nothing: it is at the top</option>${others.map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}`)}<label class="check wide"><input type="checkbox" id="editorMain"${site && TREE.mains?.[site.id] === d.id ? ' checked' : ''}${site ? '' : ' disabled'}> Main device of ${esc(site?.name || 'its location')}: Overview shows its figures</label>`;
+        const pickTenant = PORTAL.isRoot && !d.virtual && clients.length > 1 ? pick('deviceClient', 'Tenant', clients.map((x) => `<option value="${esc(x.id)}"${x.id === tenant ? ' selected' : ''}>${esc(x.name)}</option>`).join('')) : '';
+        fields = `${text('editorName', 'Name', d.name)}${pickTenant}${pick('deviceLocation', 'Location', sites.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join(''), false)}${pick('deviceGroup', 'Group', `<option value="">No group</option>${groups.map((p) => `<option value="${esc(p.id)}"${p.id === group ? ' selected' : ''}>${esc(this.placeNameIn(places, p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}`, false)}${elsewhere ? '<p class="admin-note">Moving to another tenant: the old tenant stops seeing this device at once.</p>' : `${pick('editorParent', 'Parent device', `<option value="">None</option>${others.map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}`)}<label class="check wide"><input type="checkbox" id="editorMain"${was && TREE.mains?.[was] === d.id ? ' checked' : ''}> Main device</label>`}`;
       } else if (e.kind === 'virtual') {
         title = 'New virtual device'; save = 'Create virtual device';
-        fields = `${text('editorName', 'Name')}${pick('editorPlace', 'Location', locs.map((p) => `<option value="${esc(p.id)}"${p.id === this._selectedLocation ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join(''))}<p class="admin-note">A virtual device adds up the devices placed under it. Choose those with Edit on each device.</p>`;
+        fields = `${text('editorName', 'Name')}${pick('editorPlace', 'Location or group', locs.map((p) => `<option value="${esc(p.id)}"${p.id === this._selectedLocation ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join(''))}<p class="admin-note">A virtual device adds up the devices that have it as their parent device.</p>`;
       }
       return `<div class="admin-editor"><header><h3>${esc(title)}</h3><button type="button" class="x" data-cancel-editor="1" aria-label="Close">×</button></header><div class="form-grid">${fields}</div><p class="form-error" id="editorError" role="alert"></p><div class="form-actions"><button type="button" class="quiet" data-cancel-editor="1">Cancel</button><button type="button" class="${danger ? 'danger' : 'primary'}" data-save-editor="1">${esc(save)}</button></div></div>`;
     }
@@ -3327,43 +3346,43 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     renderPeople() {
       const all = this._users || [], n = (role) => all.filter((u) => u.role === role).length;
       // Client administrators first, then by name.
-      const at = this._selectedLocation, here = (u) => !at || u.role === 'client_admin' || (Array.isArray(u.locations) ? u.locations : u.location ? [u.location] : []).includes(at);
-      const users = this.sorted(all.filter((u) => here(u) && (this._role === 'all' || u.role === this._role) && this.matches('peopleSearch', u.name, u.username, this.userLocations(u))), (u) => (u.role === 'client_admin' ? 0 : 1), (u) => u.name || u.username);
+      const every = this.everyTenant(), tenantOf = (u) => (PORTAL.clients || []).find((x) => x.id === u.client)?.name || u.client || '';
+      const at = every ? null : this._selectedLocation, here = (u) => !at || u.role === 'client_admin' || (Array.isArray(u.locations) ? u.locations : u.location ? [u.location] : []).includes(at);
+      const users = this.sorted(all.filter((u) => here(u) && (this._role === 'all' || u.role === this._role) && this.matches('peopleSearch', u.name, u.username, this.userLocations(u), every ? tenantOf(u) : '')), (u) => (every ? tenantOf(u) : ''), (u) => (u.role === 'client_admin' ? 0 : 1), (u) => u.name || u.username);
       const mine = this._hass.user?.id;
-      const rows = users.map((u) => `<td><b>${esc(u.name || u.username || u.id)}</b>${u.id === mine ? ' <span class="pill muted">you</span>' : ''}<span class="table-sub">@${esc(u.username || 'no username')}</span></td><td><span class="pill${u.role === 'client_admin' ? ' accent' : ''}">${esc(this.roleName(u.role))}</span></td><td class="hide-s">${u.role === 'client_admin' ? '<span class="table-sub">All locations</span>' : esc(this.userLocations(u))}</td><td><span class="pill${u.is_active ? '' : ' warn'}"><span class="dot${u.is_active ? ' ok' : ''}"></span>${u.is_active ? 'Active' : 'Disabled'}</span></td><td><div class="table-actions">${this.action('Edit', `data-edit-person="${esc(u.id)}"`)}${PORTAL.isRoot || (u.role !== 'client_admin' && u.id !== mine) ? `${this.action(u.is_active ? 'Disable' : 'Enable', `data-toggle="${esc(u.id)}"`)}${this.action('Delete', `data-delete="${esc(u.id)}"`, 'table-action danger')}` : ''}</div></td>`);
+      const rows = users.map((u) => `<td><b>${esc(u.name || u.username || u.id)}</b>${u.id === mine ? ' <span class="pill muted">you</span>' : ''}<span class="table-sub">@${esc(u.username || 'no username')}</span></td>${every ? `<td>${esc(tenantOf(u))}</td>` : ''}<td><span class="pill${u.role === 'client_admin' ? ' accent' : ''}">${esc(this.roleName(u.role))}</span></td><td class="hide-s">${u.role === 'client_admin' ? '<span class="table-sub">All locations</span>' : esc(this.userLocations(u))}</td><td><span class="pill${u.is_active ? '' : ' warn'}"><span class="dot${u.is_active ? ' ok' : ''}"></span>${u.is_active ? 'Active' : 'Disabled'}</span></td><td><div class="table-actions">${this.action('Edit', `data-edit-person="${esc(u.id)}"`)}${PORTAL.isRoot || (u.role !== 'client_admin' && u.id !== mine) ? `${this.action(u.is_active ? 'Disable' : 'Enable', `data-toggle="${esc(u.id)}"`)}${this.action('Delete', `data-delete="${esc(u.id)}"`, 'table-action danger')}` : ''}</div></td>`);
       const head = `${this.chips('people-role', [['all', 'All', all.length], ['client_admin', 'Tenant admins', n('client_admin')], ['user', 'Users', n('user')]], this._role)}<span class="sp"></span>${this.search('peopleSearch', 'Search by name, username or location')}`;
       const empty = this._q.peopleSearch || this._role !== 'all' || at ? 'No user matches.' : 'No users yet. Add the first one with New user.';
-      const foot = `<span id="locationmap">Locations of ${esc(this.selectedClient().name)}: <b>${esc(this.locations().map((x) => x.name).join(' · ') || 'none yet')}</b></span><span>${users.length} of ${all.length} shown</span>`;
-      return this.card(head, this.table(['User', 'Role', { text: 'Locations', cls: 'hide-s' }, 'Status', 'Actions'], rows, 'people', empty), foot);
+      const foot = `${every ? '<span>Users of every tenant.</span>' : `<span id="locationmap">Locations of ${esc(this.selectedClient().name)}: <b>${esc(this.locations().map((x) => x.name).join(' · ') || 'none yet')}</b></span>`}<span>${users.length} of ${all.length} shown</span>`;
+      return this.card(head, this.table(['User', ...(every ? ['Tenant'] : []), 'Role', { text: 'Locations', cls: 'hide-s' }, 'Status', 'Actions'], rows, 'people', empty), foot);
     }
-    // The wiring table: where each device of the selected client sits, what feeds it, and which one is the main device.
+    // The devices table: where each device of the selected tenant sits, its parent device, and which one is the main device.
     deviceRowsHtml(locationId = null) {
       const list = this.sorted(this.deviceRows(locationId).filter((d) => this.matches('wiringSearch', d.name, d.model, placeLabel(d.place))), (d) => placeParts(d.place).location, (d) => placeParts(d.place).group, (d) => d.name);
       const names = Object.fromEntries(this.deviceRows().map((d) => [d.id, d.name]));
       const listed = new Set(this.hasInbox() ? this._inbox.filter((d) => d.status === 'assigned').map((d) => d.id) : []);
       const rows = list.map((d) => {
         const root = placePath(d.place)[0]?.id || null, main = root ? TREE.mains?.[root] === d.id : false, parts = placeParts(d.place), parent = TREE.parents?.[d.id];
-        return `<td><b>${esc(d.name)}</b>${main ? ' <span class="pill accent">Main</span>' : ''}<span class="table-sub">${esc(d.virtual ? 'Virtual device' : d.model || '')}</span></td><td class="hide-s">${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}<span class="table-sub">${esc(parts.group || '')}</span></td><td class="hide-s">${esc(names[parent] || '—')}</td><td><div class="table-actions">${this.action('Edit', `data-edit-device="${esc(d.id)}"`)}${d.virtual ? this.action('Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : listed.has(d.id) ? `${this.action('Move', `data-inbox-assign="${esc(d.id)}"`)}${this.action('Remove', `data-inbox-remove="${esc(d.id)}"`, 'table-action danger')}` : ''}</div></td>`;
+        return `<td><b>${esc(d.name)}</b>${main ? ' <span class="pill accent">Main</span>' : ''}<span class="table-sub">${esc(d.virtual ? 'Virtual device' : d.model || '')}</span></td><td class="hide-s">${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}<span class="table-sub">${esc(parts.group || '')}</span></td><td class="hide-s">${esc(names[parent] || '—')}</td><td><div class="table-actions">${this.action('Edit', `data-edit-device="${esc(d.id)}"`)}${d.virtual ? this.action('Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : listed.has(d.id) ? this.action('Remove', `data-inbox-remove="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
       });
       const empty = this._q.wiringSearch ? 'No device matches the search.' : locationId ? (this.hasInbox() ? 'No devices in this location yet. Assign one from Unassigned.' : 'No devices in this location yet. Use Add device.') : 'No devices yet.';
-      return this.table(['Device', { text: 'Type', cls: 'hide-s' }, 'Place', { text: 'Supplied by', cls: 'hide-s' }, 'Actions'], rows, '', empty);
+      return this.table(['Device', { text: 'Type', cls: 'hide-s' }, 'Place', { text: 'Parent device', cls: 'hide-s' }, 'Actions'], rows, '', empty);
     }
     renderLocations() {
       const selected = this._selectedLocation && this.locations().find((p) => p.id === this._selectedLocation);
       const list = this.locations().filter((l) => this.matches('locationSearch', l.name));
       const rows = list.map((l) => {
         const groups = placesUnder(l.id).size - 1, devices = this.deviceRows(l.id).length, main = TREE.mains?.[l.id] ? (this.deviceRows().find((d) => d.id === TREE.mains[l.id])?.name || TREE.mains[l.id]) : '—';
-        return { cls: selected?.id === l.id ? 'sel' : '', html: `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td class="num">${groups}</td><td class="num">${devices}</td><td class="hide-s">${esc(main)}</td><td><div class="table-actions">${this.action('Manage', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action('Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>` };
+        return { cls: selected?.id === l.id ? 'sel' : '', html: `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td class="num">${groups}</td><td class="num">${devices}</td><td class="hide-s">${esc(main)}</td><td><div class="table-actions">${this.action('Manage groups', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action('Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>` };
       });
       const head = `${this.search('locationSearch', 'Search locations')}<span class="sp"></span><span class="toolbar-label">${list.length} ${list.length === 1 ? 'location' : 'locations'}</span>`;
       const empty = this._q.locationSearch ? 'No location matches the search.' : 'This tenant has no location yet. Add one with New location; devices and users are assigned to locations.';
-      const main = this.card(head, this.table(['Location', { text: 'Groups', cls: 'num' }, { text: 'Devices', cls: 'num' }, { text: 'Main device', cls: 'hide-s' }, 'Actions'], rows, '', empty), selected ? '' : (list.length ? 'Choose Manage on a location to see its groups and devices.' : ''));
+      const main = this.card(head, this.table(['Location', { text: 'Groups', cls: 'num' }, { text: 'Devices', cls: 'num' }, { text: 'Main device', cls: 'hide-s' }, 'Actions'], rows, '', empty), selected ? '' : (list.length ? 'Choose Manage groups on a location to see and edit its groups.' : ''));
       if (!selected) return main;
       const groupList = this.sorted([...placesUnder(selected.id)].filter((id) => id !== selected.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean), (g) => placeLabel(g.id));
-      const groupRows = groupList.map((g) => `<td><b>${esc(g.name)}</b></td><td>${esc(placeLabel(g.parent))}</td><td class="num">${this.deviceRows().filter((d) => d.place === g.id).length}</td><td><div class="table-actions">${this.action('Rename', `data-edit-group="${esc(g.id)}" data-name="${esc(g.name)}"`)}${this.action('Delete', `data-delete-group="${esc(g.id)}"`, 'table-action danger')}</div></td>`);
-      const groups = this.card(`<h2>Groups in ${esc(selected.name)}<small>Groups organise this location's devices. They do not change who can see them.</small></h2><span class="sp"></span><button class="quiet" data-new-group="${esc(selected.id)}">New group</button>`, this.table(['Group', 'Inside', { text: 'Devices', cls: 'num' }, 'Actions'], groupRows, '', 'No groups yet. Groups are optional.'));
-      const devices = this.card(`<h2>Devices in ${esc(selected.name)}<small>Edit a device to rename it, move it, or set what feeds it.</small></h2><span class="sp"></span>${this.search('wiringSearch', 'Search devices')}${this.hasInbox() ? '' : `<button class="quiet" data-add-device="${esc(selected.id)}">Add device</button>`}<button class="quiet" data-new-virtual="1">Virtual device</button>`, this.deviceRowsHtml(selected.id));
-      return `${main}${groups}${devices}`;
+      const groupRows = groupList.map((g) => `<td><b>${esc(g.name)}</b></td><td>${esc(placeLabel(g.parent))}</td><td class="num">${this.deviceRows().filter((d) => d.place === g.id).length}</td><td><div class="table-actions">${this.action('Edit', `data-edit-group="${esc(g.id)}" data-name="${esc(g.name)}"`)}${this.action('Delete', `data-delete-group="${esc(g.id)}"`, 'table-action danger')}</div></td>`);
+      const groups = this.card(`<h2>Groups in ${esc(selected.name)}<small>Groups organise this location's devices. Edit a group to choose its devices.</small></h2><span class="sp"></span><button class="quiet" data-new-group="${esc(selected.id)}">New group</button>`, this.table(['Group', 'Inside', { text: 'Devices', cls: 'num' }, 'Actions'], groupRows, '', 'No groups yet. Groups are optional.'));
+      return `${main}${groups}`;
     }
     hasInbox() { return PORTAL.isRoot && Array.isArray(this._inbox); }
     // Places of any client, not only the active one, for the assign dialog.
@@ -3401,18 +3420,19 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     renderDevices() {
       if (this.hasInbox() && this._deviceView === 'unassigned') return this.renderUnassigned();
       const at = this._selectedLocation, n = this.deviceRows(at).length;
-      const head = `${this.viewTabs()}<span class="toolbar-label">${n} ${n === 1 ? 'device' : 'devices'} in <b>${esc(at ? this.placeName(at) : this.selectedClient().name)}</b></span><span class="sp"></span>${this.search('wiringSearch', 'Search devices')}${this.hasInbox() ? '' : `<button class="quiet" data-add-device="${esc(at || '')}">Add device</button>`}<button class="quiet" data-new-virtual="1">Virtual device</button>`;
-      return this.card(head, this.deviceRowsHtml(at), 'Edit a device to rename it, move it, set what feeds it, or make it the main device of its location.');
+      const head = `${this.viewTabs()}<span class="toolbar-label">${n} ${n === 1 ? 'device' : 'devices'} in <b>${esc(at ? this.placeName(at) : this.selectedClient().name)}</b></span><span class="sp"></span>${this.search('wiringSearch', 'Search devices')}${this.hasInbox() ? '' : `<button class="quiet" data-add-device="${esc(at || '')}">Add device</button>`}<button class="quiet" data-new-virtual="1">New virtual device</button>`;
+      return this.card(head, this.deviceRowsHtml(at), 'Edit a device to rename it, move it, set its parent device, or make it the main device.');
     }
     shell(title, lede, actions, body) {
       const clients = PORTAL.clients || [], setup = this._scope === 'setup';
       // Which tenant and which location the page is about, on every page but the list of tenants.
       const perClient = this._section !== 'clients', at = this._selectedLocation;
+      const every = this.everyTenant();
       const tenant = PORTAL.isRoot && clients.length
-        ? `<label class="admin-control"><span>Tenant</span><select id="clientSwitch">${this.sorted(clients, (x) => x.name).map((x) => `<option value="${esc(x.id)}"${x.id === portalClient ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`
+        ? `<label class="admin-control"><span>Tenant</span><select id="clientSwitch">${this._section === 'people' ? `<option value=""${every ? ' selected' : ''}>All tenants</option>` : ''}${this.sorted(clients, (x) => x.name).map((x) => `<option value="${esc(x.id)}"${!every && x.id === portalClient ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`
         : `<span class="toolbar-label">Tenant · <b>${esc(this.selectedClient().name)}</b></span>`;
       const where = `<label class="admin-control"><span>Location</span><select id="locationSwitch"><option value="">All locations</option>${this.locations().map((l) => `<option value="${esc(l.id)}"${l.id === at ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>`;
-      const picker = perClient ? `${tenant}${where}` : '';
+      const picker = perClient ? `${tenant}${every ? '' : where}` : '';
       return `<div class="admin-head"><div><span class="admin-kicker">Optim Energy / Administration</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${picker}${setup ? '' : '<button class="quiet" data-refresh="1">Refresh</button>'}${actions || ''}</div></div>${body}`;
     }
     paint(force = false) {
@@ -3427,8 +3447,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const name = this.selectedClient().name, spot = this._selectedLocation ? `${this.placeName(this._selectedLocation)}, ${name}` : name;
       const copy = {
         clients: ['Tenants', 'Every tenant, with its locations, users and devices.'],
-        locations: ['Locations', `The locations of ${name}, with their groups and devices.`],
-        people: ['Users', `Who can sign in for ${spot}, and what they can see.`],
+        locations: ['Locations', `The locations of ${name} and their groups.`],
+        people: ['Users', this.everyTenant() ? 'Everyone who can sign in, across all tenants.' : `Who can sign in for ${spot}, and what they can see.`],
         devices: ['Devices', this.hasInbox() && this._deviceView === 'unassigned' ? 'Devices that no tenant has yet.' : `The devices of ${spot}: where they are and how they are wired.`],
       }[this._section] || ['Tenants', ''];
       const body = this._section === 'people' ? this.renderPeople() : this._section === 'locations' ? this.renderLocations() : this._section === 'devices' ? this.renderDevices() : this.renderClients();
@@ -3546,8 +3566,15 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         } else if (e.kind === 'group') {
           const name = value('editorName');
           if (need(name, 'Enter a group name.')) return;
-          await this._hass.callWS({ type: 'optim_energy/group/save', client: portalClient, name, ...(e.id ? { group: e.id } : { parent: value('editorPlace') || e.location }) });
-          await this.afterChange(e.id ? 'Group renamed.' : 'Group created.');
+          const location = value('groupLocation');
+          if (need(location, 'Choose a location.')) return;
+          // Who is in the group now, read before anything changes.
+          const before = new Set(e.id ? this.deviceRows().filter((d) => !d.virtual && d.place === e.id).map((d) => d.id) : []);
+          const saved = await this._hass.callWS({ type: 'optim_energy/group/save', client: portalClient, name, parent: value('groupParent') || location, ...(e.id ? { group: e.id } : {}) });
+          const put = (id, place) => this._hass.callWS({ type: 'optim_energy/device/assign', client: portalClient, device_id: id, place });
+          for (const id of e.members) if (!before.has(id)) await put(id, saved.id);
+          for (const id of before) if (!e.members.has(id)) await put(id, location);
+          await this.afterChange(e.id ? 'Group saved.' : 'Group created.');
         } else if (e.kind === 'location-move') {
           const target = value('editorClient');
           if (need(target, 'Choose the tenant to move it to.')) return;
@@ -3560,7 +3587,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
           if (need(value('editorName'), 'Enter the user\'s name.')) return;
           if (!e.user) {
             if (need(value('editorUsername'), 'Enter a username.') || need(password.length >= 8, 'The password needs at least 8 characters.')) return;
-            await this._hass.callWS({ type: 'optim_energy/user/create', client: portalClient, name: value('editorName'), username: value('editorUsername'), password, role, locations: locs });
+            await this._hass.callWS({ type: 'optim_energy/user/create', client: value('personClient') || portalClient, name: value('editorName'), username: value('editorUsername'), password, role, locations: locs });
           } else {
             await this._hass.callWS({ type: 'optim_energy/user/update', user_id: e.user.id, name: value('editorName'), role, locations: locs, ...(password ? { password } : {}) });
           }
@@ -3570,7 +3597,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
           if (need(device && place, 'Choose a device and where it goes.')) return;
           await this.assignDevice(device, place);
         } else if (e.kind === 'device-edit') {
-          await this.saveDevice(e.device, value('editorName'), value('editorPlace'), value('editorParent') || null, !!r.getElementById('editorMain')?.checked);
+          await this.saveDevice(e.device, value('editorName'), value('deviceGroup') || value('deviceLocation'), value('editorParent') || null, !!r.getElementById('editorMain')?.checked, value('deviceClient') || portalClient);
         } else if (e.kind === 'virtual') {
           const name = value('editorName'), place = value('editorPlace');
           if (need(name && place, 'Enter a name and choose a location.')) return;
@@ -3579,17 +3606,24 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         }
       } catch (x) { this.flash(x?.message || 'Could not save the change.', true); }
     }
-    // One save for the device dialog: name, place, what feeds it, and whether it is the main device.
-    async saveDevice(id, name, place, parent, main) {
+    // One save for the device dialog: name, tenant, place, parent device, and whether it is the main device.
+    async saveDevice(id, name, place, parent, main, tenant = portalClient) {
       const d = this.deviceRows().find((x) => x.id === id);
       if (!d) return;
       if (!name) { this.flash('Enter a name.', true); return; }
-      if (parent && wouldLoop(id, parent)) { this.flash('That would make the device feed itself.', true); return; }
+      if (parent && wouldLoop(id, parent)) { this.flash('A device cannot be its own parent.', true); return; }
       const named = name !== d.name, moved = !!place && place !== d.place;
       if (!d.virtual && named) {
         await this._hass.callWS(PORTAL.isRoot
           ? { type: 'config/device_registry/update', device_id: id, name_by_user: name }
           : { ...clientArg(), type: 'optim_energy/device/update', device_id: id, name });
+      }
+      if (!d.virtual && tenant !== portalClient) {
+        // To another tenant: one checked command. Its wiring and main-device role stay behind, on the server's side.
+        if (!place) { this.flash('Choose a location.', true); return; }
+        await this._hass.callWS({ type: 'optim_energy/device/assign', client: tenant, device_id: id, place });
+        await this.afterChange('Device moved.');
+        return;
       }
       // A real device changes place through the checked command (its area is its location). That reloads the tree.
       if (!d.virtual && moved) {
@@ -3656,8 +3690,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         });
         return;
       }
-      if ((b = q('[data-new-group]'))) { open({ kind: 'group', location: b.dataset.newGroup }); return; }
-      if ((b = q('[data-edit-group]'))) { open({ kind: 'group', id: b.dataset.editGroup, name: b.dataset.name, location: this._selectedLocation }); return; }
+      if ((b = q('[data-new-group]'))) { open({ kind: 'group', location: b.dataset.newGroup, parent: '', members: new Set() }); return; }
+      if ((b = q('[data-edit-group]'))) { const id = b.dataset.editGroup, site = placePath(id)[0]?.id || this._selectedLocation, up = placeById(id)?.parent; open({ kind: 'group', id, name: b.dataset.name, location: site, parent: up && up !== site ? up : '', members: new Set(this.deviceRows().filter((d) => !d.virtual && d.place === id).map((d) => d.id)) }); return; }
       if ((b = q('[data-delete-group]'))) {
         const id = b.dataset.deleteGroup, name = placeById(id)?.name || 'this group';
         this.confirm(`Delete ${name}?`, 'Its devices and any groups inside it move up one level. Nobody loses access.', 'Delete group', async () => {
@@ -3707,7 +3741,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       }
       if ((b = q('[data-add-device]'))) { open({ kind: 'device', place: b.dataset.addDevice || this._selectedLocation }); return; }
       if (q('[data-new-virtual]')) { open({ kind: 'virtual' }); return; }
-      if ((b = q('[data-edit-device]'))) { open({ kind: 'device-edit', device: b.dataset.editDevice }); return; }
+      if ((b = q('[data-edit-device]'))) { const at = this.deviceRows().find((x) => x.id === b.dataset.editDevice)?.place, site = placePath(at)[0]?.id || ''; open({ kind: 'device-edit', device: b.dataset.editDevice, location: site, group: at && at !== site ? at : '' }); return; }
       if ((b = q('[data-delete-virtual]'))) {
         const id = b.dataset.deleteVirtual, name = (TREE.virtual || []).find((v) => v.id === id)?.name || 'this virtual device';
         this.confirm(`Delete ${name}?`, 'The virtual device and its sums are removed. The devices under it stay where they are.', 'Delete virtual device', () => this.saveAdminTree(treeWithoutVirtual(TREE, id)));
@@ -3716,7 +3750,13 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     }
     async onChange(e) {
       const t = e.target;
-      if (t.id === 'clientSwitch') { await this.selectClient(t.value); return; }
+      if (t.id === 'clientSwitch') {
+        const was = this._allTenants;
+        this._allTenants = t.value === '';
+        // "All tenants", or back from it to the tenant that was already open: only the list reloads.
+        if (this._allTenants || (was && t.value === portalClient)) { await this.load(); this.paint(true); } else await this.selectClient(t.value);
+        return;
+      }
       if (t.id === 'locationSwitch') { this._selectedLocation = t.value || null; this._q.wiringSearch = ''; this.paint(true); return; }
       // A client administrator has no locations of its own, so the list goes when that role is picked.
       if (t.id === 'editorRole' && this._editor?.kind === 'person') { this._editor.role = t.value; this._editorStale = true; this.paintDialog(); return; }
@@ -3726,7 +3766,20 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       // The assign dialog narrows as you go: the client decides the locations, the location its groups.
       if (t.id === 'assignClient' && this._editor) { Object.assign(this._editor, { client: t.value, location: null, group: '' }); this._editorStale = true; this.paintDialog(); return; }
       if (t.id === 'assignLocation' && this._editor) { Object.assign(this._editor, { location: t.value, group: '' }); this._editorStale = true; this.paintDialog(); return; }
-      if (t.id === 'assignGroup' && this._editor) { this._editor.group = t.value; }
+      if (t.id === 'assignGroup' && this._editor) { this._editor.group = t.value; return; }
+      const again = (changes) => { Object.assign(this._editor, changes); this._editorStale = true; this.paintDialog(); };
+      if (t.id === 'groupLocation' && this._editor) { again({ location: t.value, parent: '' }); return; }
+      if (t.id === 'groupParent' && this._editor) { this._editor.parent = t.value; return; }
+      if (t.dataset.groupDevice && this._editor?.members) {
+        if (t.checked) this._editor.members.add(t.dataset.groupDevice); else this._editor.members.delete(t.dataset.groupDevice);
+        const boxes = [...this.shadowRoot.querySelectorAll('[data-group-device]')], count = this.shadowRoot.getElementById('groupCount');
+        if (count) count.textContent = `${boxes.filter((x) => x.checked).length} of ${boxes.length}`;
+        return;
+      }
+      if (t.id === 'deviceClient' && this._editor) { again({ client: t.value, location: null, group: '' }); return; }
+      if (t.id === 'deviceLocation' && this._editor) { again({ location: t.value, group: '' }); return; }
+      if (t.id === 'deviceGroup' && this._editor) { this._editor.group = t.value; return; }
+      if (t.id === 'personClient' && this._editor) { again({ client: t.value, locations: [] }); }
     }
     onInput(e) {
       const id = e.target.id;
