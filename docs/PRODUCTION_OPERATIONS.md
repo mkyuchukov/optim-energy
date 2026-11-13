@@ -643,6 +643,21 @@ What the start-up changed in Home Assistant: 51 channel devices of Cleverpine's 
 | Rollback checkpoint | Reinstall `v0.16.0` from the Marketplace; no stored data changed |
 | Incidents / follow-up | After this restart the ENTSO-e integration was again in `setup_retry`. For the first time the portal carried on: Overview showed "Price now € 0.270" and the price chart from the 96 remembered quarter-hour prices, both marked "Not live · last read 13 Nov, 16:30" |
 
+### 2026-11-13 v0.17.1 and v0.17.2, Connection by device
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening, two installs about half an hour apart |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.17.0 / 0.17.1, then 0.17.1 / 0.17.2, each installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.17.1-2026-11-13` and `before-0.17.2-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on each merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | 0.17.2, Devices, Map, Connection by device for Cleverpine: a tree with no group nodes, 42 devices, 3 virtual devices and the main device under the location; boxes show address and signal, all 46 lines online. It opens with the deeper branches folded (26 nodes, zoom 0.6) and expands to 47 nodes over 5 levels. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.17.0` from the Marketplace; no stored data changed |
+| Incidents / follow-up | 0.17.1 drew the device hierarchy as a circle. With the real five-level hierarchy it came out about 1,900 by 2,400 pixels with links up to 685 pixels, unreadable when fitted to the screen; the three-device test setup had not shown this. 0.17.2 replaced it with the tree |
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
