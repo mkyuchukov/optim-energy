@@ -21,7 +21,7 @@ from homeassistant.auth.models import Group, User
 from homeassistant.auth.permissions.const import POLICY_CONTROL, POLICY_EDIT, POLICY_READ
 from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api import ActiveConnection
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     area_registry as ar,
@@ -46,6 +46,7 @@ MODEL = "areas"  # a client is a floor, a location is an area; the only model th
 MANAGED_GROUP_PREFIX = f"{DOMAIN}_"
 DEFAULT_CLIENT = "default"
 MAX_TREE_BYTES = 2 * 1024 * 1024
+_NAME_TAKEN = 'Home Assistant already has an area called "{}". Choose another name.'
 ROLE_CLIENT_ADMIN = "client_admin"
 ROLE_USER = "user"
 ROLE_ADMIN = "admin"
@@ -493,6 +494,7 @@ class TenancyManager:
                 )
             self.data = loaded
             changed = self._migrate()
+            changed = self._sync_location_names() or changed
         self._refresh_location_index()
         if changed:
             await self.async_save()
@@ -765,16 +767,31 @@ class TenancyManager:
                 continue
         raise HomeAssistantError("Could not create a floor for the client")
 
-    def _create_area(self, name: str, client_name: str, floor_id: str | None) -> str:
+    def _create_area(self, name: str, floor_id: str | None) -> str:
+        # A location has one name, its area's. Home Assistant wants every area name to be different.
+        try:
+            return ar.async_get(self.hass).async_create(name, floor_id=floor_id).id
+        except ValueError as err:
+            raise HomeAssistantError(_NAME_TAKEN.format(name)) from err
+
+    def _sync_location_names(self) -> bool:
+        """Give every location the name its area has in Home Assistant. True when one changed."""
         registry = ar.async_get(self.hass)
-        # Home Assistant wants every area name to be different, and two clients may well both have a
-        # "Sofia". The portal shows the plain name; the area carries the client when it has to.
-        for candidate in (name, f"{name} ({client_name})", f"{name} ({client_name} {uuid.uuid4().hex[:4]})"):
-            try:
-                return registry.async_create(candidate, floor_id=floor_id).id
-            except ValueError:
-                continue
-        raise HomeAssistantError("Could not create an area for the location")
+        changed = False
+        for tree in self.data.get("trees", {}).values():
+            for place in _place_locations(tree) if isinstance(tree, dict) else []:
+                area = registry.async_get_area(place["area_id"]) if place.get("area_id") else None
+                if area is not None and place.get("name") != area.name:
+                    place["name"] = area.name
+                    changed = True
+        return changed
+
+    @callback
+    def _area_changed(self, _event: Any = None) -> None:
+        # An area renamed in Home Assistant renames its location.
+        if self._sync_location_names():
+            self._refresh_location_index()
+            self.hass.async_create_task(self.async_save())
 
     def _manager_client(self, user: User, client: str | None) -> tuple[str, dict[str, Any], dict[str, Any]]:
         """Resolve the stored tree a root or client administrator may change."""
@@ -803,19 +820,15 @@ class TenancyManager:
             place = next((p for p in _place_locations(tree) if p.get("id") == location_id), None)
             if place is None:
                 raise HomeAssistantError("Location not found for this client")
+            try:
+                ar.async_get(self.hass).async_update(place["area_id"], name=name)
+            except ValueError as err:
+                raise HomeAssistantError(_NAME_TAKEN.format(name)) from err
             place["name"] = name
-            for candidate in (name, f"{name} ({record.get('name') or client_id})"):
-                try:
-                    ar.async_get(self.hass).async_update(place["area_id"], name=candidate)
-                    break
-                except ValueError:  # another area already has this name; try it with the client added
-                    continue
-            else:
-                _LOGGER.warning("Optim Energy could not rename area %s", place.get("area_id"))
         else:
             if not record.get("floor_id"):
                 record["floor_id"] = self._create_floor(str(record.get("name") or client_id))
-            area_id = self._create_area(name, str(record.get("name") or client_id), record["floor_id"])
+            area_id = self._create_area(name, record["floor_id"])
             location_id = f"loc:{area_id}"
             tree.setdefault("places", []).append(
                 {"id": location_id, "name": name, "kind": "location", "parent": None, "area_id": area_id}
@@ -1675,6 +1688,7 @@ class TenancyManager:
             self._unsubscribers.append(
                 self.hass.bus.async_listen(event, self._schedule_group_sync)
             )
+        self._unsubscribers.append(self.hass.bus.async_listen("area_registry_updated", self._area_changed))
 
     def _schedule_group_sync(self, _event: Any = None) -> None:
         if self._sync_cancel is not None:
