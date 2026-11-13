@@ -453,7 +453,7 @@ check is reproduced and fixed.
 
 Other changes on 2026-11-13, all through Administration commands and none needing a restart:
 
-- A trial client "Demo Client" was created with one location ("Demo Site") and one group ("Demo Room"), with no devices or people. It is for rehearsing onboarding and can be deleted under Administration → Clients; its floor and area then need removing under Settings → Areas.
+- A trial client "Demo Client" was created with one location and one group, and no devices or people, to rehearse onboarding. It was deleted again the same day, together with the floor and area it had made in Home Assistant.
 - Three manual backups from the first rollouts (`before-optim-energy-v0.3.0`, `-v0.3.1` and `-v0.4.0`, all dated 2026-11-12) were deleted from the VM, freeing about 3.4 GB.
 - The Zigbee coordinator ("Dongle-M_C3A0") and the Zigbee2MQTT bridge were marked Ignore in the device inbox.
 
