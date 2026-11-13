@@ -549,6 +549,23 @@ On load both locations took their area's name, so the portal now shows "Sofia (C
 
 The interface now says tenant for client and user for person. Commands, URLs and stored data keep their old names.
 
+### 2026-11-13 v0.14.0, Administration dialogs
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.13.0 / 0.14.0, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.14.0-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | After the restart, opened and cancelled without saving: the group dialog (location, parent group, 42 devices listed, 2 ticked for "Game Room Lights") and the device dialog (location, group, parent device, "Main device"). Locations shows "Manage groups" and groups only; Devices lists 46 rows for Cleverpine; Users offers "All tenants" with a Tenant column. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.13.0` from the Marketplace; no stored data changed |
+| Incidents / follow-up | None |
+
+From this version a group can be moved to another location of its tenant from its Edit dialog; its sub-groups and devices go with it.
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
