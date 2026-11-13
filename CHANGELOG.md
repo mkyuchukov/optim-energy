@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.1
+
+- Devices: the "Looks like" column shows only the type. The entity that gave the device away is on hover.
+- Two clients can each have a location with the same name, such as two "Sofia". The portal shows the plain name for both; because Home Assistant needs every area name to be different, the second area is named with its client, as in "Sofia (Client name)". Renaming a location keeps its area in step the same way.
+
 ## 0.11.0
 
 Administration, reworked.

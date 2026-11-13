@@ -1055,6 +1055,20 @@ def run(version: str, *, keep: bool = False) -> None:
             admin_a.command({"type": "optim_energy/group/delete", "group": group})
             assert_equal(admin_a.command({"type": "optim_energy/tree/get"})["tree"]["placed"].get(a_device), location_a, "device left a deleted group")
 
+            # Two clients can each have a location with the same name. Home Assistant needs distinct area
+            # names, so the second area carries its client; the portal shows the plain name for both.
+            same_a = root.command({"type": "optim_energy/location/save", "client": client_a, "name": "Head Office"})["id"]
+            same_b = root.command({"type": "optim_energy/location/save", "client": client_b, "name": "Head Office"})["id"]
+            names = {a["area_id"]: a["name"] for a in root.command({"type": "config/area_registry/list"})}
+            area_of = lambda client, loc: place_ids(client_tree(root, client), "location")[loc]
+            assert_equal((area_of(client_a, same_a)["name"], area_of(client_b, same_b)["name"]), ("Head Office", "Head Office"), "portal names of same-named locations")
+            assert_equal(names[area_of(client_a, same_a)["area_id"]], "Head Office", "area of the first same-named location")
+            assert_equal(names[area_of(client_b, same_b)["area_id"]], "Head Office (Runtime Client B)", "area of the second same-named location")
+            root.command({"type": "optim_energy/location/save", "client": client_b, "location": same_b, "name": "Branch"})
+            assert_equal({a["area_id"]: a["name"] for a in root.command({"type": "config/area_registry/list"})}[area_of(client_b, same_b)["area_id"]], "Branch", "renamed area")
+            root.command({"type": "optim_energy/location/delete", "client": client_a, "location": same_a})
+            root.command({"type": "optim_energy/location/delete", "client": client_b, "location": same_b})
+
             # Root adds and removes a location; a location in use cannot go.
             annex = root.command({"type": "optim_energy/location/save", "client": client_a, "name": "Annex"})["id"]
             assert_true(place_ids(client_tree(root, client_a), "location")[annex]["area_id"], "new location has no area")
