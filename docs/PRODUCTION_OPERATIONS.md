@@ -532,6 +532,23 @@ From this version the integration only loads a store on floors and areas. The mi
 
 On load both locations took their area's name, so the portal now shows "Sofia (Cleverpine)" and "Sofia 1(Optimal Industries)", the same as Home Assistant. Location ids, prices and people's assignments are keyed by id and did not change.
 
+### 2026-11-13 v0.13.0, Administration context and wording
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.12.1 / 0.13.0, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.13.0-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | Administration → Devices after the restart: Tenant and Location selectors present; switching tenant with the dropdown focused changed the list from 4 to 46 rows without Refresh; Unassigned shows 0 waiting and 2 ignored. Device list totals unchanged: 45 assigned, 2 ignored, 35 unlisted. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.12.1` from the Marketplace; no stored data changed |
+| Incidents / follow-up | None |
+
+The interface now says tenant for client and user for person. Commands, URLs and stored data keep their old names.
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
