@@ -195,31 +195,11 @@ class PortalOperations:
             out.update(area_ids)
         return out
 
-    def _client_location_labels(self, tree: dict[str, Any]) -> set[str]:
-        if self.manager.areas:
-            return set()  # locations are areas, no label means "location" any more
-        return {
-            str(place["id"])[4:]
-            for place in tree.get("places", [])
-            if isinstance(place, dict)
-            and place.get("kind") == "location"
-            and str(place.get("id", "")).startswith("loc:")
-        }
-
-    def _validate_labels(self, tree: dict[str, Any], labels: Iterable[str]) -> list[str]:
+    def _validate_labels(self, labels: Iterable[str]) -> list[str]:
         registry = lr.async_get(self.hass)
-        allowed_locations = self._client_location_labels(tree)
-        clean: list[str] = []
-        for label_id in sorted({str(value) for value in labels}):
-            entry = registry.async_get_label(label_id)
-            if entry is None:
-                raise HomeAssistantError("A selected label does not exist")
-            is_location = str(getattr(entry, "icon", "") or "").startswith(
-                "mdi:map-marker"
-            ) or "location" in str(getattr(entry, "description", "") or "").lower()
-            if is_location and label_id not in allowed_locations:
-                raise HomeAssistantError("A location label belongs to another client")
-            clean.append(label_id)
+        clean = sorted({str(value) for value in labels})
+        if any(registry.async_get_label(label_id) is None for label_id in clean):
+            raise HomeAssistantError("A selected label does not exist")
         return clean
 
     def _validate_area(self, tree: dict[str, Any], area_id: str | None) -> None:
@@ -266,21 +246,11 @@ class PortalOperations:
             location = self._place_location(tree, place)
             if location is None:
                 raise HomeAssistantError("Choose a location for the entity")
-            if self.manager.areas:
-                # The entity joins its location's area; the group is kept by the caller.
-                area_id = self.manager.location_area(tree, location)
-                self._validate_area(tree, area_id)
-            elif place.startswith("area:"):
-                area_id = place[5:]
-                self._validate_area(tree, area_id)
-            elif location.startswith("loc:"):
-                requested = labels or []
-                requested = [
-                    value for value in requested if value not in self._client_location_labels(tree)
-                ]
-                labels = [*requested, location[4:]]
+            # The entity joins its location's area; the group is kept by the caller.
+            area_id = self.manager.location_area(tree, location)
+            self._validate_area(tree, area_id)
         if labels is not None:
-            labels = self._validate_labels(tree, labels)
+            labels = self._validate_labels(labels)
         changes: dict[str, Any] = {}
         if name is not None:
             changes["name"] = name

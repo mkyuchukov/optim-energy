@@ -92,46 +92,23 @@ function treeWithDevicePlaced(tree, device, place) {
   if (place) placed[device] = place; else delete placed[device];
   return { ...tree, placed };
 }
-// Sites come from Home Assistant when it has any: a label with a map-pin icon is a location, its areas are groups,
-// and a floor holding those areas is the group above them. A device belongs to its area's location, or to a location label of its own.
-// Without such a label the portal keeps its own locations and groups, as before.
+// The server owns locations and groups and says where each device is. NATIVE holds that, once the tree has loaded.
 let NATIVE = null, LABELS = [];
-const isLocationLabel = (l) => /^mdi:map-marker/.test(l.icon || '') || /\blocation\b/i.test(l.description || '');
 const cleanName = (x) => String(x || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
-function nativePlaces(labels, floors, areas) {
-  if (![labels, floors, areas].every(Array.isArray)) return null;
-  const locs = labels.filter(isLocationLabel);
-  if (!locs.length) return null;
-  const locIds = new Set(locs.map((l) => l.label_id));
-  const areaLoc = Object.fromEntries(areas.map((a) => [a.area_id, (a.labels || []).find((x) => locIds.has(x))]).filter(([, l]) => l));
-  const floorLoc = {};
-  for (const a of areas) if (areaLoc[a.area_id] && a.floor_id && !floorLoc[a.floor_id]) floorLoc[a.floor_id] = areaLoc[a.area_id];
-  const places = locs.map((l) => ({ id: `loc:${l.label_id}`, name: cleanName(l.name), kind: 'location', parent: null }));
-  for (const f of floors) if (floorLoc[f.floor_id]) places.push({ id: `floor:${f.floor_id}`, name: f.name, kind: 'group', parent: `loc:${floorLoc[f.floor_id]}` });
-  for (const a of areas) if (areaLoc[a.area_id]) places.push({ id: `area:${a.area_id}`, name: a.name, kind: 'group', parent: a.floor_id && floorLoc[a.floor_id] === areaLoc[a.area_id] ? `floor:${a.floor_id}` : `loc:${areaLoc[a.area_id]}` });
-  // A label named for a type (Light, Socket, Relay, AC, Energy meter) sets a device's type.
-  const kinds = Object.fromEntries(labels.map((l) => [l.label_id, KIND_BY_NAME[cleanName(l.name).toLowerCase()]]).filter(([, k]) => k));
-  return { places, locIds, areaLoc, areas, labels, kinds };
-}
-// After the move to "floor = client, area = location" the server owns locations and groups and says where each
-// device is. This stands in for the label-based object above so the rest of the portal reads places the same way.
-function areasNative(tree, labels) {
+function serverPlaces(tree, labels) {
   const places = Array.isArray(tree?.places) ? tree.places : [];
+  // A label named for a type (Light, Socket, Relay, AC, Energy meter) sets a device's type.
   const kinds = Object.fromEntries((labels || []).map((l) => [l.label_id, KIND_BY_NAME[cleanName(l.name).toLowerCase()]]).filter(([, k]) => k));
   const locByArea = Object.fromEntries(places.filter((p) => p.kind === 'location' && p.area_id).map((p) => [p.area_id, p.id]));
-  return { areasModel: true, places, locIds: new Set(), areaLoc: {}, areas: [], labels: labels || [], kinds, locByArea, placed: tree?.placed || {} };
+  return { places, kinds, locByArea, placed: tree?.placed || {} };
 }
-const areasModel = () => !!NATIVE?.areasModel;
 const KIND_BY_NAME = { light: 'lights', lights: 'lights', socket: 'socket', relay: 'relay', ac: 'ac', 'energy meter': 'meter', meter: 'meter' };
-// Where each device sits. Its area wins; a location label of its own places a device that has no room.
-// A device marked to be left out, or switched off in Home Assistant, is not placed.
+// Where each device sits, as the server said. A device marked to be left out, or switched off in Home Assistant, is not placed.
 function nativePlaced(devices, nat) {
   const out = {};
   for (const d of Object.values(devices || {})) {
     if (d.disabled_by || (d.labels || []).some((x) => /exclude/i.test(x))) continue;
-    if (nat.areasModel) { if (nat.placed[d.id]) out[d.id] = nat.placed[d.id]; continue; }
-    if (d.area_id && nat.areaLoc[d.area_id]) out[d.id] = `area:${d.area_id}`;
-    else { const l = (d.labels || []).find((x) => nat.locIds.has(x)); if (l) out[d.id] = `loc:${l}`; }
+    if (nat.placed[d.id]) out[d.id] = nat.placed[d.id];
   }
   return out;
 }
@@ -153,13 +130,6 @@ function adminDeviceCatalog(devices, entities, placed) {
     if (d.entry_type === 'service') return false;
     return portalEntityDevices.has(d.id) || (d.labels || []).some((x) => PORTAL_TYPE_LABELS.has(x));
   });
-}
-// Things Home Assistant does not catch by itself: an area with devices but no location, and a device whose location label disagrees with its area.
-function nativeProblems(devices, nat) {
-  const out = [], name = (d) => d.name_by_user || d.name;
-  for (const a of nat.areas) if (!nat.areaLoc[a.area_id] && Object.values(devices).some((d) => d.area_id === a.area_id)) out.push(`Area "${a.name}" has devices but no 📍 location label.`);
-  for (const d of Object.values(devices)) { const own = (d.labels || []).find((x) => nat.locIds.has(x)), viaArea = nat.areaLoc[d.area_id]; if (own && viaArea && own !== viaArea) out.push(`${name(d)}: its 📍 label and its area are in different locations. Its area is used.`); }
-  return out;
 }
 function setTree(t) {
   Object.assign(TREE, { main: null, mains: {}, parents: {}, virtual: [], known: null, places: [], placed: {}, automations: [], alarms: [], kept: null, kinds: {}, notify: {}, sums: {}, prices: {} }, t || {});
@@ -568,12 +538,12 @@ function ensureTree(hass) {
     const client = PORTAL.isRoot ? portalClient : null;
     const reg = (kind) => hass.callWS({ type: 'optim_energy/registry/list', kind, ...(client ? { client } : {}) }).catch(() => []);
     try {
-      const [payload, labels, floors, areas, devices, entities] = await Promise.all([
+      const [payload, labels, devices, entities] = await Promise.all([
         hass.callWS({ type: 'optim_energy/tree/get', ...(client ? { client } : {}) }),
-        reg('label'), reg('floor'), reg('area'), reg('device'), reg('entity'),
+        reg('label'), reg('device'), reg('entity'),
       ]);
-      if (payload) { PORTAL.client = payload.client; PORTAL.clientName = payload.client_name || ''; PORTAL.model = payload.model || 'labels'; }
-      NATIVE = payload?.model === 'areas' ? areasNative(payload.tree, Array.isArray(labels) ? labels : []) : nativePlaces(labels, floors, areas);
+      if (payload) { PORTAL.client = payload.client; PORTAL.clientName = payload.client_name || ''; }
+      NATIVE = serverPlaces(payload?.tree, Array.isArray(labels) ? labels : []);
       LABELS = Array.isArray(labels) ? labels : [];
       // Home Assistant only ships the device/entity registry to admins. The
       // server has already filtered these lists for this tenant.
@@ -1024,21 +994,8 @@ function parseSchedule(cfg) {
   const wd = all(cfg.conditions || cfg.condition).find((c) => c.condition === 'time' && c.weekday);
   return { at: tr.at.slice(0, 5), how: /on$/.test(act.action || act.service) ? 'on' : 'off', days: wd ? DAY_KEY.filter((d) => all(wd.weekday).includes(d)) : [...DAY_KEY] };
 }
-// With sites from Home Assistant, an automation is in the group its area is, or in the location of its 📍 label, whoever made it.
-// ponytail: someone who is not an admin cannot read an automation's settings, so they see the time last saved in the portal. One changed only in Home Assistant shows its new time to admins.
-function nativeAutomations(entities, states, nat, saved, cfgs) {
-  const out = [];
-  for (const e of Object.values(entities || {})) {
-    if (!e.entity_id.startsWith('automation.')) continue;
-    const l = (e.labels || []).find((x) => nat.locIds.has(x)), place = e.area_id && nat.areaLoc[e.area_id] ? `area:${e.area_id}` : l ? `loc:${l}` : null;
-    if (!place) continue;
-    const old = saved.find((a) => a.entity === e.entity_id) || {}, cfg = cfgs[e.entity_id], sched = cfg ? parseSchedule(cfg) : old.at ? {} : null;
-    out.push({ ...(cfg ? {} : old), ...(sched || {}), entity: e.entity_id, place, name: states[e.entity_id]?.attributes?.friendly_name || old.name || e.entity_id, custom: !sched });
-  }
-  return out;
-}
 const AUTO_CFG = {};
-const portalAutomations = () => (NATIVE && !areasModel() && HASS ? nativeAutomations(HASS.entities, HASS.states, NATIVE, TREE.automations, AUTO_CFG) : TREE.automations);
+const portalAutomations = () => TREE.automations;
 const automationsIn = (sp) => { const under = placesUnder(sp.id); return portalAutomations().filter((a) => under.has(a.place)); };
 const BELL_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21,19V20H3V19L5,17V11C5,7.9 7.03,5.17 10,4.29C10,4.19 10,4.1 10,4A2,2 0 0,1 12,2A2,2 0 0,1 14,4C14,4.1 14,4.19 14,4.29C16.97,5.17 19,7.9 19,11V17L21,19M14,21A2,2 0 0,1 12,23A2,2 0 0,1 10,21"/></svg>';
 const DAY_KEY = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -1117,7 +1074,7 @@ const kindOf = (d) => {
 };
 // Renaming a device and moving it between this client's locations and groups, for whoever manages the client.
 function deviceManageHtml(d) {
-  if (!portalCanManage() || !areasModel() || d.virtual || d.link || d.channelOf) return '';
+  if (!portalCanManage() || !NATIVE || d.virtual || d.link || d.channelOf) return '';
   const spots = TREE.places.filter((p) => p.kind === 'location').sort(byName).flatMap((l) => [l.id, ...[...placesUnder(l.id)].filter((x) => x !== l.id)]), name = d.fullName || d.name;
   return `<h3>Name and place</h3><div class="kvl manage"><label>Name<input id="dname" maxlength="80" value="${esc(name)}" autocomplete="off"></label><label>Location or group<select id="dplace">${spots.map((p) => `<option value="${esc(p)}"${p === d.place ? ' selected' : ''}>${esc(placeLabel(p))}</option>`).join('')}</select></label></div><button data-save-device="${esc(d.id)}" data-was-name="${esc(name)}" data-was-place="${esc(d.place || '')}">Save name and place</button><span class="err" id="dmsg"></span>`;
 }
@@ -1244,14 +1201,13 @@ function computeActive(states, nowMs, data) {
   return out;
 }
 // Alert rules are made in Home Assistant: a Threshold or Template helper that turns on, with the "Portal alert" label. A "Critical" label makes it red.
-// It belongs to the place of its area, its device, or its 📍 label.
+// It belongs to the place of its device, or to the location of its area.
 function alarmRules() {
   if (!HASS) return [];
   const label = (n) => LABELS.find((l) => cleanName(l.name).toLowerCase() === n)?.label_id, alert = label('portal alert'), crit = label('critical');
   if (!alert) return [];
   return Object.values(HASS.entities).filter((e) => e.entity_id.startsWith('binary_sensor.') && (e.labels || []).includes(alert)).map((e) => {
-    const loc = (e.labels || []).find((x) => NATIVE?.locIds.has(x));
-    const place = (e.area_id && NATIVE?.areaLoc[e.area_id] && `area:${e.area_id}`) || TREE.placed[e.device_id] || (loc && `loc:${loc}`) || NATIVE?.locByArea?.[e.area_id] || null;
+    const place = TREE.placed[e.device_id] || NATIVE?.locByArea?.[e.area_id] || null;
     return { id: e.entity_id, entity: e.entity_id, sev: (e.labels || []).includes(crit) ? 'critical' : 'warn', name: HASS.states[e.entity_id]?.attributes?.friendly_name || e.entity_id, place };
   });
 }
@@ -1283,7 +1239,7 @@ function autoRuns(ev, autos) {
 // Who can be told: Home Assistant's own notifications only, the bell in its sidebar and app.
 // ponytail: phones and email were left out on purpose; ruleAutomation still takes any notify service if they are wanted back.
 const notifyTargets = (hass) => (hass.services?.notify?.persistent_notification ? [['persistent_notification', 'HA notifications']] : []);
-// An alert rule tells people through its own automation. It has no area or 📍 label, so it is not listed among the automations of a location.
+// An alert rule tells people through its own automation. It is not listed among the automations of a location.
 // When the rule turns on: a notification in Home Assistant, and a message to each phone or email chosen. When it turns off: the notification goes away.
 const ruleAutoId = (rule) => `portal_alert_${rule.split('.')[1]}`;
 function ruleAutomation(rule, name, sensor, unit, sev, targets) {
@@ -2390,8 +2346,6 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
           for (let i = 0; i < 30 && !entity; i += 1) { await new Promise((res) => setTimeout(res, 500)); entity = Object.values(this._hass.states).find((s) => s.entity_id.startsWith('automation.') && s.attributes.id === id)?.entity_id; }
           if (!entity) { await h.callApi('DELETE', `config/automation/config/${id}`).catch(() => {}); throw new Error('not started'); }
           AUTO_CFG[entity] = made;
-          // Its group's area, or its location's 📍 label, in Home Assistant: that is what places it.
-          if (NATIVE && !areasModel() && (!old || old.place !== f.place)) await h.callWS({ type: 'config/entity_registry/update', entity_id: entity, ...(f.place.startsWith('area:') ? { area_id: f.place.slice(5) } : { area_id: null, labels: [...new Set([...(h.entities[entity]?.labels || []).filter((x) => !NATIVE.locIds.has(x)), f.place.slice(4)])] }) });
           await saveTree(h, { ...TREE, automations: [...TREE.automations.filter((a) => a.entity !== entity), { entity, name: alias, at: f.at, place: f.place, devices: switches.length, how: f.how, days: f.days }] });
         }
         this._form = null; this.paintForm();
@@ -2536,8 +2490,8 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
       f.busy = true; f.err = ''; this.paintForm();
       try {
         let entity = f.entity;
-        const keep = (h.entities[entity]?.labels || []).filter((x) => x !== alert && x !== crit && !NATIVE?.locIds.has(x)), loc = placePath(d.place)[0]?.id;
-        const labels = [...keep, alert, ...(f.sev === 'critical' && crit ? [crit] : []), ...(!d.place?.startsWith('area:') && loc?.startsWith('loc:') ? [loc.slice(4)] : [])];
+        const keep = (h.entities[entity]?.labels || []).filter((x) => x !== alert && x !== crit);
+        const labels = [...keep, alert, ...(f.sev === 'critical' && crit ? [crit] : [])];
         const allowed = notifyTargets(h).map(([k]) => k), targets = [...(f.notify || [])].filter((k) => allowed.includes(k));
         const autoName = this.devName(f.sensor) ? `${this.devName(f.sensor)} ${name}` : name;
         if (!portalCanManageHA()) {
@@ -2560,7 +2514,7 @@ ${what}${devices}<span class="err">${f.err || ''}</span>`;
             if (!entity) throw new Error('no entity');
           }
           // Where it shows: the device's group, or its location. And how it shows: the Portal alert label, Critical for red.
-          await h.callWS({ type: 'config/entity_registry/update', entity_id: entity, name, area_id: d.place?.startsWith('area:') ? d.place.slice(5) : null, labels });
+          await h.callWS({ type: 'config/entity_registry/update', entity_id: entity, name, area_id: placePath(d.place)[0]?.area_id || null, labels });
           const id = ruleAutoId(entity);
           if (targets.length) await h.callApi('POST', `config/automation/config/${id}`, ruleAutomation(entity, autoName, f.sensor, rd[2], f.sev, targets));
           else await h.callApi('DELETE', `config/automation/config/${id}`).catch(() => {});
@@ -2818,7 +2772,6 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
 </style><div class="w"><h2>Choose a location</h2><div id="client"></div><div class="locs" id="locs"></div><div class="add" id="add"></div><span class="err" id="err"></span><span class="muted" id="free"></span></div>`;
       const r = this.shadowRoot;
       r.getElementById('locs').addEventListener('click', (e) => { const b = e.target.closest('[data-loc]'); if (b) { setLocation(b.dataset.loc); location.assign(HOME_PATH); } });
-      r.getElementById('add').addEventListener('click', (e) => { if (e.target.closest('[data-setup]')) navigate(SETUP_PATH); });
       r.getElementById('client').addEventListener('change', (e) => { if (e.target.id === 'clientSwitch') switchPortalClient(this._hass, e.target.value); });
     }
     paint() {
@@ -2830,14 +2783,13 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
         navigate(HOME_PATH);
         return;
       }
-      const admin = portalCanManage(), canHA = portalCanManageHA(), list = TREE.places.filter((p) => p.kind === 'location').sort(byName), real = allNodes.filter((d) => !d.virtual);
+      const admin = portalCanManage(), list = TREE.places.filter((p) => p.kind === 'location').sort(byName), real = allNodes.filter((d) => !d.virtual);
       const clients = PORTAL.clients || [];
       r.getElementById('client').innerHTML = PORTAL.isRoot && clients.length ? `<label class="clientpick"><span>Client</span><select id="clientSwitch" aria-label="Client">${clients.map((c) => `<option value="${esc(c.id)}"${c.id === portalClient ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>` : PORTAL.clientName ? `<div class="clientpick"><span>Client · ${esc(PORTAL.clientName)}</span></div>` : '';
       r.getElementById('locs').innerHTML = list.map((p) => { const under = placesUnder(p.id), n = real.filter((d) => under.has(d.place)).length, g = under.size - 1; return `<button class="loc${p.id === currentLocation ? ' on' : ''}" data-loc="${p.id}"><b>${esc(p.name)}</b><span>${n} ${n === 1 ? 'device' : 'devices'} · ${g} ${g === 1 ? 'group' : 'groups'}${p.id === currentLocation ? ' · Open now' : ''}</span></button>`; }).join('') || '<span class="muted">No locations yet.</span>';
       r.getElementById('err').textContent = PORTAL.error || '';
-      r.getElementById('add').innerHTML = canHA && !NATIVE ? '<button data-setup="1">Add or change locations</button>' : '';
       const free = real.filter((d) => !d.place).length;
-      r.getElementById('free').textContent = admin && free ? `${free} ${free === 1 ? 'device is' : 'devices are'} not in a location yet. ${areasModel() ? 'An administrator assigns them under Administration.' : NATIVE ? 'Give them an area in Home Assistant.' : 'Add them under Setup.'}` : '';
+      r.getElementById('free').textContent = admin && free ? `${free} ${free === 1 ? 'device is' : 'devices are'} not in a location yet. An administrator assigns them under Administration.` : '';
     }
   }
   // Adds new devices and registers them to a location, without going through Home Assistant's settings.
@@ -3130,10 +3082,9 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const r = this.shadowRoot, h = this._hass, count = (id) => { const under = placesUnder(id); return allNodes.filter((d) => !d.virtual && under.has(d.place)).length; };
       if (!force && ['SELECT', 'INPUT'].includes(r.activeElement?.tagName)) return;
       const branch = (parent) => { const kids = placeChildren(parent); return kids.length ? `<ul>${kids.map((p) => `<li><div class="n"><span>${esc(p.name)}</span><span class="muted">${count(p.id)}</span></div>${branch(p.id)}</li>`).join('')}</ul>` : ''; };
-      const locs = TREE.places.filter((p) => p.kind === 'location').sort(byName), problems = NATIVE ? nativeProblems(h.devices, NATIVE) : [];
-if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, count);
-      else r.getElementById('tree').innerHTML = `<h3>Locations and groups</h3><ul class="t">${locs.map((l) => `<li><div class="n"><b>${esc(l.name)}</b><span class="muted">${count(l.id)}</span></div>${branch(l.id)}</li>`).join('') || '<li class="muted">None yet.</li>'}</ul><div class="cfg-hint">📍 labels define locations; areas and floors define groups.</div>${portalCanManageHA() ? '<div class="two"><button data-nav="/config/areas/dashboard">Areas and floors ›</button><button data-nav="/config/labels">Labels ›</button></div>' : ''}`;
-      r.getElementById('main').innerHTML = `${problems.length ? `<div class="box"><h3>Needs attention (${problems.length})</h3>${problems.map((x) => `<span class="muted">${esc(x)}</span>`).join('')}</div>` : ''}${locs.length && portalCanWire() ? `<div class="box"><h3>Main device</h3><span class="muted">The device whose figures Overview shows.</span>${locs.map((l) => { const under = placesUnder(l.id), now = TREE.mains?.[l.id] || ''; const opts = allNodes.filter((d) => under.has(d.place) && (d.virtual || kindOf(d) === 'meter' || d.id === now)).sort(byName); return `<label class="f">${esc(l.name)}<select data-main-for="${l.id}"><option value="">None: add up the top devices</option>${opts.map((d) => `<option value="${d.id}"${d.id === now ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>`; }).join('')}</div>` : ''}${this.priceBox(locs)}`;
+      const locs = TREE.places.filter((p) => p.kind === 'location').sort(byName);
+      r.getElementById('tree').innerHTML = this.groupTree(locs, count);
+      r.getElementById('main').innerHTML = `${locs.length && portalCanWire() ? `<div class="box"><h3>Main device</h3><span class="muted">The device whose figures Overview shows.</span>${locs.map((l) => { const under = placesUnder(l.id), now = TREE.mains?.[l.id] || ''; const opts = allNodes.filter((d) => under.has(d.place) && (d.virtual || kindOf(d) === 'meter' || d.id === now)).sort(byName); return `<label class="f">${esc(l.name)}<select data-main-for="${l.id}"><option value="">None: add up the top devices</option>${opts.map((d) => `<option value="${d.id}"${d.id === now ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>`; }).join('')}</div>` : ''}${this.priceBox(locs)}`;
     }
   }
   // A table-first administration surface. The old client-facing cards are
@@ -3149,7 +3100,6 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
     build() {
       this._users = [];
       this._summaries = [];
-      this._catalog = [];
       this._adminDevices = {};
       this._editor = null;
       this._selectedLocation = null;
@@ -3195,10 +3145,7 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
           root ? this._hass.callWS({ type: 'optim_energy/registry/list', kind: 'device' }).catch(() => []) : [],
           root ? this._hass.callWS({ type: 'optim_energy/registry/list', kind: 'entity' }).catch(() => []) : [],
         ]);
-        const catalog = root
-          ? await this._hass.callWS({ type: 'optim_energy/location/catalog' }).catch(() => [])
-          : [];
-        // Every Home Assistant device with where it is. Only exists once locations are areas.
+        // Every Home Assistant device with where it is.
         const inbox = root ? await this._hass.callWS({ type: 'optim_energy/device/inbox' }).catch(() => null) : null;
         let summaries = [];
         if (root) {
@@ -3227,7 +3174,6 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         }
         if (seq !== this._loadSeq || client !== portalClient) return;
         this._users = Array.isArray(users) ? users : [];
-        this._catalog = Array.isArray(catalog) ? catalog : [];
         this._summaries = summaries;
         this._inbox = Array.isArray(inbox) ? inbox : null;
         // Open on the devices waiting to be assigned when there are some, otherwise on the assigned ones,
@@ -3321,14 +3267,14 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       } else if (e.kind === 'client') {
         title = e.id ? 'Edit client' : 'New client';
         save = e.id ? 'Save' : 'Create client';
-        fields = `${text('editorName', 'Client name', e.name || '')}${e.id ? '' : `<p class="admin-note">${areasModel() ? 'A floor with this name is created in Home Assistant. Add its locations next.' : 'Add its locations next.'}</p>`}`;
+        fields = `${text('editorName', 'Client name', e.name || '')}${e.id ? '' : `<p class="admin-note">A floor with this name is created in Home Assistant. Add its locations next.</p>`}`;
       } else if (e.kind === 'location') {
         title = e.id ? 'Edit location' : `New location for ${this.selectedClient().name}`;
         save = e.id ? 'Save' : 'Create location';
-        fields = `${text('editorName', 'Location name', e.name || '')}<p class="admin-note">${areasModel() ? 'A location is an area in Home Assistant on this client\'s floor. A device given that area lands in this location.' : `A location is a 📍 label in Home Assistant, attached to ${esc(this.selectedClient().name)}.`}</p>`;
+        fields = `${text('editorName', 'Location name', e.name || '')}<p class="admin-note">A location is an area in Home Assistant on this client's floor. A device given that area lands in this location.</p>`;
       } else if (e.kind === 'location-move') {
         title = `Move ${e.name} to another client`; save = 'Move location';
-        fields = `${pick('editorClient', 'New client', clients.filter((x) => x.id !== portalClient).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join(''))}${areasModel() ? '<p class="admin-note">The location moves with its groups, devices, price, schedules and alert rules. Its people stay with the old client, so remove it from them first.</p>' : ''}`;
+        fields = `${pick('editorClient', 'New client', clients.filter((x) => x.id !== portalClient).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join(''))}<p class="admin-note">The location moves with its groups, devices, price, schedules and alert rules. Its people stay with the old client, so remove it from them first.</p>`;
       } else if (e.kind === 'person') {
         const current = e.user, role = e.role || current?.role || 'user';
         title = current ? `Edit ${current.name || current.username}` : `New person for ${this.selectedClient().name}`;
@@ -3349,7 +3295,7 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         const inside = [...placesUnder(e.location)].filter((id) => id !== e.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean);
         fields = `${text('editorName', 'Group name', e.name || '')}${e.id ? '' : pick('editorPlace', 'Inside', inside.map((p) => `<option value="${esc(p.id)}">${esc(placeLabel(p.id))}</option>`).join(''))}<p class="admin-note">A group only organises devices. It does not change who can see them.</p>`;
       } else if (e.kind === 'device') {
-        // Only without the device list (an installation still on labels): pick a device and where it goes.
+        // For a client administrator, who has no device list: pick a device and where it goes.
         title = 'Add device to a location or group'; save = 'Add device';
         const devices = this.sorted(this.deviceRows().filter((x) => !x.virtual), (x) => x.name);
         fields = `${pick('editorDevice', 'Device', devices.map((x) => `<option value="${esc(x.id)}"${x.id === e.device ? ' selected' : ''}>${esc(x.name)}${x.place ? ` · ${esc(this.placeName(x.place))}` : ''}</option>`).join(''))}${pick('editorPlace', 'Location or group', locs.map((p) => `<option value="${esc(p.id)}"${p.id === (e.place || this._selectedLocation) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join(''))}`;
@@ -3409,11 +3355,11 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       if (!selected) return main;
       const groupList = this.sorted([...placesUnder(selected.id)].filter((id) => id !== selected.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean), (g) => placeLabel(g.id));
       const groupRows = groupList.map((g) => `<td><b>${esc(g.name)}</b></td><td>${esc(placeLabel(g.parent))}</td><td class="num">${this.deviceRows().filter((d) => d.place === g.id).length}</td><td><div class="table-actions">${this.action('Rename', `data-edit-group="${esc(g.id)}" data-name="${esc(g.name)}"`)}${this.action('Delete', `data-delete-group="${esc(g.id)}"`, 'table-action danger')}</div></td>`);
-      const groups = areasModel() ? this.card(`<h2>Groups in ${esc(selected.name)}<small>Groups organise this location's devices. They do not change who can see them.</small></h2><span class="sp"></span><button class="quiet" data-new-group="${esc(selected.id)}">New group</button>`, this.table(['Group', 'Inside', { text: 'Devices', cls: 'num' }, 'Actions'], groupRows, '', 'No groups yet. Groups are optional.')) : '';
+      const groups = this.card(`<h2>Groups in ${esc(selected.name)}<small>Groups organise this location's devices. They do not change who can see them.</small></h2><span class="sp"></span><button class="quiet" data-new-group="${esc(selected.id)}">New group</button>`, this.table(['Group', 'Inside', { text: 'Devices', cls: 'num' }, 'Actions'], groupRows, '', 'No groups yet. Groups are optional.'));
       const devices = this.card(`<h2>Devices in ${esc(selected.name)}<small>Edit a device to rename it, move it, or set what feeds it.</small></h2><span class="sp"></span>${this.search('wiringSearch', 'Search devices')}${this.hasInbox() ? '' : `<button class="quiet" data-add-device="${esc(selected.id)}">Add device</button>`}<button class="quiet" data-new-virtual="1">Virtual device</button>`, this.deviceRowsHtml(selected.id));
       return `${main}${groups}${devices}`;
     }
-    hasInbox() { return PORTAL.isRoot && areasModel() && Array.isArray(this._inbox); }
+    hasInbox() { return PORTAL.isRoot && Array.isArray(this._inbox); }
     // Places of any client, not only the active one, for the assign dialog.
     clientPlaces(client) { return (this._summaries || []).find((x) => x.id === client)?.places || []; }
     placeNameIn(places, id) { const out = []; const seen = new Set(); let p = places.find((x) => x.id === id); while (p && !seen.has(p.id)) { seen.add(p.id); out.unshift(p.name); p = places.find((x) => x.id === p.parent); } return out.join(' › '); }
@@ -3456,10 +3402,7 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       const picker = !perClient ? '' : PORTAL.isRoot && clients.length
         ? `<label class="admin-control"><span>Client</span><select id="clientSwitch">${this.sorted(clients, (x) => x.name).map((x) => `<option value="${esc(x.id)}"${x.id === portalClient ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`
         : `<span class="toolbar-label">Client · <b>${esc(this.selectedClient().name)}</b></span>`;
-      // An installation that has not moved to "floor = client, area = location" yet is offered the switch here.
-      const m = this._migration, changes = m?.changes || {};
-      const upgrade = !setup && PORTAL.isRoot && PORTAL.model === 'labels' ? `<div class="admin-banner"><div><b>This installation still places devices by label.</b><p class="admin-note">The current model makes each client a floor and each location an area in Home Assistant, so a device gets its client and location from its area. ${m ? (m.report.blockers.length ? `It cannot switch yet: ${esc(m.report.blockers.join('; '))}` : `Switching would create ${changes.create_floor} floor(s) and ${changes.create_area} area(s) and move ${changes.set_device_area} device(s). Nothing is deleted.`) : ''}</p></div>${m && !m.report.blockers.length ? '<button class="primary" data-migration-apply="1">Switch now</button>' : '<button class="quiet" data-migration-plan="1">See what would change</button>'}</div>` : '';
-      return `<div class="admin-head"><div><span class="admin-kicker">Optim Energy / Administration</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${picker}${setup ? '' : '<button class="quiet" data-refresh="1">Refresh</button>'}${actions || ''}</div></div>${upgrade}${body}`;
+      return `<div class="admin-head"><div><span class="admin-kicker">Optim Energy / Administration</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${picker}${setup ? '' : '<button class="quiet" data-refresh="1">Refresh</button>'}${actions || ''}</div></div>${body}`;
     }
     paint(force = false) {
       const r = this.shadowRoot;
@@ -3553,11 +3496,6 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         navigate(HOME_PATH);
       } catch (e) { this.flash(e?.message || 'Could not open the client view.', true); }
     }
-    async setClientLabels(client, labels) {
-      const response = await this._hass.callWS({ type: 'optim_energy/client/set_locations', client, labels });
-      const item = (PORTAL.clients || []).find((x) => x.id === client);
-      if (item) item.labels = response.labels || labels;
-    }
     async saveEditor() {
       const e = this._editor, r = this.shadowRoot;
       if (!e) return;
@@ -3579,15 +3517,7 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         } else if (e.kind === 'location') {
           const name = value('editorName');
           if (need(name, 'Enter a location name.')) return;
-          if (areasModel()) {
-            await this._hass.callWS({ type: 'optim_energy/location/save', client: portalClient, name, ...(e.id ? { location: e.id } : {}) });
-          } else if (e.id) {
-            if (e.id.startsWith('loc:')) await this._hass.callWS({ type: 'config/label_registry/update', label_id: e.id.slice(4), name });
-            else await this.saveAdminTree({ ...TREE, places: TREE.places.map((p) => p.id === e.id ? { ...p, name } : p) });
-          } else {
-            const made = await this._hass.callWS({ type: 'config/label_registry/create', name, icon: 'mdi:map-marker', description: 'Location', color: 'blue' });
-            await this.setClientLabels(portalClient, [...new Set([...(this.selectedClient().labels || []), made.label_id])]);
-          }
+          await this._hass.callWS({ type: 'optim_energy/location/save', client: portalClient, name, ...(e.id ? { location: e.id } : {}) });
           await this.afterChange(e.id ? 'Location updated.' : 'Location created.');
         } else if (e.kind === 'assign') {
           const client = value('assignClient'), location = value('assignLocation'), place = value('assignGroup') || location;
@@ -3607,17 +3537,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         } else if (e.kind === 'location-move') {
           const target = value('editorClient');
           if (need(target, 'Choose the client to move it to.')) return;
-          if (areasModel()) {
-            await this._hass.callWS({ type: 'optim_energy/location/move', client: portalClient, location: e.id, target });
-            await this.afterChange(`Location moved to ${(PORTAL.clients || []).find((x) => x.id === target)?.name || target}.`);
-            return;
-          }
-          const source = this.selectedClient(), label = e.id.startsWith('loc:') ? e.id.slice(4) : null;
-          if (!label) return;
-          const targetItem = (PORTAL.clients || []).find((x) => x.id === target) || {};
-          await this.setClientLabels(portalClient, (source.labels || []).filter((x) => x !== label));
-          await this.setClientLabels(target, [...new Set([...(targetItem.labels || []), label])]);
-          await this.afterChange(`Location moved to ${targetItem.name || target}.`);
+          await this._hass.callWS({ type: 'optim_energy/location/move', client: portalClient, location: e.id, target });
+          await this.afterChange(`Location moved to ${(PORTAL.clients || []).find((x) => x.id === target)?.name || target}.`);
         } else if (e.kind === 'person') {
           const role = value('editorRole') || 'user';
           const locs = role === 'client_admin' ? [] : [...r.querySelectorAll('[data-loc-check]:checked')].map((x) => x.dataset.locCheck);
@@ -3673,16 +3594,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       const devices = PORTAL.isRoot && Object.keys(this._adminDevices || {}).length ? this._adminDevices : (HASS?.devices || {});
       const device = Object.values(devices).find((x) => x.id === deviceId);
       if (!device) return;
-      if (areasModel()) {
-        // One checked command: the server sets the device's area (its location) and its group.
-        await this._hass.callWS({ type: 'optim_energy/device/assign', device_id: deviceId, place, ...(PORTAL.isRoot && portalClient ? { client: portalClient } : {}) });
-      } else if (place.startsWith('area:')) {
-        const labels = (device.labels || []).filter((x) => !NATIVE?.locIds?.has(x));
-        await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: place.slice(5), labels });
-      } else if (place.startsWith('loc:')) {
-        const labels = [...new Set([...(device.labels || []).filter((x) => !NATIVE?.locIds?.has(x)), place.slice(4)])];
-        await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: null, labels });
-      }
+      // One checked command: the server sets the device's area (its location) and its group.
+      await this._hass.callWS({ type: 'optim_energy/device/assign', device_id: deviceId, place, ...(PORTAL.isRoot && portalClient ? { client: portalClient } : {}) });
       await this.afterChange('Device moved.');
     }
     async onClick(e) {
@@ -3723,13 +3636,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       if ((b = q('[data-select-location]'))) { this._selectedLocation = b.dataset.selectLocation; this._q.wiringSearch = ''; this.paint(true); return; }
       if ((b = q('[data-delete-location]'))) {
         const id = b.dataset.deleteLocation, name = placeById(id)?.name || id;
-        this.confirm(`Delete ${name}?`, areasModel() ? `The location, its groups and its area in Home Assistant are removed. It has to be empty: no devices and no people assigned. This cannot be undone.` : 'The location and its label in Home Assistant are removed. This cannot be undone.', 'Delete location', async () => {
-          if (areasModel()) await call({ type: 'optim_energy/location/delete', client: portalClient, location: id });
-          else if (id.startsWith('loc:')) {
-            const label = id.slice(4);
-            await this.setClientLabels(portalClient, (this.selectedClient().labels || []).filter((x) => x !== label));
-            await call({ type: 'config/label_registry/delete', label_id: label });
-          } else { await this.saveAdminTree({ ...TREE, places: TREE.places.filter((p) => p.id !== id) }); return; }
+        this.confirm(`Delete ${name}?`, 'The location, its groups and its area in Home Assistant are removed. It has to be empty: no devices and no people assigned. This cannot be undone.', 'Delete location', async () => {
+          await call({ type: 'optim_energy/location/delete', client: portalClient, location: id });
           await this.afterChange('Location deleted.');
         });
         return;
@@ -3790,18 +3698,6 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         const id = b.dataset.deleteVirtual, name = (TREE.virtual || []).find((v) => v.id === id)?.name || 'this virtual device';
         this.confirm(`Delete ${name}?`, 'The virtual device and its sums are removed. The devices under it stay where they are.', 'Delete virtual device', () => this.saveAdminTree(treeWithoutVirtual(TREE, id)));
         return;
-      }
-      // Installations still on labels
-      if (q('[data-migration-plan]')) {
-        try { this._migration = await call({ type: 'optim_energy/migration/plan' }); this.paint(true); } catch (x) { this.flash(x?.message || 'Could not read the plan.', true); }
-        return;
-      }
-      if (q('[data-migration-apply]')) {
-        this.confirm('Switch to floors and areas?', 'Each client becomes a floor and each location an area in Home Assistant, and devices are moved into those areas. Nothing is deleted, but take a backup first: undoing it means restoring that backup.', 'Switch now', async () => {
-          await call({ type: 'optim_energy/migration/apply' });
-          this._migration = null;
-          await this.afterChange('Switched. Locations are areas now.');
-        });
       }
     }
     async onChange(e) {
@@ -4061,4 +3957,4 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
   reg('building-alerts-card', AlertsCard, 'Building alerts');
 }
 
-if (typeof module !== 'undefined') module.exports = { billPrices, billKind, billPages, parseBill, exchangeRows, billExtra, dayStartMs, priceRule, vatNote, chartPrice, priceList, priceSeries, pricePanel, combineTotals, priceOf, treeWithPrice, ruleAutomation, ruleTargets, ruleAutoId, autoRuns, whenShort, autoTitle, sumPlan, parseSchedule, nativeAutomations, nativePlaces, nativePlaced, nativeProblems, adminDeviceCatalog, spreadCatchUp, statGaps, cfgSwitches, guessControls, kindOf, typeLabel, scheduleConfig, daysText, groupSwitches, liveSwitches, isKept, shortNames, layoutRooms, radialLayout, layoutTree, wiringTree, networkTree, countUnder, downUnder, shutNodes, shutBelow, allParents, alarmRules, energyChart, chartBox, treeWithLocationMain, valueText, nowPanel, powerText, isMeasuring, setLocation, placesUnder, placePath, placeParts, placeLabel, flatPlaces, placedDevices, treeWithDevicePlaced, setTree, TREE, rootsIn, countedIn, readingsOf, homeDevices, buildingRoots, subtreeOf, nodeEnergy, unmeasuredOf, breakdownRows, wouldLoop, treeWithParent, treeWithMain, treeWithVirtual, treeWithoutVirtual, qualityRows, syncModel, portalModel, devicePower, withLiveHour, liveReadings, combineTotals, hourSoFar, mergeEnergy, spacePower, controlChanged, ALERT_SETTINGS, assessAlarm, worstIn, valueAt, groupAlarms, networkSummary, alertsHtml, resolveSpace, inSpace, devicesIn, deviceHealth, bucketEnergy, computeActive, alarmPeriods, alarmInfo, networkRestarts, duration, hourTip, deviceStatus, filterDevices, minutes, DEVICES, BRIDGE };
+if (typeof module !== 'undefined') module.exports = { billPrices, billKind, billPages, parseBill, exchangeRows, billExtra, dayStartMs, priceRule, vatNote, chartPrice, priceList, priceSeries, pricePanel, combineTotals, priceOf, treeWithPrice, ruleAutomation, ruleTargets, ruleAutoId, autoRuns, whenShort, autoTitle, sumPlan, parseSchedule, serverPlaces, nativePlaced, adminDeviceCatalog, spreadCatchUp, statGaps, cfgSwitches, guessControls, kindOf, typeLabel, scheduleConfig, daysText, groupSwitches, liveSwitches, isKept, shortNames, layoutRooms, radialLayout, layoutTree, wiringTree, networkTree, countUnder, downUnder, shutNodes, shutBelow, allParents, alarmRules, energyChart, chartBox, treeWithLocationMain, valueText, nowPanel, powerText, isMeasuring, setLocation, placesUnder, placePath, placeParts, placeLabel, flatPlaces, placedDevices, treeWithDevicePlaced, setTree, TREE, rootsIn, countedIn, readingsOf, homeDevices, buildingRoots, subtreeOf, nodeEnergy, unmeasuredOf, breakdownRows, wouldLoop, treeWithParent, treeWithMain, treeWithVirtual, treeWithoutVirtual, qualityRows, syncModel, portalModel, devicePower, withLiveHour, liveReadings, combineTotals, hourSoFar, mergeEnergy, spacePower, controlChanged, ALERT_SETTINGS, assessAlarm, worstIn, valueAt, groupAlarms, networkSummary, alertsHtml, resolveSpace, inSpace, devicesIn, deviceHealth, bucketEnergy, computeActive, alarmPeriods, alarmInfo, networkRestarts, duration, hourTip, deviceStatus, filterDevices, minutes, DEVICES, BRIDGE };

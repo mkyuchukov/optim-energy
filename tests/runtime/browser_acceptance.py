@@ -10,20 +10,17 @@ import time
 from pathlib import Path
 
 from acceptance import (
-    seed_legacy_dashboard,
     create_fixture_entry,
     CLIENT_ADMIN_A,
     RuntimeHarness,
     client_tree,
     complete_onboarding,
     create_config_entry,
-    ensure_area,
     ensure_client,
-    ensure_label,
     ensure_user,
     free_port,
-    location_for_label,
-    set_entity_place,
+    ensure_location,
+    set_entity_area,
 )
 from ha_client import Http, WebSocket
 
@@ -49,55 +46,19 @@ def run(version: str, *, keep: bool = False) -> None:
     try:
         harness.start()
         root_token = complete_onboarding(http)
-        # These flows start on the label model and migrate, so the instance needs an older tree.
-        seed_legacy_dashboard(harness, http, root_token)
         create_config_entry(http, root_token)
         root = WebSocket(http.host, http.port)
         root.auth(root_token)
 
-        ensure_label(root, "browser_a_north", "Browser A North")
-        ensure_label(root, "browser_a_west", "Browser A West")
-        ensure_label(root, "browser_b", "Browser B")
-        areas = {
-            "a_north": ensure_area(root, "living_room", "Living Room", "browser_a_north"),
-            "a_west": ensure_area(root, "browser_a_west", "West Wing", "browser_a_west"),
-            "b": ensure_area(root, "kitchen", "Kitchen", "browser_b"),
-        }
-        set_entity_place(
-            root,
-            "input_boolean.runtime_a_toggle",
-            areas["a_north"],
-            "browser_a_north",
-        )
-        set_entity_place(
-            root,
-            "input_boolean.runtime_b_toggle",
-            areas["b"],
-            "browser_b",
-        )
-
         client_a, _ = ensure_client(root, "Browser Client A")
         client_b, _ = ensure_client(root, "Browser Client B")
         root.command({"type": "optim_energy/client/delete", "client": "default"})
-        root.command(
-            {
-                "type": "optim_energy/client/set_locations",
-                "client": client_a,
-                "labels": ["browser_a_north", "browser_a_west"],
-            }
-        )
-        root.command(
-            {
-                "type": "optim_energy/client/set_locations",
-                "client": client_b,
-                "labels": ["browser_b"],
-            }
-        )
+        location_a_north, area_a_north = ensure_location(root, client_a, "Browser A North")
+        location_a_west, _ = ensure_location(root, client_a, "Browser A West")
+        location_b, area_b = ensure_location(root, client_b, "Browser B")
+        set_entity_area(root, "input_boolean.runtime_a_toggle", area_a_north)
+        set_entity_area(root, "input_boolean.runtime_b_toggle", area_b)
         tree_a = client_tree(root, client_a)
-        tree_b = client_tree(root, client_b)
-        location_a_north = location_for_label(tree_a, "browser_a_north")
-        location_a_west = location_for_label(tree_a, "browser_a_west")
-        location_b = location_for_label(tree_b, "browser_b")
 
         tree_a.setdefault("virtual", []).append(
             {"id": "virt:browser-main", "name": "Browser Main Device"}
@@ -196,22 +157,11 @@ def run(version: str, *, keep: bool = False) -> None:
         state_path.write_text(json.dumps(state), encoding="utf-8")
 
         env = os.environ.copy()
-        subprocess.run(
-            ["node", "portal_acceptance.mjs", str(state_path)],
-            cwd=BROWSER_DIR,
-            env=env,
-            check=True,
-            timeout=180,
-        )
-
-        # The same flows must pass after the move to "floor = client,
-        # area = location"; location ids do not change, so the state is reused.
-        migrate = WebSocket(http.host, http.port)
-        migrate.auth(root_state["tokens"]["access_token"])
+        setup = WebSocket(http.host, http.port)
+        setup.auth(root_state["tokens"]["access_token"])
         try:
-            migrate.command({"type": "optim_energy/migration/apply"})
             # A device Home Assistant knows but no client has, for the inbox.
-            migrate.command(
+            setup.command(
                 {
                     "type": "optim_runtime_fixture/create_devices",
                     "config_entry_id": create_fixture_entry(http, root_state["tokens"]["access_token"]),
@@ -223,27 +173,21 @@ def run(version: str, *, keep: bool = False) -> None:
                 }
             )
             lamp_a = next(
-                d["id"] for d in migrate.command({"type": "optim_energy/device/inbox"}) if d["name"] == "Browser Lamp A"
+                d["id"] for d in setup.command({"type": "optim_energy/device/inbox"}) if d["name"] == "Browser Lamp A"
             )
-            migrate.command(
+            setup.command(
                 {"type": "optim_energy/device/assign", "client": client_a, "device_id": lamp_a, "place": location_a_north}
             )
             # A metered device that already belongs to Client A, for the client administrator to manage.
             meter_a = next(
-                d["id"] for d in migrate.command({"type": "optim_energy/device/inbox"}) if d["name"] == "Browser Meter A"
+                d["id"] for d in setup.command({"type": "optim_energy/device/inbox"}) if d["name"] == "Browser Meter A"
             )
-            migrate.command(
+            setup.command(
                 {"type": "optim_energy/device/assign", "client": client_a, "device_id": meter_a, "place": location_a_north}
             )
-            # Undo the price the first pass typed, so the same steps run again.
-            fresh = migrate.command({"type": "optim_energy/tree/get", "client": client_a})["tree"]
-            fresh["prices"] = {}
-            migrate.command({"type": "optim_energy/tree/save", "client": client_a, "tree": fresh})
         finally:
-            migrate.close()
+            setup.close()
         time.sleep(4)
-        state["model"] = "areas"
-        state_path.write_text(json.dumps(state), encoding="utf-8")
         subprocess.run(
             ["node", "portal_acceptance.mjs", str(state_path)],
             cwd=BROWSER_DIR,

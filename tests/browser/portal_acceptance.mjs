@@ -33,7 +33,7 @@ const shots = process.env.SHOTS;
 async function shot(page, name) {
   if (!shots) return;
   await page.waitForTimeout(400);
-  await page.screenshot({ path: `${shots}/${state.model || 'labels'}-${name}.png` });
+  await page.screenshot({ path: `${shots}/${name}.png` });
 }
 
 async function waitCard(page, selector) {
@@ -206,7 +206,7 @@ try {
   await peopleAgain.locator('dialog[open] [data-save-editor]').click();
   await deleteRow.waitFor({ state: 'detached', timeout: 20000 });
 
-  if (state.model === 'areas') {
+  {
     // A client administrator manages its own groups under Setup ...
     await adminPage.goto(`${base}/energy-setup/structure`, { waitUntil: 'domcontentloaded' });
     const setup = await waitCard(adminPage, 'building-manage-card');
@@ -384,7 +384,7 @@ try {
   }
 
   assert.deepEqual(pageErrors, [], `browser page errors: ${pageErrors.join('; ')}`);
-  console.log(JSON.stringify({ profile: `browser portal flows (${state.model || 'labels'} model)`, status: 'PASS' }, null, 2));
+  console.log(JSON.stringify({ profile: 'browser portal flows', status: 'PASS' }, null, 2));
 } finally {
   await rootContext?.close();
   await adminContext?.close();

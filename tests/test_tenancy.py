@@ -489,6 +489,23 @@ class TenancyTests(unittest.TestCase):
         assert guard.decision(_Connection(_User(admin=True)), {"type": "get_states"})[0]
         assert not firewall._rest_request_decision("/api/states", authenticated=True, root=False)[0]
 
+    def test_a_store_still_on_labels_refuses_to_load(self) -> None:
+        import asyncio
+
+        class _Store:
+            def __init__(self, data: dict) -> None:
+                self.data = data
+
+            async def async_load(self) -> dict:
+                return self.data
+
+        manager = tenancy.TenancyManager.__new__(tenancy.TenancyManager)
+        manager.data = {}
+        manager.store = _Store({"clients": {"default": {"id": "default", "labels": ["site"]}}, "trees": {}})
+        with self.assertRaises(tenancy.HomeAssistantError):
+            asyncio.run(manager.async_initialize("Site"))
+        self.assertEqual(manager.data, {}, "a label-model store was taken into use")
+
     def test_devices_are_recognised_by_what_they_are_not_who_made_them(self) -> None:
         kind = tenancy.device_kind
         # A Tuya plug: nothing in its names says "power" the Zigbee2MQTT way.

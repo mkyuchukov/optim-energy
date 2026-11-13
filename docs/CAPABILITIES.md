@@ -16,8 +16,6 @@ Every `optim_energy/*` websocket command and the roles that may call it. A test 
 | `client/create` | yes | no | no |
 | `client/update` | yes | no | no |
 | `client/delete` | yes | no | no |
-| `client/set_locations` | yes | no | no |
-| `location/catalog` | yes | no | no |
 | `location/save` | yes | no | no |
 | `location/delete` | yes, when empty | no | no |
 | `location/move` | yes, when no person is assigned to it and nothing links it to the client's other locations | no | no |
@@ -26,14 +24,12 @@ Every `optim_energy/*` websocket command and the roles that may call it. A test 
 | `device/assign` | any device, any client, or unassign; refused while a sum, schedule or alert of the old client still uses the device | own devices to own locations and groups | no |
 | `device/inbox` | yes | no | no |
 | `device/ignore` | yes | no | no |
-| `migration/plan` | yes | no | no |
-| `migration/apply` | yes, once | no | no |
 | `user/list` | any client | own client | no |
 | `user/create` | any role | Users only, own locations | no |
 | `user/update` | yes, including a new password | own Users, never an HA admin or client admin; may set a new password | no |
 | `user/delete` | yes | own Users, never an HA admin or client admin | no |
 | `entity/get` | yes | own entities | no |
-| `entity/update` | yes | own entities, own areas and labels | no |
+| `entity/update` | yes | own entities, own areas, existing labels | no |
 | `device/update` | yes | rename own devices | no |
 | `automation/get` | yes | automations its own commands created | no |
 | `automation/save_schedule` | yes | own switches; edits only automations it created | no |

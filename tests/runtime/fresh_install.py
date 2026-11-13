@@ -1,4 +1,4 @@
-"""A brand-new installation starts on the floor and area model, with nothing to migrate."""
+"""A brand-new installation: a floor for the first client, no placeholder location, and a device inbox."""
 
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ def run(version: str) -> None:
         root.auth(token)
         try:
             who = root.command({"type": "optim_energy/whoami"})
-            assert_equal(who["model"], "areas", "model of a new installation")
             client = who["clients"][0]["id"]
             assert_equal(client_tree(root, client)["places"], [], "a new installation has a placeholder location")
             floors = [f["name"] for f in root.command({"type": "config/floor_registry/list"})]
@@ -42,12 +41,6 @@ def run(version: str) -> None:
             tree = client_tree(root, client)
             assert_true(any(p["id"] == location and p.get("area_id") for p in tree["places"]), "the first location has no area")
             assert_true(isinstance(root.command({"type": "optim_energy/device/inbox"}), list), "no device inbox")
-            try:
-                root.command({"type": "optim_energy/migration/apply"})
-            except RuntimeError:
-                pass
-            else:
-                raise AssertionError("a new installation offered a migration")
         finally:
             root.close()
         success = True
