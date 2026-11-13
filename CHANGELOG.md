@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.1
+
+A location has one name: the name of its area in Home Assistant.
+
+- Renaming the area in Home Assistant renames the location in the portal, and renaming the location in the portal renames the area. On upgrade every location takes its area's current name.
+- Because Home Assistant needs every area name to be different, a location cannot be created with, or renamed to, a name another area already has. The portal says so instead of adding the client's name to the area, as 0.11.1 did.
+
 ## 0.12.0
 
 The label model is gone. A client is a floor, a location is an area, and that is the only way the portal works now.

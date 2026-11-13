@@ -3271,7 +3271,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       } else if (e.kind === 'location') {
         title = e.id ? 'Edit location' : `New location for ${this.selectedClient().name}`;
         save = e.id ? 'Save' : 'Create location';
-        fields = `${text('editorName', 'Location name', e.name || '')}<p class="admin-note">A location is an area in Home Assistant on this client's floor. A device given that area lands in this location.</p>`;
+        fields = `${text('editorName', 'Location name', e.name || '')}<p class="admin-note">A location is an area in Home Assistant on this client's floor, under the same name, so no other area may have that name. A device given that area lands in this location.</p>`;
       } else if (e.kind === 'location-move') {
         title = `Move ${e.name} to another client`; save = 'Move location';
         fields = `${pick('editorClient', 'New client', clients.filter((x) => x.id !== portalClient).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join(''))}<p class="admin-note">The location moves with its groups, devices, price, schedules and alert rules. Its people stay with the old client, so remove it from them first.</p>`;
