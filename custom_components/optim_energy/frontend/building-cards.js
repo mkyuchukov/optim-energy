@@ -824,7 +824,7 @@ function syncModel(hass) {
 function portalModel(hass) {
   syncModel(hass);
   const list = DEVICES.filter((d) => d.energy && d.power), withChannels = DEVICES.filter((d) => d.channels);
-  const meters = Object.fromEntries(list.map((d) => [d.id, { id: d.id, energy: d.energy, power: d.power, name: d.name, voltages: d.voltages, frequency: d.frequency, phases: d.phases, powerFactor: d.powerFactor, temperature: d.temperature, linkQuality: d.linkQuality, shelly: d.shelly }]));
+  const meters = Object.fromEntries(list.map((d) => [d.id, { id: d.id, channelOf: d.channelOf || null, energy: d.energy, power: d.power, name: d.name, voltages: d.voltages, frequency: d.frequency, phases: d.phases, powerFactor: d.powerFactor, temperature: d.temperature, linkQuality: d.linkQuality, shelly: d.shelly }]));
   const groupItems = flatPlaces().filter((p) => p.kind !== 'location').map((p) => { const inside = placedDevices(p.id); return { id: `place:${p.id}`, name: esc(placeParts(p.id).group), meters: countedIn(inside).map((d) => d.id), roots: rootsIn(inside) }; }).filter((x) => x.meters.length);
   const main = mainDevice(), building = list.length ? [{ id: 'building', name: placeById(currentLocation) ? esc(placeById(currentLocation).name) : main ? main.name : 'All devices', meters: homeDevices().map((d) => d.id), roots: buildingRoots() }] : [];
   const virtualItems = treeNodes().filter((d) => d.virtual).map((d) => ({ id: d.report, name: d.name, meters: readingsOf(d.id).map((x) => x.id), roots: [d.id] }));
@@ -1667,15 +1667,38 @@ function wiringTree(states, nowMs) {
   const main = mainDevice(), tops = topNodes(), order = main ? [main, ...tops.filter((d) => d.id !== main.id)] : tops;
   return { id: 'root', kind: 'location', name: placeById(currentLocation)?.name || 'All devices', sub: 'Location', key: '', down: false, w: liveReadings(homeDevices(), states, nowMs).power, kids: order.map(walk) };
 }
-// Home Assistant does not know which router or access point a Shelly uses, so the hubs are the location's own groups, nested as they are set up.
-function networkTree(states, nowMs) {
-  const real = DEVICES.filter((d) => isMeasuring(d) && !d.virtual).sort(byName), num = (id) => parseFloat(states[id]?.state);
-  const leaf = (d) => ({ ...topoNode(d, states, nowMs, [], [d.address, Number.isFinite(num(d.rssi)) ? `${Math.round(num(d.rssi))} dBm` : '', !d.shelly && Number.isFinite(num(d.linkQuality)) ? `Link quality ${Math.round(num(d.linkQuality))}` : ''].filter(Boolean).join(' · ') || undefined), icon: d.shelly ? (d.switch ? 'circuit' : 'meter') : 'zigbee' });
-  const hub = (id, name, kids) => { const n = { id, kind: 'hub', name, key: '', down: false, w: null, kids }, all = countUnder(n) - kids.filter((k) => k.kind === 'hub').length, down = downUnder(n); n.sub = `${all} ${all === 1 ? 'device' : 'devices'}`; n.key = !all ? '' : down === all ? 'bad' : down ? 'warn' : 'ok'; n.down = !!all && down === all; return n; };
-  const group = (p) => hub(p.id, p.name, [...placeChildren(p.id).map(group), ...real.filter((d) => d.place === p.id).map(leaf)]);
-  const loose = real.filter((d) => !d.place || d.place === currentLocation).map(leaf);
-  const kids = [...placeChildren(currentLocation).map(group), ...(loose.length ? [hub('place:loose', 'Not in a group', loose)] : [])];
-  return { id: 'root', kind: 'location', name: placeById(currentLocation)?.name || 'All devices', sub: 'Home Assistant', key: 'ok', down: false, w: null, kids };
+// Four maps from two choices. What is shown: the connection of each device, or the power it draws.
+// How it is arranged: by the location's groups, or by the devices' own hierarchy (parent devices).
+// A hub is a group, or a device with devices under it; it says how many it holds and how they are doing.
+function topoHub(id, name, kids, w = null) {
+  const n = { id, kind: 'hub', name, key: '', down: false, w, kids }, all = countUnder(n) - kids.filter((k) => k.kind === 'hub').length, down = downUnder(n);
+  n.sub = `${all} ${all === 1 ? 'device' : 'devices'}`; n.key = !all ? '' : down === all ? 'bad' : down ? 'warn' : 'ok'; n.down = !!all && down === all;
+  return n;
+}
+// A device as the connection map shows it: its address and signal. Home Assistant does not know which
+// router or access point a device uses, so nothing more can be said about its path.
+function connectionLeaf(d, states, nowMs) {
+  const num = (id) => parseFloat(states[id]?.state);
+  return { ...topoNode(d, states, nowMs, [], [d.address, Number.isFinite(num(d.rssi)) ? `${Math.round(num(d.rssi))} dBm` : '', !d.shelly && Number.isFinite(num(d.linkQuality)) ? `Link quality ${Math.round(num(d.linkQuality))}` : ''].filter(Boolean).join(' · ') || undefined), icon: d.shelly ? (d.switch ? 'circuit' : 'meter') : 'zigbee' };
+}
+// By group: the location's groups, nested as they are set up, with their devices. With power, a group
+// shows what its devices draw together, counting a device and what is under it once.
+function groupTree(states, nowMs, power = false) {
+  const real = DEVICES.filter((d) => isMeasuring(d) && !d.virtual).sort(byName);
+  const leaf = (d) => (power ? topoNode(d, states, nowMs, []) : connectionLeaf(d, states, nowMs));
+  const drawn = (list) => (power && list.length ? liveReadings(countedIn(list), states, nowMs).power : null);
+  const group = (p) => topoHub(p.id, p.name, [...placeChildren(p.id).map(group), ...real.filter((d) => d.place === p.id).map(leaf)], drawn(placedDevices(p.id)));
+  const looseDevices = real.filter((d) => !d.place || d.place === currentLocation), loose = looseDevices.map(leaf);
+  const kids = [...placeChildren(currentLocation).map(group), ...(loose.length ? [topoHub('place:loose', 'Not in a group', loose, drawn(looseDevices))] : [])];
+  return { id: 'root', kind: 'location', name: placeById(currentLocation)?.name || 'All devices', sub: power ? 'Location' : 'Home Assistant', key: power ? '' : 'ok', down: false, w: power ? liveReadings(homeDevices(), states, nowMs).power : null, kids };
+}
+const networkTree = (states, nowMs) => groupTree(states, nowMs, false);
+// By device, for the connection map: a device with devices under it becomes a hub that holds itself
+// and them, so it can still be opened and still shows its own connection.
+function deviceConnectionTree(states, nowMs) {
+  const walk = (d) => { const under = childrenOf(d.id); return under.length || d.virtual ? topoHub(`hub:${d.id}`, d.name, [...(d.virtual ? [] : [connectionLeaf(d, states, nowMs)]), ...under.map(walk)]) : connectionLeaf(d, states, nowMs); };
+  const main = mainDevice(), tops = topNodes(), order = main ? [main, ...tops.filter((d) => d.id !== main.id)] : tops;
+  return { id: 'root', kind: 'location', name: placeById(currentLocation)?.name || 'All devices', sub: 'Home Assistant', key: 'ok', down: false, w: null, kids: order.map(walk) };
 }
 // Radial: each group gets a slice of the circle as wide as what it holds, and its devices fan out away from the centre.
 // A slice is never narrower than the circle around everything in it, so groups cannot run into each other.
@@ -3373,6 +3396,8 @@ ${kpi('Usage this month', t ? `${t.month.toFixed(0)} kWh` : '—', t ? `${since}
       modelFrom = null;
       syncModel(this._hass);
       await this.afterChange('Saved.');
+      // A virtual device adds up what is under it through Sum helpers; make them match the new tree.
+      syncSums(this._hass);
     }
     async selectClient(id) {
       if (!PORTAL.isRoot || !id || id === portalClient) return;
@@ -3732,7 +3757,7 @@ i{position:absolute;top:3px;left:calc(50% + 5px);min-width:14px;height:14px;bord
     async refresh() { try { this._totals = await portalTotals(this._hass); } catch (e) { /* the map only needs live readings */ } this.paint(); }
     startTimer() { this._t = setInterval(() => this.refresh(), 60000); }
     build() {
-      this._mode = 'network'; this._view = { x: 0, y: 0, k: 1 };
+      this._mode = 'network'; this._by = 'group'; this._view = { x: 0, y: 0, k: 1 };
       this.shadowRoot.innerHTML = `<style>${BASE}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}.seg button{all:unset;cursor:pointer;font-size:13px;padding:6px 12px;color:var(--muted)}.seg button.on{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--fg)}.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}.bar .sp{flex:1}.bar button.i{min-width:34px;padding:6px 8px;font-size:13px}
 .sum{font-size:13px;color:var(--muted)}.sum b{font-weight:500;color:var(--bad)}
@@ -3750,12 +3775,13 @@ path.l{fill:none;stroke:var(--muted);opacity:.45;stroke-width:1.5}path.l.flow{st
 path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s linear infinite}path.l.talk.hubl{stroke-width:2;opacity:.9}path.l.warnl{stroke:var(--warn);opacity:.9}
 @keyframes run{to{stroke-dashoffset:-32}}@media(prefers-reduced-motion:reduce){path.l.flow,path.l.talk{animation:none}}
 .key{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:12px;color:var(--muted)}.key i{display:inline-block;vertical-align:middle;margin-right:5px;width:18px;height:0;border-top:3px solid var(--accent)}.key i.off{border-color:var(--muted);opacity:.5;border-top-width:1px}.key i.bad{border-color:var(--bad);border-top-style:dashed}
-</style><div class="w"><div class="bar"><div class="seg" id="mode" role="group" aria-label="Map"><button data-mode="network" aria-pressed="true" class="on">How devices connect</button><button data-mode="wiring" aria-pressed="false">How power flows</button></div><span class="chips" id="sum"></span><span class="sp"></span><button class="i" data-all="open">Expand all</button><button class="i" data-all="shut">Collapse all</button><button class="i" data-zoom="1.25" aria-label="Zoom in">+</button><button class="i" data-zoom="0.8" aria-label="Zoom out">−</button><button class="i" data-fit="1">Fit</button></div><div class="canvas" id="canvas"><svg id="svg" role="img" aria-label="Live map of the devices"><g id="world"></g></svg></div><div class="key" id="key"></div><div class="drawer" id="drawer" hidden></div></div>`;
+</style><div class="w"><div class="bar"><div class="seg" id="mode" role="group" aria-label="What the map shows"><button data-mode="network" aria-pressed="true" class="on" title="How each device is connected and whether it is online">Connection</button><button data-mode="wiring" aria-pressed="false" title="Where the power goes, live">Power</button></div><div class="seg" id="by" role="group" aria-label="How the map is arranged"><button data-by="group" aria-pressed="true" class="on" title="Arranged by the location's groups">By group</button><button data-by="device" aria-pressed="false" title="Arranged by parent devices">By device</button></div><span class="chips" id="sum"></span><span class="sp"></span><button class="i" data-all="open">Expand all</button><button class="i" data-all="shut">Collapse all</button><button class="i" data-zoom="1.25" aria-label="Zoom in">+</button><button class="i" data-zoom="0.8" aria-label="Zoom out">−</button><button class="i" data-fit="1">Fit</button></div><div class="canvas" id="canvas"><svg id="svg" role="img" aria-label="Live map of the devices"><g id="world"></g></svg></div><div class="key" id="key"></div><div class="drawer" id="drawer" hidden></div></div>`;
       const r = this.shadowRoot;
       r.querySelector('.bar').addEventListener('click', (e) => {
         const b = e.target.closest('button');
         if (!b) return;
         if (b.dataset.mode) { this._mode = b.dataset.mode; this._shut = null; this._sig = null; this._lastMode = null; this.paint(); }
+        if (b.dataset.by) { this._by = b.dataset.by; this._shut = null; this._sig = null; this._lastMode = null; this.paint(); }
         if (b.dataset.all) { this._shut = b.dataset.all === 'open' ? new Set() : allParents(this.tree()); if (this._mode === 'network') this._shut.delete('root'); this._sig = null; this.paint(); }
         if (b.dataset.zoom) { const c = r.getElementById('canvas'); this.zoomAt(Number(b.dataset.zoom), c.clientWidth / 2, c.clientHeight / 2); }
         if (b.dataset.fit) this.fit();
@@ -3775,7 +3801,11 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
       new ResizeObserver(() => { const c = r.getElementById('canvas'); if (c.clientWidth && this._layout && !this._moved) this.fit(); }).observe(r.getElementById('canvas'));
       this.startTimer();
     }
-    tree() { const now = Date.now(); return this._mode === 'wiring' ? wiringTree(this._hass.states, now) : networkTree(this._hass.states, now); }
+    tree() {
+      const now = Date.now(), st = this._hass.states, group = this._by === 'group';
+      if (this._mode === 'wiring') return group ? groupTree(st, now, true) : wiringTree(st, now);
+      return group ? groupTree(st, now, false) : deviceConnectionTree(st, now);
+    }
     apply() { const v = this._view; this.shadowRoot.getElementById('world').setAttribute('transform', `translate(${v.x} ${v.y}) scale(${v.k})`); }
     zoomAt(by, cx, cy) { this._moved = true; const v = this._view, k = Math.min(2.5, Math.max(0.2, v.k * by)), f = k / v.k; v.x = cx - (cx - v.x) * f; v.y = cy - (cy - v.y) * f; v.k = k; this.apply(); }
     // Whole map when it fits at a readable size; otherwise start at the top left and let people move around.
@@ -3824,6 +3854,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
       const index = (n) => { byId.set(n.id, n); n.kids.forEach(index); };
       index(root);
       r.querySelectorAll('#mode button').forEach((b) => { const on = b.dataset.mode === this._mode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+      r.querySelectorAll('#by button').forEach((b) => { const on = b.dataset.by === this._by; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
       if (wiring) this.paintWiring(root); else this.paintRadial(root);
       const all = [...byId.values()].filter((n) => n.real), off = all.filter((n) => n.down), late = all.filter((n) => !n.down && n.key === 'warn'), on = all.filter((n) => Math.abs(n.w || 0) >= 1 && !n.down);
       const chip = (cls, text) => `<span class="chip"><i class="${cls}"></i>${text}</span>`;
@@ -3839,7 +3870,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
     // Drawn once for each shape. Live values are written in, so the moving lines never restart.
     paintRadial(root) {
       const r = this.shadowRoot, L = radialLayout(root, this._shut), trim = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t), byId = new Map(L.nodes.map((m) => [m.node.id, m]));
-      const sig = ['radial', ...L.nodes.map((m) => `${m.node.id}:${m.node.name}:${Math.round(m.x)}:${Math.round(m.y)}:${m.node.kids.length}`)].join('|');
+      const sig = ['radial', this._by, ...L.nodes.map((m) => `${m.node.id}:${m.node.name}:${Math.round(m.x)}:${Math.round(m.y)}:${m.node.kids.length}`)].join('|');
       if (sig !== this._sig) {
         this._sig = sig; this._lastMode = this._mode; this._layout = L;
         const radius = (n) => (n.kind === 'location' ? 30 : n.kind === 'hub' ? 22 : 13);
@@ -3872,7 +3903,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
       const r = this.shadowRoot, wiring = true, byId = new Map(), index = (n) => { byId.set(n.id, n); n.kids.forEach(index); };
       index(root);
       const L = layoutTree(root, this._shut), { w, h } = L.size, trim = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
-      const sig = [this._mode, ...L.nodes.map((m) => `${m.node.id}:${m.node.name}:${m.x}:${m.y}:${m.node.kids.length}`)].join('|');
+      const sig = [this._mode, this._by, ...L.nodes.map((m) => `${m.node.id}:${m.node.name}:${m.x}:${m.y}:${m.node.kids.length}`)].join('|');
       if (sig !== this._sig) {
         const first = this._mode !== this._lastMode;
         this._sig = sig; this._lastMode = this._mode; this._layout = L;

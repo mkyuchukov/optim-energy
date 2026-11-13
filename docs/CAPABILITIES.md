@@ -10,7 +10,7 @@ Every `optim_energy/*` websocket command and the roles that may call it. A test 
 |---|---|---|---|
 | `whoami` | yes | yes | yes |
 | `tree/get` | any client | own client | own locations |
-| `tree/save` | whole tree | `prices` only, own locations | no |
+| `tree/save` | whole tree | prices, virtual devices, parent devices and main devices, all of its own | no |
 | `registry/list` | any client | own client | own locations |
 | `client/list` | all | own | own |
 | `client/create` | yes | no | no |
@@ -44,7 +44,7 @@ Every `optim_energy/*` websocket command and the roles that may call it. A test 
 
 ## Tree keys
 
-`tree/save` from a client admin changes `prices` and nothing else. These keys decide permissions or ownership and are written only by root or by the commands above: `places`, `placed`, `parents`, `main`, `mains`, `virtual`, `sums`, `automations`, `known`, `kept`, `kinds`, `alarms`, `notify`.
+`tree/save` from a client admin changes `prices`, `virtual`, `parents`, `mains` and the place of its virtual devices, nothing else. Every device named there must be in one of its own location areas, and every place must be its own; anything else is left out. Who may read a device is decided by the device's area, so none of these keys grants access. Written only by root or by the commands above: `places`, the place of a real device, `sums`, `automations`, `known`, `kept`, `kinds`.
 
 ## Ownership
 
