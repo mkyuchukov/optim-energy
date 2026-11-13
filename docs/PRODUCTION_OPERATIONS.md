@@ -252,6 +252,9 @@ check is reproduced and fixed.
 - [x] Separate Administration console and People workspace implemented; production verified
 - [x] `v0.6.0` closes client-administrator isolation holes and starts fail-closed; production verified
 - [x] `v0.7.0` moves production to floor = client, area = location; migration applied and verified
+- [x] `v0.8.0`–`v0.10.0`: device inbox, client-administrator screens, cleanup, unmetered devices and location move; production verified
+- [ ] Off-VM backup location configured
+- [ ] A client-account login verified on production
 
 ## Maintenance record template
 
@@ -417,6 +420,44 @@ check is reproduced and fixed.
 | Client verification | Inbox lists 82 devices: 45 assigned (42 Shelly in one location, 3 Zigbee meters in the other), 2 not assigned yet, 35 not portal devices. Client, groups, people and settings unchanged. The client-administrator screens were not exercised on production: it has no client administrator account |
 | Rollback checkpoint | Reinstall `v0.8.0` from the Marketplace |
 | Incidents / follow-up | The ENTSO-e integration again failed its fetches after the restart; "OSV row 8 NE" was already offline before it |
+
+### 2026-11-12 v0.9.1 cleanup
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-12, approximately 23:44–23:48 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.9.0 / 0.9.1, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-optim-energy-v0.9.1-2026-11-12`, configuration only, on the VM |
+| Runtime suites | Unit, HA runtime, three-client scale, browser on both models, hassfest and HACS: PASS |
+| VM smoke result | N/A |
+| Client verification | Client, groups, people and settings unchanged; inbox 82 devices with 45 assigned; Administration loads. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.9.0` from the Marketplace |
+| Incidents / follow-up | Installed while the ENTSO-e integration was still retrying from the previous restart; prices returned straight after this one. Seven restarts on 2026-11-12 in total |
+
+### 2026-11-13 v0.10.0, trial client and backup cleanup
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, approximately 09:40–10:05 |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.9.1 / 0.10.0, installed through the Marketplace update entity at 09:59 |
+| Backup/snapshot | Manual `before-optim-energy-v0.10.0-2026-11-13`, configuration only, on the VM |
+| Runtime suites | Unit, HA runtime with the fresh-installation profile, three-client scale, browser on both models, hassfest and HACS: PASS |
+| VM smoke result | N/A |
+| Client verification | The existing client unchanged (one person, nine groups, 815 entities, 45 devices in both the Clients table and the device list). All integrations loaded and market prices present after the restart. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.9.1` from the Marketplace |
+| Incidents / follow-up | None |
+
+Other changes on 2026-11-13, all through Administration commands and none needing a restart:
+
+- A trial client "Demo Client" was created with one location ("Demo Site") and one group ("Demo Room"), with no devices or people. It is for rehearsing onboarding and can be deleted under Administration → Clients; its floor and area then need removing under Settings → Areas.
+- Three manual backups from the first rollouts (`before-optim-energy-v0.3.0`, `-v0.3.1` and `-v0.4.0`, all dated 2026-11-12) were deleted from the VM, freeing about 3.4 GB.
+- The Zigbee coordinator ("Dongle-M_C3A0") and the Zigbee2MQTT bridge were marked Ignore in the device inbox.
+
+Open operational items: every backup is stored on the VM itself, so an off-VM backup location still has to be added; and the labels and areas kept by the 0.7.0 migration are still in place as its rollback path.
 
 ## Repository protection
 
