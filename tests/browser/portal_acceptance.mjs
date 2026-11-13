@@ -106,6 +106,29 @@ try {
   await root.waitForTimeout(500);
   await overviewAgain.getByRole('button', { name: 'Preview' }).first().dispatchEvent('click');
   await root.waitForURL(`${base}/energy-home/home`, { timeout: 30000 });
+  // Preview: the tenant's page finishes loading without ever calling the location empty, and the
+  // administrator gets the tenant's tabs in the sidebar with a way back.
+  const previewHome = await waitCard(root, 'building-home-card');
+  const sawEmpty = await previewHome.evaluate((el) => new Promise((done) => {
+    const seen = () => /No devices in this location yet/.test(el.shadowRoot.textContent) && !el.shadowRoot.querySelector('.w.loading');
+    if (seen()) { done(true); return; }
+    const watch = new MutationObserver(() => { if (seen()) { watch.disconnect(); done(true); } });
+    watch.observe(el.shadowRoot, { childList: true, subtree: true, attributes: true });
+    setTimeout(() => { watch.disconnect(); done(false); }, 6000);
+  }));
+  assert.equal(sawEmpty, false, 'the preview showed an empty location while it was still loading');
+  await previewHome.locator('.w:not(.loading)').waitFor({ timeout: 30000 });
+  for (const tab of ['Overview', 'Groups', 'Devices', 'Reports']) await root.getByRole('link', { name: tab, exact: true }).first().waitFor({ timeout: 20000 });
+  assert.match(await previewHome.locator('.locbar').innerText(), /Administration[\s\S]*Browser Client A/, 'the preview does not say whose pages these are');
+  await shot(root, 'preview');
+  // Home Assistant's own pending-config dialog covers the page in this test instance, so the link is
+  // followed by its address and the button pressed directly.
+  assert.equal(await root.getByRole('link', { name: 'Groups', exact: true }).first().getAttribute('href'), '/energy-groups', 'the Groups tab does not lead to the tenant\'s groups');
+  await root.goto(`${base}/energy-groups/groups`, { waitUntil: 'domcontentloaded' });
+  await (await waitCard(root, 'building-spaces-card')).locator('.locbar [data-admin]').dispatchEvent('click');
+  await root.waitForURL(`${base}/energy-admin/clients`, { timeout: 30000 });
+  await root.getByRole('link', { name: 'Overview', exact: true }).first().waitFor({ state: 'detached', timeout: 20000 });
+  await root.goto(`${base}/energy-home/home`, { waitUntil: 'domcontentloaded' });
 
   // Client-admin login and location surface.
   ({ context: adminContext, page: adminPage } = await openPage(state.admin_a, '/energy-locations/start'));

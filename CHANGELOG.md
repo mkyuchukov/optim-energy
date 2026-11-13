@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.0
+
+Preview of a tenant, fixed.
+
+- While a Home Assistant administrator has a tenant's page open, the sidebar shows that tenant's tabs (Locations, Overview, Groups, Controls, Devices, Reports, Alerts, Setup) next to Administration. They go away again on returning to Administration. On phones the bottom bar does the same.
+- Every tenant page shows "Administration" (the way back) and the tenant's name beside the location.
+- A page no longer says "No devices in this location yet" while it is still loading: it shows a placeholder until the tenant's locations and devices have arrived. Overview also shows a placeholder until its figures are in, and never the figures of the tenant or location that was open before.
+- Choosing a location no longer reloads the whole app.
+- Preview is on the tenant only; the Preview button on a location is gone. It opens on the location chosen in Administration.
+
 ## 0.14.1
 
 Tenant users saw fewer devices than the administrator.

@@ -24,7 +24,7 @@ let nodeIds = new Set(), allNodes = [];
 const LOCATION_KEY = 'portalLocation', CLIENT_KEY = 'portalClient', START_PATH = '/energy-locations/start', HOME_PATH = '/energy-home/home', SETUP_PATH = '/energy-setup/structure', ADMIN_HOME_PATH = '/energy-admin/clients';
 // Server-provided identity. A Home Assistant admin is the only root; a
 // client administrator is a portal role and never receives HA's admin flag.
-const PORTAL = { ready: false, isRoot: false, role: null, client: null, clientName: '', location: null, clients: [], capabilities: {}, error: '' };
+const PORTAL = { ready: false, isRoot: false, role: null, client: null, clientName: '', location: null, clients: [], capabilities: {}, error: '', treeReady: false };
 // Home Assistant refuses a statistics request with no ids, and a light or switch with no meter has none to give.
 const statsWS = (hass, msg) => { const ids = (msg.statistic_ids || []).filter(Boolean); return ids.length ? hass.callWS({ ...msg, statistic_ids: ids }) : Promise.resolve({}); };
 const portalCanManage = () => !!PORTAL.capabilities.manage_tree;
@@ -58,6 +58,7 @@ function setLocation(id) {
   TREE.main = TREE.mains?.[currentLocation] ?? null;
   modelFrom = null;
   totalsCache = null;
+  LAST_TOTALS = null;
   try { if (id) sessionStorage.setItem(LOCATION_KEY, id); else sessionStorage.removeItem(LOCATION_KEY); if (portalUser) { if (id) localStorage.setItem(`${LOCATION_KEY}:${portalUser}`, id); else localStorage.removeItem(`${LOCATION_KEY}:${portalUser}`); } } catch (e) { /* private window or tests */ }
 }
 const hasLocations = () => TREE.places.some((p) => p.kind === 'location');
@@ -456,23 +457,26 @@ function treeWithoutVirtual(tree, id) {
 const CLIENT_PANELS = ['energy-start', 'energy-locations', 'energy-home', 'energy-groups', 'energy-controls', 'energy-devices', 'energy-reports', 'energy-alerts', 'energy-setup'];
 const ADMIN_PANELS = ['energy-admin', 'core_configurator', '45df7312_zigbee2mqtt', 'hacs'];
 let sidebarKey = null;
+// A Home Assistant administrator looking at a tenant's pages, opened with Preview.
+const previewing = () => PORTAL.isRoot && typeof location !== 'undefined' && /^\/energy-(?!admin|start)/.test(location.pathname);
 async function syncSidebar(hass) {
   if (!PORTAL.ready || typeof location === 'undefined') return;
   const setup = portalCanManage();
   const singleLocationUser = !PORTAL.isRoot && PORTAL.role === 'user' && (PORTAL.locations || []).length <= 1;
   const clientPanels = CLIENT_PANELS.filter((id) => !singleLocationUser || id !== 'energy-locations');
+  const preview = previewing(), tenantTabs = CLIENT_PANELS.filter((id) => id !== 'energy-start');
   const allowed = new Set(PORTAL.isRoot ? ADMIN_PANELS : clientPanels.filter((id) => setup || id !== 'energy-setup'));
-  const order = PORTAL.isRoot ? ADMIN_PANELS : clientPanels;
-  const key = `${PORTAL.role}|${[...allowed].join(',')}`;
+  const order = !PORTAL.isRoot ? clientPanels : preview ? ['energy-admin', ...tenantTabs, ...ADMIN_PANELS.filter((id) => id !== 'energy-admin')] : ADMIN_PANELS;
+  const key = `${PORTAL.role}|${preview}|${[...allowed].join(',')}`;
   if (sidebarKey === key) return;
   try {
     const now = (await hass.callWS({ type: 'frontend/get_user_data', key: 'sidebar' }))?.value;
     const hidden = new Set(now?.hiddenPanels || []);
     for (const id of ['energy-admin', ...CLIENT_PANELS, ...ADMIN_PANELS]) hidden.delete(id);
     if (PORTAL.isRoot) {
-      // Keep the normal HA tools visible, but do not put the client portal in
-      // an administrator's sidebar. The admin console has an explicit preview.
-      for (const id of CLIENT_PANELS) hidden.add(id);
+      // Keep the normal HA tools visible. The tenant's pages are in an administrator's
+      // sidebar only while one of them is open, which is what Preview does.
+      for (const id of CLIENT_PANELS) if (!preview || id === 'energy-start') hidden.add(id);
     } else {
       for (const id of Object.keys(hass.panels || {})) if (!allowed.has(id)) hidden.add(id);
     }
@@ -490,6 +494,9 @@ function resetPortalTree() {
   LABELS = [];
   modelFrom = null;
   totalsCache = null;
+  // Nothing of the tenant that was open may be shown for the next one.
+  LAST_TOTALS = null;
+  PORTAL.treeReady = false;
   setTree({ places: [], placed: {}, mains: {}, parents: {}, virtual: [], known: [] });
 }
 let portalContextSeq = 0;
@@ -501,6 +508,7 @@ async function switchPortalClient(hass, client) {
   treeLoad = null;
   whoLoad = null;
   resetPortalTree();
+  announceTree();
   await ensureTree(hass);
   if (seq === portalContextSeq) announceTree();
   return treeLoad;
@@ -521,7 +529,8 @@ function ensureTree(hass) {
       return ctx;
     }).catch((e) => {
       PORTAL.ready = true;
-      PORTAL.error = 'This account is not assigned to a client. Ask the administrator to add it under Setup.';
+      PORTAL.treeReady = true;
+      PORTAL.error = 'This account is not assigned to a tenant. Ask the administrator to add it under Administration.';
       announceTree();
       return null;
     });
@@ -552,11 +561,13 @@ function ensureTree(hass) {
       restoreLocation();
       modelFrom = null;
       syncModel(hass);
+      PORTAL.treeReady = true;
       announceTree();
       needLocation();
       return payload;
     } catch (e) {
       console.warn('Optim Energy: could not load the tenant tree', e);
+      PORTAL.treeReady = true;
       PORTAL.error = 'The portal settings could not be loaded. An administrator can check the Home Assistant log.';
       announceTree();
       return null;
@@ -576,13 +587,16 @@ function needLocation() {
       return;
     }
   }
-  // Setup (prices, alerts, schedules, groups, people) is open to an administrator for the selected client.
-  if (PORTAL.isRoot && /^\/energy-locations(?:\/|$)/.test(location.pathname)) {
-    history.replaceState(null, '', ADMIN_HOME_PATH);
-    window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+  // Administration needs no location. Its bare address opens on the list of tenants.
+  if (PORTAL.isRoot && /^\/energy-admin(?:\/|$)/.test(location.pathname)) {
+    if (/^\/energy-admin\/?$/.test(location.pathname)) {
+      history.replaceState(null, '', ADMIN_HOME_PATH);
+      window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+    }
     return;
   }
-  if (!PORTAL.isRoot && /^\/energy-admin(?:\/|$)/.test(location.pathname)) {
+  // Only once the account is known: before that nobody counts as an administrator yet.
+  if (PORTAL.ready && !PORTAL.isRoot && /^\/energy-admin(?:\/|$)/.test(location.pathname)) {
     history.replaceState(null, '', START_PATH);
     window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
     return;
@@ -593,6 +607,7 @@ function needLocation() {
   window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
 }
 if (typeof window !== 'undefined') window.addEventListener('location-changed', needLocation);
+if (typeof window !== 'undefined') window.addEventListener('location-changed', () => { if (HASS && PORTAL.isRoot) syncSidebar(HASS); });
 // Saves a Setup change, says so, and offers to put it back.
 async function commitTree(card, next, label) {
   const r = card.shadowRoot, err = r.getElementById('err') || { textContent: '' }, before = JSON.parse(JSON.stringify(TREE));
@@ -1471,7 +1486,8 @@ const AUTO_CSS = `.chead{display:flex;justify-content:space-between;align-items:
 .box .sc{border:0;box-shadow:none;background:none;padding:0;border-radius:0;border-bottom:1px solid var(--line)}.box .sc:last-child{border-bottom:0}
 `;
 const BASE = `
-.locbar{display:flex;padding:0;margin:-4px 0 -8px;font-family:var(--ha-font-family-body,Roboto,sans-serif)}.locbar button{all:unset;cursor:pointer;display:inline-flex;align-items:center;max-width:100%}.locbar button:hover .lp{background:color-mix(in srgb,var(--primary-text-color) 12%,transparent)}.locbar button:focus-visible .lp{outline:2px solid var(--primary-color)}.lp{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px 0 7px;border-radius:14px;font-size:12.5px;font-weight:600;color:var(--primary-text-color);background:color-mix(in srgb,var(--primary-text-color) 7%,transparent);transition:background .15s}.lp ha-icon{--mdc-icon-size:15px;display:flex;color:var(--primary-color)}.lp ha-icon:last-child{color:var(--secondary-text-color)}
+.w.loading>*{display:none!important}.w.loading::before,.w.loading::after{content:'';display:block;border-radius:var(--radius);background:linear-gradient(90deg,var(--panel) 25%,color-mix(in srgb,var(--fg) 7%,var(--panel)) 37%,var(--panel) 63%);background-size:400% 100%;animation:sk 1.4s ease infinite}.w.loading::before{height:96px}.w.loading::after{height:260px}@keyframes sk{0%{background-position:100% 50%}100%{background-position:0 50%}}@media(prefers-reduced-motion:reduce){.w.loading::before,.w.loading::after{animation:none}}.sk{display:block;border-radius:var(--radius);background:linear-gradient(90deg,var(--panel) 25%,color-mix(in srgb,var(--fg) 7%,var(--panel)) 37%,var(--panel) 63%);background-size:400% 100%;animation:sk 1.4s ease infinite;border:1px solid var(--line)}
+.locbar{display:flex;gap:6px;flex-wrap:wrap;padding:0;margin:-4px 0 -8px;font-family:var(--ha-font-family-body,Roboto,sans-serif)}.locbar button{all:unset;cursor:pointer;display:inline-flex;align-items:center;max-width:100%}.locbar button:hover .lp{background:color-mix(in srgb,var(--primary-text-color) 12%,transparent)}.locbar button:focus-visible .lp{outline:2px solid var(--primary-color)}.lp{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px 0 7px;border-radius:14px;font-size:12.5px;font-weight:600;color:var(--primary-text-color);background:color-mix(in srgb,var(--primary-text-color) 7%,transparent);transition:background .15s}.lp ha-icon{--mdc-icon-size:15px;display:flex;color:var(--primary-color)}.lp ha-icon:last-child{color:var(--secondary-text-color)}
 :host{display:block;--lit:#ffb300;--page:var(--primary-background-color);--panel:var(--card-background-color);--line:var(--divider-color);--fg:var(--primary-text-color);--muted:var(--secondary-text-color);--slate:var(--disabled-text-color);--accent:color-mix(in srgb,var(--primary-color) 82%,var(--primary-text-color));--radius:14px;--shadow:0 1px 2px rgba(0,0,0,.10),0 6px 20px rgba(0,0,0,.07);--ok:var(--success-color);--warn:var(--warning-color);--bad:var(--error-color);--track:color-mix(in srgb,var(--fg) 10%,transparent)}
 .w{color:var(--fg);padding:clamp(2px,1vw,12px);font-family:var(--ha-font-family-body,Roboto,sans-serif);font-variant-numeric:tabular-nums;line-height:1.4;display:grid;gap:18px}
 .w{margin-top:-10px}@media(max-width:870px){.w{margin-top:-16px;gap:12px}.locbar{margin:-14px 0 -12px!important}}
@@ -1808,13 +1824,21 @@ if (typeof HTMLElement !== 'undefined') {
       const before = this._hass?.states, changed = syncModel(h);
       this._hass = h;
       ensureTree(h);
-      if (!this._built) { this._built = true; this.attachShadow({ mode: 'open' }); this.build(); this.locationBar(); this.refresh(); this._lastPaint = Date.now(); this.watchTree(); return; }
+      if (!this._built) { this._built = true; this.attachShadow({ mode: 'open' }); this.build(); this.locationBar(); this.loadingState(); this.refresh(); this._lastPaint = Date.now(); this.watchTree(); return; }
+      this.loadingState();
       if (changed || Date.now() - this._lastPaint > (this.paintEvery || 10000) || controlChanged(before, h.states)) { this._lastPaint = Date.now(); this.paint(); }
     }
-    watchTree() { if (!this._onTree) { this._onTree = () => { this.locationBar(); this.refresh(); this.paint(); }; window.addEventListener('portal-tree', this._onTree); } }
+    watchTree() { if (!this._onTree) { this._onTree = () => { this.locationBar(); this.loadingState(); this.refresh(); this.paint(); }; window.addEventListener('portal-tree', this._onTree); } }
     disconnectedCallback() { clearInterval(this._t); this._t = null; window.removeEventListener('portal-tree', this._onTree); this._onTree = null; }
     connectedCallback() { if (this._built && !this._t) this.startTimer(); if (this._built) this.watchTree(); }
-    // Every page says which location it is showing.
+    // Until the tenant's locations and devices have arrived, a page shows that it is loading
+    // rather than an empty location.
+    loadingState() {
+      const w = this.shadowRoot?.querySelector('.w');
+      if (w && !this.noBar) w.classList.toggle('loading', !PORTAL.treeReady && !PORTAL.error);
+    }
+    // Every page says which location it is showing. A Home Assistant administrator looking at a
+    // tenant's pages also sees whose they are, and the way back.
     locationBar() {
       const at = this.shadowRoot.querySelector('.w, #h'), name = placeById(currentLocation)?.name;
       let bar = this.shadowRoot.querySelector('.locbar');
@@ -1822,10 +1846,11 @@ if (typeof HTMLElement !== 'undefined') {
       if (!bar) {
         bar = document.createElement('div');
         bar.className = 'locbar';
-        bar.addEventListener('click', (e) => { if (e.target.closest('button')) navigate(START_PATH); });
+        bar.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) navigate(b.dataset.admin ? ADMIN_HOME_PATH : START_PATH); });
         if (at.id === 'h') at.before(bar); else at.prepend(bar);
       }
-      bar.innerHTML = `<button aria-label="Location ${esc(name)}. Change location"><span class="lp"><ha-icon icon="mdi:map-marker-outline"></ha-icon>${esc(name)}<ha-icon icon="mdi:chevron-down"></ha-icon></span></button>`;
+      const tenant = PORTAL.isRoot ? PORTAL.clientName : '';
+      bar.innerHTML = `${PORTAL.isRoot ? '<button data-admin="1" aria-label="Back to Administration"><span class="lp"><ha-icon icon="mdi:arrow-left"></ha-icon>Administration</span></button>' : ''}<button aria-label="Location ${esc(name)}. Change location"><span class="lp"><ha-icon icon="mdi:map-marker-outline"></ha-icon>${tenant ? `${esc(tenant)} · ` : ''}${esc(name)}<ha-icon icon="mdi:chevron-down"></ha-icon></span></button>`;
     }
     startTimer() { this._t = setInterval(() => this.refresh(), 300000); }
     async refresh() {}
@@ -2771,7 +2796,7 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
 .gr{position:relative}.gr .f{width:100%}.gr .f>span:last-child{grid-column:1/-1;padding-right:84px;min-width:0}.cnt{all:unset;position:absolute;right:12px;bottom:8px;cursor:pointer;font-size:12.5px;color:var(--accent);white-space:nowrap}.cnt:hover{text-decoration:underline}.cnt:focus-visible{outline:2px solid var(--accent)}
 </style><div class="w"><h2>Choose a location</h2><div id="client"></div><div class="locs" id="locs"></div><div class="add" id="add"></div><span class="err" id="err"></span><span class="muted" id="free"></span></div>`;
       const r = this.shadowRoot;
-      r.getElementById('locs').addEventListener('click', (e) => { const b = e.target.closest('[data-loc]'); if (b) { setLocation(b.dataset.loc); location.assign(HOME_PATH); } });
+      r.getElementById('locs').addEventListener('click', (e) => { const b = e.target.closest('[data-loc]'); if (b) { setLocation(b.dataset.loc); announceTree(); navigate(HOME_PATH); } });
       r.getElementById('client').addEventListener('change', (e) => { if (e.target.id === 'clientSwitch') switchPortalClient(this._hass, e.target.value); });
     }
     paint() {
@@ -2822,8 +2847,13 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
     }
     startTimer() { this._t = setInterval(() => this.refresh(), 60000); }
     async refresh() {
+      if (!PORTAL.treeReady) return;
       const h = this._hass, now = Date.now(), tz = h.config.time_zone, meters = homeDevices().filter((d) => d.energy);
+      // Another tenant or location than last time: what was shown is not this one's.
+      const key = `${portalClient}|${currentLocation}`;
+      if (this._key !== key) { this._key = key; this._loaded = false; this._parts = null; this._totals = null; this._failed = false; this.paint(); }
       if (!meters.length) { this._parts = []; this._loaded = true; this.paint(); return; }
+      const mine = () => this._key === key;
       try {
         const ids = meters.map((d) => d.energy);
         const [st, raw, totals] = await Promise.all([
@@ -2831,10 +2861,11 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
           h.callWS({ type: 'history/history_during_period', start_time: new Date(now - (now % HOUR_MS)).toISOString(), end_time: new Date(now).toISOString(), entity_ids: ids, minimal_response: true, no_attributes: true, significant_changes_only: false }),
           portalTotals(h).catch(() => null),
         ]);
+        if (!mine()) return;
         this._parts = meters.map((d) => ({ name: d.name, b: withLiveHour(bucketEnergy(st[d.energy] || [], parseFloat(h.states[d.energy]?.state), now, tz), hourSoFar(historyPts(raw, d.energy))) }));
         this._totals = totals;
         this._failed = !totals;
-      } catch (e) { this._failed = true; /* keeps the last figures, and says so */ }
+      } catch (e) { if (!mine()) return; this._failed = true; /* keeps the last figures, and says so */ }
       this._loaded = true;
       this.paint();
     }
@@ -2844,6 +2875,7 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
       const c = r.getElementById('charts'), W = c.clientWidth || 640, wide = W >= 900;
       const act = computeActive(st, now).filter((a) => a.sev !== 'info');
       if (!DEVICES.some(isMeasuring)) { r.getElementById('top').innerHTML = `<div class="now"><span>No devices in this location yet.</span>${portalCanManageHA() ? '<button data-nav="/config/areas/dashboard">Give devices an area in Home Assistant ›</button>' : ''}</div>`; c.innerHTML = ''; return; }
+      if (!this._loaded) { r.getElementById('status').innerHTML = ''; r.getElementById('top').innerHTML = '<span class="sk" style="height:132px" role="status" aria-label="Loading"></span>'; c.innerHTML = '<span class="sk" style="height:240px"></span>'; return; }
       const several = homeDevices().length > 1;
       const kpi = (label, value, sub) => `<div class="kpi"><span>${label}</span><b>${value}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
       const rule = priceRule(h), vat = vatNote(rule), money = (eur) => `€ ${eur.toFixed(2)} ${vat}`, pr = chartPrice(t, tariff);
@@ -3386,7 +3418,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const list = this.locations().filter((l) => this.matches('locationSearch', l.name));
       const rows = list.map((l) => {
         const groups = placesUnder(l.id).size - 1, devices = this.deviceRows(l.id).length, main = TREE.mains?.[l.id] ? (this.deviceRows().find((d) => d.id === TREE.mains[l.id])?.name || TREE.mains[l.id]) : '—';
-        return { cls: selected?.id === l.id ? 'sel' : '', html: `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td class="num">${groups}</td><td class="num">${devices}</td><td class="hide-s">${esc(main)}</td><td><div class="table-actions">${this.action('Manage groups', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action('Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>` };
+        return { cls: selected?.id === l.id ? 'sel' : '', html: `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td class="num">${groups}</td><td class="num">${devices}</td><td class="hide-s">${esc(main)}</td><td><div class="table-actions">${this.action('Manage groups', `data-select-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action('Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>` };
       });
       const head = `${this.search('locationSearch', 'Search locations')}<span class="sp"></span><span class="toolbar-label">${list.length} ${list.length === 1 ? 'location' : 'locations'}</span>`;
       const empty = this._q.locationSearch ? 'No location matches the search.' : 'This tenant has no location yet. Add one with New location; devices and users are assigned to locations.';
@@ -3538,9 +3570,11 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     async openClientView(client = portalClient, location = null) {
       try {
         if (PORTAL.isRoot && client && client !== portalClient) await switchPortalClient(this._hass, client);
-        const first = location || TREE.places.find((p) => p.kind === 'location')?.id || null;
+        // The location chosen in Administration, if it is this tenant's; otherwise its first.
+        const sites = TREE.places.filter((p) => p.kind === 'location').sort(byName);
+        const first = location || sites.find((p) => p.id === this._selectedLocation)?.id || sites[0]?.id || null;
         if (first) setLocation(first);
-        navigate(HOME_PATH);
+        navigate(sites.length > 1 && !first ? START_PATH : HOME_PATH);
       } catch (e) { this.flash(e?.message || 'Could not open the tenant view.', true); }
     }
     async saveEditor() {
@@ -3690,7 +3724,6 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         return;
       }
       // Locations and groups
-      if ((b = q('[data-preview-location]'))) { await this.openClientView(portalClient, b.dataset.previewLocation); return; }
       if (q('[data-new-location]')) { open({ kind: 'location' }); return; }
       if ((b = q('[data-edit-location]'))) { open({ kind: 'location', id: b.dataset.editLocation, name: b.dataset.name }); return; }
       if ((b = q('[data-move-location]'))) { open({ kind: 'location-move', id: b.dataset.moveLocation, name: b.dataset.name }); return; }
@@ -3830,7 +3863,7 @@ i{position:absolute;top:3px;left:calc(50% + 5px);min-width:14px;height:14px;bord
         this.shadowRoot.querySelector('nav').addEventListener('click', (e) => { const a = e.target.closest('a'); if (a) { e.preventDefault(); if (a.dataset.p === '/energy-reports/report') openLocationReport(); navigate(a.dataset.p); this.mark(); } });
         this.mark();
       }
-      const nav = PORTAL.isRoot ? ADMIN_NAV : CLIENT_NAV, navKey = nav.map((x) => x.join(':')).join('|');
+      const nav = !PORTAL.isRoot ? CLIENT_NAV : previewing() ? [['Admin', 'mdi:shield-account-outline', ADMIN_HOME_PATH], ...CLIENT_NAV] : ADMIN_NAV, navKey = nav.map((x) => x.join(':')).join('|');
       if (this._navKey !== navKey) { this._navKey = navKey; const el = this.shadowRoot.querySelector('nav'); if (el) el.innerHTML = nav.filter((x) => !x[3] || portalCanManage()).map(([n, icon, p]) => `<a href="${p}" data-p="${p}"><ha-icon icon="${icon}"></ha-icon>${n}${n === 'Alerts' ? '<i id="count"></i>' : ''}</a>`).join(''); this.mark(); }
       if (!this._counted || Date.now() - this._counted > 15000) {
         this._counted = Date.now();
