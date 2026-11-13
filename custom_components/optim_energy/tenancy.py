@@ -939,7 +939,7 @@ class TenancyManager:
     async def async_save_group(
         self, user: User, client: str | None, group_id: str | None, name: str, parent: str | None
     ) -> dict[str, Any]:
-        """Create, rename or re-parent a group. Groups only organise devices."""
+        """Create, rename or move a group. Moving it to another location takes its devices along."""
         client_id, _, tree = self._manager_client(user, client)
         name = name.strip()
         if not name or len(name) > 80:
@@ -967,7 +967,19 @@ class TenancyManager:
             walk = places.get(walk, {}).get("parent")
         current = _location_of_place({"places": [*places.values()]}, group.get("parent"))
         if group.get("parent") and current and current != location:
-            raise HomeAssistantError("A group cannot move to another location")
+            # The group goes to another location of the tenant, with its sub-groups and its devices.
+            area_id = self.location_area(tree, location)
+            if not area_id:
+                raise HomeAssistantError("This location has no area yet")
+            inside = _place_descendants(tree, group_id)
+            moved = {str(k) for k, v in (tree.get("placed") or {}).items() if v in inside}
+            mains = tree.get("mains") or {}
+            if mains.get(current) in moved:
+                mains.pop(current, None)
+            registry = dr.async_get(self.hass)
+            for device in list(registry.devices):
+                if (device.id in moved or device.via_device_id in moved) and device.area_id != area_id:
+                    registry.async_update_device(device.id, area_id=area_id)
         group["parent"] = parent
         await self._async_saved()
         return {"client": client_id, "id": group_id, "name": name, "parent": parent}

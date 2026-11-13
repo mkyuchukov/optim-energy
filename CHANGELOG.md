@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.0
+
+Administration dialogs, simplified.
+
+- Groups: "Rename" is now "Edit". The dialog has the group's name, its location, the group it sits inside, and a checklist of the location's devices to put in or take out of the group. Choosing another location moves the group there with its sub-groups and devices.
+- Locations: "Manage" is now "Manage groups", and the page shows groups only. Devices are managed on the Devices page.
+- Devices: Edit and Move are one dialog with separate Tenant, Location and Group fields; the groups offered follow the chosen location. "Supplied by" is "Parent device", the main-device checkbox just says "Main device", and the button reads "New virtual device".
+- Users: the Tenant selector has "All tenants", which lists every user with their tenant. A user created from there gets a tenant in the dialog.
+- Every dialog: a header and footer line, even spacing, fields that line up (the password and role fields no longer sit at different heights), and full-width buttons on phones.
+
 ## 0.13.0
 
 Administration: always clear which tenant and location you are on.
