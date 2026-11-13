@@ -46,6 +46,8 @@ MODEL = "areas"  # a client is a floor, a location is an area; the only model th
 MANAGED_GROUP_PREFIX = f"{DOMAIN}_"
 DEFAULT_CLIENT = "default"
 MAX_TREE_BYTES = 2 * 1024 * 1024
+# ponytail: the one market-price integration in use. Make it a setting when a second source appears.
+_MARKET_PRICE_PLATFORMS = frozenset({"entsoe"})
 _NAME_TAKEN = 'Home Assistant already has an area called "{}". Choose another name.'
 ROLE_CLIENT_ADMIN = "client_admin"
 ROLE_USER = "user"
@@ -718,7 +720,8 @@ class TenancyManager:
             await async_sync_default_panel(
                 self.hass,
                 user.id,
-                "energy-admin" if ctx["is_root"] else "energy-start",
+                # A tenant account lands on Overview itself; a page that only redirects there would be one more tab.
+                "energy-admin" if ctx["is_root"] else "energy-home",
             )
             if ctx["is_root"]:
                 await async_sync_admin_sidebar(self.hass, user.id)
@@ -1149,81 +1152,6 @@ class TenancyManager:
                     state = self.hass.states.get(automation_id)
                     out.append(f'the schedule "{state.name if state else automation_id}"')
         return out
-
-    async def async_health(self, user: User) -> dict[str, Any]:
-        """Check that every tenant user can read what their locations hold. Root only. Changes nothing."""
-        if not self.is_root(user):
-            raise HomeAssistantError("Only a Home Assistant administrator can run the checks")
-        devices = list(dr.async_get(self.hass).devices)
-        by_id = {d.id: d for d in devices}
-        entities = [e for e in er.async_get(self.hass).entities.values() if not e.disabled_by]
-        areas = {a.id for a in ar.async_get(self.hass).async_list_areas()}
-        clients = self.data.get("clients", {})
-        problems: list[dict[str, str]] = []
-
-        def add(kind: str, where: str, text: str) -> None:
-            problems.append({"kind": kind, "where": where, "text": text})
-
-        def names(ids: Iterable[str]) -> str:
-            listed = sorted({str(by_id[i].name_by_user or by_id[i].name or i) for i in ids if i in by_id})
-            return ", ".join(listed[:4]) + (f" and {len(listed) - 4} more" if len(listed) > 4 else "")
-
-        index = self._area_index()
-        for device in devices:
-            parent = by_id.get(device.via_device_id) if device.via_device_id else None
-            if parent is not None and is_channel(device, parent) and device.area_id != parent.area_id and (
-                str(parent.area_id) in index or str(device.area_id) in index
-            ):
-                add("channel", str(device.name_by_user or device.name), "is a part of a device but is not in that device's area")
-        for entity in entities:
-            device = by_id.get(entity.device_id) if entity.device_id else None
-            if device is not None and entity.area_id and entity.area_id != device.area_id and (
-                str(device.area_id) in index or str(entity.area_id) in index
-            ):
-                add("entity", entity.entity_id, "has an area of its own that differs from its device's, so it follows another location")
-        for client_id, tree in self.data.get("trees", {}).items():
-            tenant = str(clients.get(client_id, {}).get("name") or client_id)
-            if not isinstance(tree, dict):
-                continue
-            place_ids = {str(p.get("id")) for p in _tree_places(tree)}
-            for place in _place_locations(tree):
-                if not place.get("area_id") or place["area_id"] not in areas:
-                    add("location", f"{tenant} · {place.get('name')}", "has no area in Home Assistant, so nobody can be given its devices")
-            live = self._live_placed(tree)
-            stale = [d for d, p in (tree.get("placed") or {}).items() if not str(d).startswith("virt:") and live.get(d) != p]
-            if stale:
-                add("group", tenant, f"{len(stale)} device(s) are stored in a group that is not in their location: {names(stale)}")
-            gone = [d for d, p in (tree.get("placed") or {}).items() if p not in place_ids]
-            if gone:
-                add("group", tenant, f"{len(gone)} placement(s) point to a group that no longer exists")
-        # The check that matters most: what each user should see against what Home Assistant lets them read.
-        for ha_user in await self.hass.auth.async_get_users():
-            record = self.data.get("users", {}).get(ha_user.id)
-            if not record or not ha_user.is_active:
-                continue
-            client_id = str(record.get("client"))
-            tree = self.data.get("trees", {}).get(client_id)
-            if not isinstance(tree, dict):
-                add("user", str(ha_user.name), "belongs to a tenant that no longer exists")
-                continue
-            locations = _place_locations(tree)
-            if record.get("role") != ROLE_CLIENT_ADMIN:
-                mine = set(_record_locations(record))
-                missing = mine - {str(p["id"]) for p in locations}
-                if missing:
-                    add("user", str(ha_user.name), "is assigned to a location that no longer exists")
-                locations = [p for p in locations if str(p["id"]) in mine]
-            area_ids = {p.get("area_id") for p in locations} - {None}
-            own = {d.id for d in devices if d.area_id in area_ids}
-            own |= {d.id for d in devices if d.via_device_id in own and is_channel(d, by_id.get(d.via_device_id))}
-            hidden = {
-                e.device_id
-                for e in entities
-                if e.device_id in own and not ha_user.permissions.check_entity(e.entity_id, POLICY_READ)
-            }
-            if hidden:
-                add("user", str(ha_user.name), f"cannot read {len(hidden)} device(s) of their own locations: {names(hidden)}")
-        return {"problems": problems, "checked": {"devices": len(devices), "entities": len(entities), "users": len(self.data.get("users", {}))}}
 
     def _device_integrations(self, device: Any) -> list[str]:
         """Name the integration a device comes from."""
@@ -1777,7 +1705,10 @@ class TenancyManager:
         return {area_id}, {
             entity.entity_id
             for entity in er.async_get(self.hass).entities.values()
-            if entity.device_id is None and entity.area_id == area_id
+            # The exchange price is the same for everyone and belongs to no location, yet every
+            # tenant's price and its chart are worked out from it.
+            if (entity.device_id is None and entity.area_id == area_id)
+            or (entity.domain == "sensor" and entity.platform in _MARKET_PRICE_PLATFORMS and not entity.disabled_by)
         }
 
     def _tree_visible_entities(self, client_id: str) -> set[str]:
@@ -2155,7 +2086,6 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
         lambda user, msg: manager.async_assign_device(user, msg.get("client"), msg["device_id"], msg.get("place") or None),
     )
     _command("device/inbox", {}, lambda user, msg: manager.device_inbox(user))
-    _command("health", {}, lambda user, msg: manager.async_health(user))
     _command(
         "device/ignore",
         {probatio.Required("device_id"): str, probatio.Required("ignored"): bool},

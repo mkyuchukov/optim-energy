@@ -119,8 +119,9 @@ def run(version: str, *, keep: bool = False) -> None:
             user_a_default = user_a_ws.command(
                 {"type": "frontend/get_user_data", "key": "core"}
             )["value"]["default_panel"]
-            assert user_a_sidebar["panelOrder"][0] == "energy-start"
-            assert user_a_default == "energy-start"
+            assert user_a_sidebar["panelOrder"][0] == "energy-home"
+            assert user_a_default == "energy-home"
+            assert "energy-start" in user_a_sidebar["hiddenPanels"]
             assert "energy-locations" in user_a_sidebar["hiddenPanels"]
             assert "energy-admin" in user_a_sidebar["hiddenPanels"]
         finally:
