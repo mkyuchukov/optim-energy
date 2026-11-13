@@ -1,4 +1,6 @@
 // Live energy report card for Home Assistant. No dependencies; reads recorder statistics.
+// Home Assistant refuses a statistics request with no ids, and a light or switch with no meter has none to give.
+const statsWS = (hass, msg) => { const ids = (msg.statistic_ids || []).filter(Boolean); return ids.length ? hass.callWS({ ...msg, statistic_ids: ids }) : Promise.resolve({}); };
 const DEFAULTS = {
   tariff: 'input_number.client_tariff',
   // Meters and selections come from Home Assistant, through window.portalModel in building-cards.js.
@@ -1029,8 +1031,8 @@ if (typeof HTMLElement !== 'undefined') {
       try {
         const hourStart = now - (now % HOUR), liveHour = live && +start <= hourStart;
         const [s, prev, raw, rawPrev, rawHour] = await Promise.all([
-          h.callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: ids, period: fine ? '5minute' : 'hour', types: ['change', 'mean', 'min', 'max', 'state'] }),
-          h.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(prevFrom).toISOString(), end_time: new Date(prevFrom + span).toISOString(), statistic_ids: meters.flatMap((m) => [m.energy, m.power]), period: fine ? '5minute' : 'hour', types: ['change', 'min', 'max'] }),
+          statsWS(h, { type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: ids, period: fine ? '5minute' : 'hour', types: ['change', 'mean', 'min', 'max', 'state'] }),
+          statsWS(h, { type: 'recorder/statistics_during_period', start_time: new Date(prevFrom).toISOString(), end_time: new Date(prevFrom + span).toISOString(), statistic_ids: meters.flatMap((m) => [m.energy, m.power]), period: fine ? '5minute' : 'hour', types: ['change', 'min', 'max'] }),
           shown === 60000 ? h.callWS({ type: 'history/history_during_period', start_time: start.toISOString(), end_time: end.toISOString(), entity_ids: [...liveIds, ...meters.map((m) => m.energy), ...phaseIds.map(([, id]) => id)], minimal_response: true, no_attributes: true, significant_changes_only: false }) : null,
           shown === 60000 ? h.callWS({ type: 'history/history_during_period', start_time: new Date(+start - span).toISOString(), end_time: start.toISOString(), entity_ids: meters.map((m) => m.energy), minimal_response: true, no_attributes: true, significant_changes_only: false }) : null,
           liveHour ? h.callWS({ type: 'history/history_during_period', start_time: new Date(hourStart).toISOString(), end_time: new Date(now).toISOString(), entity_ids: [...meters, ...below].map((m) => m.energy), minimal_response: true, no_attributes: true, significant_changes_only: false }) : null,

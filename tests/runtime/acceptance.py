@@ -278,6 +278,45 @@ def complete_onboarding(http: Http) -> str:
     return token
 
 
+def seed_legacy_dashboard(harness: "RuntimeHarness", http: Http, token: str, tree: dict[str, Any] | None = None) -> None:
+    """Give the instance an old dashboard tree before the integration is set up.
+
+    A new installation starts on the floor and area model. One that carries an
+    older tree keeps the label model until it is migrated, which is what the
+    suites need to exercise that model and the migration.
+    """
+    root = WebSocket(http.host, http.port)
+    root.auth(token)
+    try:
+        root.command(
+            {
+                "type": "lovelace/dashboards/create",
+                "url_path": "energy-home",
+                "title": "Legacy Optim Energy",
+                "icon": "mdi:flash",
+                "show_in_sidebar": True,
+                "require_admin": False,
+            }
+        )
+        root.command(
+            {
+                "type": "lovelace/config/save",
+                "url_path": "energy-home",
+                "config": {"views": [], "device_tree": tree or LEGACY_TREE},
+            }
+        )
+    finally:
+        root.close()
+    wait_until(
+        lambda: any(
+            item["url_path"] == "energy-home"
+            for item in harness.storage("lovelace_dashboards")["data"]["items"]
+        ),
+        "legacy dashboard metadata was not persisted",
+        timeout=20,
+    )
+
+
 def create_config_entry(http: Http, token: str) -> str:
     _, flow = http.request(
         "POST",
@@ -576,36 +615,7 @@ def run(version: str, *, keep: bool = False) -> None:
         root_token = complete_onboarding(http)
         _, config = http.request("GET", "/api/config", token=root_token)
         assert_equal(config["version"], version, "pinned HA runtime version")
-        root = WebSocket(http.host, http.port)
-        root.auth(root_token)
-        try:
-            root.command(
-                {
-                    "type": "lovelace/dashboards/create",
-                    "url_path": "energy-home",
-                    "title": "Legacy Optim Energy",
-                    "icon": "mdi:flash",
-                    "show_in_sidebar": True,
-                    "require_admin": False,
-                }
-            )
-            root.command(
-                {
-                    "type": "lovelace/config/save",
-                    "url_path": "energy-home",
-                    "config": {"views": [], "device_tree": LEGACY_TREE},
-                }
-            )
-        finally:
-            root.close()
-        wait_until(
-            lambda: any(
-                item["url_path"] == "energy-home"
-                for item in harness.storage("lovelace_dashboards")["data"]["items"]
-            ),
-            "legacy dashboard metadata was not persisted",
-            timeout=20,
-        )
+        seed_legacy_dashboard(harness, http, root_token)
 
         entry_id = create_config_entry(http, root_token)
         fixture_entry_id = create_fixture_entry(http, root_token)
@@ -1050,6 +1060,28 @@ def run(version: str, *, keep: bool = False) -> None:
             assert_true(place_ids(client_tree(root, client_a), "location")[annex]["area_id"], "new location has no area")
             root.command({"type": "optim_energy/location/delete", "client": client_a, "location": annex})
             refused(root, {"type": "optim_energy/location/delete", "client": client_a, "location": location_a}, "deleting a location in use")
+
+            # A whole location changes client, with its group, device and price.
+            refused(root, {"type": "optim_energy/location/move", "client": client_a, "location": location_a, "target": client_b}, "moving a location people are assigned to")
+            wing = root.command({"type": "optim_energy/location/save", "client": client_a, "name": "Wing"})["id"]
+            wing_room = root.command({"type": "optim_energy/group/save", "client": client_a, "name": "Wing Room", "parent": wing})["id"]
+            root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": a_device, "place": wing_room})
+            with_price = client_tree(root, client_a)
+            with_price["prices"] = {**with_price.get("prices", {}), wing: {"mode": "fixed", "fixed": 0.4}}
+            root.command({"type": "optim_energy/tree/save", "client": client_a, "tree": with_price})
+            refused(admin_a, {"type": "optim_energy/location/move", "location": wing, "target": client_b}, "a client admin moving a location")
+            root.command({"type": "optim_energy/location/move", "client": client_a, "location": wing, "target": client_b})
+            tree_a, tree_b = client_tree(root, client_a), client_tree(root, client_b)
+            assert_true(wing not in place_ids(tree_a, "location") and wing_room not in place_ids(tree_a, "group"), "the moved location is still in the old client")
+            assert_true(wing in place_ids(tree_b, "location") and wing_room in place_ids(tree_b, "group"), "the moved location did not arrive")
+            assert_equal(tree_b["placed"].get(a_device), wing_room, "the device did not keep its group")
+            assert_equal(tree_b["prices"].get(wing), {"mode": "fixed", "fixed": 0.4}, "the price did not move with the location")
+            assert_true(wing not in tree_a.get("prices", {}) and a_device not in tree_a["placed"], "the old client kept settings of the moved location")
+            assert_equal(root_client_entities(client_a), {"input_boolean.runtime_a_toggle"}, "the old client still sees the moved device")
+            assert_true(A_DEVICE_SENSOR in root_client_entities(client_b), "the new client does not see the moved device")
+            # Put things back for the checks that follow.
+            root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": a_device, "place": location_a})
+            root.command({"type": "optim_energy/location/delete", "client": client_b, "location": wing})
 
             # The inbox: every device, where it is, and why it was recognised.
             spare = root.command(

@@ -25,6 +25,8 @@ const LOCATION_KEY = 'portalLocation', CLIENT_KEY = 'portalClient', START_PATH =
 // Server-provided identity. A Home Assistant admin is the only root; a
 // client administrator is a portal role and never receives HA's admin flag.
 const PORTAL = { ready: false, isRoot: false, role: null, client: null, clientName: '', location: null, clients: [], capabilities: {}, error: '' };
+// Home Assistant refuses a statistics request with no ids, and a light or switch with no meter has none to give.
+const statsWS = (hass, msg) => { const ids = (msg.statistic_ids || []).filter(Boolean); return ids.length ? hass.callWS({ ...msg, statistic_ids: ids }) : Promise.resolve({}); };
 const portalCanManage = () => !!PORTAL.capabilities.manage_tree;
 // Wiring, main devices and virtual devices decide what a client can see; the server only takes them from root.
 const portalCanWire = () => !!PORTAL.capabilities.manage_wiring;
@@ -283,7 +285,7 @@ async function priceSeries(hass, from, to, loc = currentLocation) {
   if (rule.mode !== 'exchange') { const flat = () => now; flat.varies = false; return flat; }
   const quarters = new Map(priceList(hass).map((x) => [x.t, x.raw]));
   let hours = new Map();
-  try { const r = await hass.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(), statistic_ids: [p.sensor], period: 'hour', types: ['mean'] }); hours = new Map((r[p.sensor] || []).filter((x) => x.mean != null).map((x) => [+new Date(x.start), x.mean])); } catch (e) { /* the price now stands in */ }
+  try { const r = await statsWS(hass, { type: 'recorder/statistics_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(), statistic_ids: [p.sensor], period: 'hour', types: ['mean'] }); hours = new Map((r[p.sensor] || []).filter((x) => x.mean != null).map((x) => [+new Date(x.start), x.mean])); } catch (e) { /* the price now stands in */ }
   const at = (t) => {
     const h0 = t - (t % HOUR_MS), qs = [0, 1, 2, 3].map((i) => quarters.get(h0 + i * 900000)).filter((v) => v != null);
     if (qs.length) return final(qs.reduce((a, b) => a + b, 0) / qs.length);
@@ -451,12 +453,12 @@ async function billFigures(hass, bill, loc) {
   if (sensor) {
     source = 'the price history in Home Assistant';
     const div = /mwh/i.test(hass.states[sensor]?.attributes?.unit_of_measurement || '') ? 1000 : 1;
-    const st = await hass.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(), statistic_ids: [sensor], period: 'hour', types: ['mean'] });
+    const st = await statsWS(hass, { type: 'recorder/statistics_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(), statistic_ids: [sensor], period: 'hour', types: ['mean'] });
     prices = (st[sensor] || []).filter((x) => x.mean != null).map((x) => ({ t: +new Date(x.start), p: x.mean / div }));
   }
   const main = TREE.mains?.[loc], ids = main ? unique(readingsOf(main)).map((d) => d.energy).filter(Boolean) : [], usage = new Map();
   if (ids.length) {
-    const st = await hass.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(), statistic_ids: ids, period: 'hour', types: ['change'] });
+    const st = await statsWS(hass, { type: 'recorder/statistics_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(), statistic_ids: ids, period: 'hour', types: ['change'] });
     for (const id of ids) for (const x of st[id] || []) { const t = +new Date(x.start); if (x.change > 0) usage.set(t, (usage.get(t) || 0) + x.change); }
   }
   // Exchange prices only cover the hours there are prices for; a whole month should have about one per hour or quarter.
@@ -786,7 +788,9 @@ function syncModel(hass) {
     const parent = toMeter(d, sensorsOf(d.id).filter((e) => /_signal_strength$/.test(e.entity_id))), parts = kids.filter((k) => hasPower(k.id)).map((k, i) => ({ ...toMeter(k, sensorsOf(k.id)), channelOf: d.id, channel: i, place: parent.place })).filter((p) => p.power && p.energy);
     channelMeters.push(...parts);
     return { ...parent, shelly: true, channels: parts.map((p) => p.id), readings: [...parent.readings, ...parts.flatMap((p) => p.readings.map(([n, id, u]) => [`Channel ${p.channel} ${n.toLowerCase()}`, id, u]))] };
-  }).filter((m) => m.channels?.length || (m.power && m.energy));
+    // A meter needs both figures. A light or switch with no metering is still shown, so it can be
+    // switched and scheduled; it simply has no power or energy to report.
+  }).filter((m) => m.channels?.length || (m.power && m.energy) || m.switch);
   const virtual = TREE.virtual.map((v) => ({ id: v.id, name: v.name, type: 'Virtual device', model: 'Sum of the devices under it', place: placeById(TREE.placed[v.id])?.id || null, virtual: true, report: `dev:${v.id}` }));
   // One name everywhere: a word every switch in a location starts with (such as "ACME") says nothing there, so it is left off.
   const byLoc = new Map();
@@ -811,6 +815,8 @@ function portalModel(hass) {
   const main = mainDevice(), building = list.length ? [{ id: 'building', name: placeById(currentLocation) ? esc(placeById(currentLocation).name) : main ? main.name : 'All devices', meters: homeDevices().map((d) => d.id), roots: buildingRoots() }] : [];
   const virtualItems = treeNodes().filter((d) => d.virtual).map((d) => ({ id: d.report, name: d.name, meters: readingsOf(d.id).map((x) => x.id), roots: [d.id] }));
   const views = [{ group: 'Location', items: building }, { group: 'Virtual devices', items: virtualItems }, { group: 'Groups', items: groupItems }, { group: 'Devices', items: [...list.filter((d) => !d.channelOf).map((d) => ({ id: d.report, name: d.name, meters: [d.id], roots: [d.id] })), ...withChannels.map((d) => ({ id: d.report, name: d.name, meters: d.channels, roots: [d.id] }))] }, { group: 'Channels', items: list.filter((d) => d.channelOf).map((d) => ({ id: d.report, name: d.name, meters: [d.id], roots: [] })) }].filter((g) => g.items.length);
+  // Reports are about what was measured. A light or switch with no meter is in the portal, but in no report view.
+  for (const v of views) v.items = v.items.map((x) => ({ ...x, meters: x.meters.filter((id) => meters[id]) })).filter((x) => x.meters.length);
   return { meters, views };
 }
 if (typeof window !== 'undefined') {
@@ -985,8 +991,8 @@ async function loadTotals(hass) {
   const counted = new Set(homeDevices().map((d) => d.id));
   const hourStart = nowMs - (nowMs % HOUR_MS), iso = (ms) => new Date(ms).toISOString();
   const [hourly, fine, raw] = await Promise.all([
-    hass.callWS({ type: 'recorder/statistics_during_period', start_time: iso(nowMs - 33 * 24 * HOUR_MS), statistic_ids: ids, period: 'hour', types: ['change', 'mean', 'min', 'max'] }),
-    hass.callWS({ type: 'recorder/statistics_during_period', start_time: iso(nowMs - 24 * HOUR_MS), statistic_ids: list.map((d) => d.power), period: '5minute', types: ['mean'] }),
+    statsWS(hass, { type: 'recorder/statistics_during_period', start_time: iso(nowMs - 33 * 24 * HOUR_MS), statistic_ids: ids, period: 'hour', types: ['change', 'mean', 'min', 'max'] }),
+    statsWS(hass, { type: 'recorder/statistics_during_period', start_time: iso(nowMs - 24 * HOUR_MS), statistic_ids: list.map((d) => d.power), period: '5minute', types: ['mean'] }),
     hass.callWS({ type: 'history/history_during_period', start_time: iso(hourStart), end_time: iso(nowMs), entity_ids: list.map((d) => d.energy), minimal_response: true, no_attributes: true, significant_changes_only: false }),
   ]);
   const pts = (id) => historyPts(raw, id);
@@ -1302,8 +1308,8 @@ async function fetchAlerts(hass) {
   const watched = [...new Map(DEVICES.filter((d) => d.power && !d.virtual).map((d) => [d.channelOf || d.id, d])).entries()];
   const [r, st, hourly] = await Promise.all([
     hass.callWS({ type: 'history/history_during_period', start_time: start, end_time: end.toISOString(), entity_ids: [BRIDGE, ...meters.flatMap((m) => [statId(m, 'event'), ...ALERT_SETTINGS.map((x) => limitId(m, x))]), ...alarmRules().map((x) => x.entity)], minimal_response: true, no_attributes: true }),
-    meters.length ? hass.callWS({ type: 'recorder/statistics_during_period', start_time: start, end_time: end.toISOString(), statistic_ids: meters.flatMap((m) => ALERT_STATS.map((k) => statId(m, k))), period: '5minute', types: ['min', 'max'] }) : {},
-    watched.length ? hass.callWS({ type: 'recorder/statistics_during_period', start_time: start, end_time: end.toISOString(), statistic_ids: watched.map(([, d]) => d.power), period: 'hour', types: ['mean'] }) : {},
+    meters.length ? statsWS(hass, { type: 'recorder/statistics_during_period', start_time: start, end_time: end.toISOString(), statistic_ids: meters.flatMap((m) => ALERT_STATS.map((k) => statId(m, k))), period: '5minute', types: ['min', 'max'] }) : {},
+    watched.length ? statsWS(hass, { type: 'recorder/statistics_during_period', start_time: start, end_time: end.toISOString(), statistic_ids: watched.map(([, d]) => d.power), period: 'hour', types: ['mean'] }) : {},
   ]);
   const pts = (id) => (r[id] || []).map((x) => ({ s: x.s, t: (x.lu || x.lc) * 1000 }));
   const stat = (id, f) => (st[id] || []).filter((x) => x[f] != null).map((x) => ({ s: String(x[f]), t: +new Date(x.start) }));
@@ -1735,7 +1741,7 @@ async function todayKwh(hass, ids) {
   const guess = Date.UTC(y, m - 1, d);
   const off = new Date(guess).toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' });
   const start = new Date(guess - Number(off) * 3600000);
-  const s = await hass.callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), statistic_ids: ids, period: 'hour', types: ['change', 'state'] });
+  const s = await statsWS(hass, { type: 'recorder/statistics_during_period', start_time: start.toISOString(), statistic_ids: ids, period: 'hour', types: ['change', 'state'] });
   // Statistics stop at the last finished hour, so add what the meter's counter has moved since.
   return Object.fromEntries(ids.map((id) => { const rows = s[id] || [], last = rows[rows.length - 1], since = last ? parseFloat(hass.states[id]?.state) - last.state : 0; return [id, rows.reduce((a, r) => a + (r.change > 0 && r.change < 20 ? r.change : 0), 0) + (since > 0 && since < 20 ? since : 0)]; }));
 }
@@ -1930,7 +1936,7 @@ ${CHART_CSS}
       if (!quiet) { this._e = null; this._parts = null; }
       const ids = sp.energy ? [...sp.energies, ...sp.powers] : [];
       try {
-        const st = ids.length ? await h.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(now - 9 * 86400000).toISOString(), statistic_ids: ids, period: 'hour', types: ['change', 'state', 'mean', 'min', 'max'] }) : {};
+        const st = ids.length ? await statsWS(h, { type: 'recorder/statistics_during_period', start_time: new Date(now - 9 * 86400000).toISOString(), statistic_ids: ids, period: 'hour', types: ['change', 'state', 'mean', 'min', 'max'] }) : {};
         const raw = sp.energy ? await h.callWS({ type: 'history/history_during_period', start_time: new Date(now - (now % HOUR_MS)).toISOString(), end_time: new Date(now).toISOString(), entity_ids: sp.energies, minimal_response: true, no_attributes: true, significant_changes_only: false }) : {};
         if (this.space().id !== sp.id) return;
         this._totals = await portalTotals(h).catch(() => null);
@@ -2833,7 +2839,7 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
       try {
         const ids = meters.map((d) => d.energy);
         const [st, raw, totals] = await Promise.all([
-          h.callWS({ type: 'recorder/statistics_during_period', start_time: new Date(now - 9 * 86400000).toISOString(), statistic_ids: ids, period: 'hour', types: ['change', 'state'] }),
+          statsWS(h, { type: 'recorder/statistics_during_period', start_time: new Date(now - 9 * 86400000).toISOString(), statistic_ids: ids, period: 'hour', types: ['change', 'state'] }),
           h.callWS({ type: 'history/history_during_period', start_time: new Date(now - (now % HOUR_MS)).toISOString(), end_time: new Date(now).toISOString(), entity_ids: ids, minimal_response: true, no_attributes: true, significant_changes_only: false }),
           portalTotals(h).catch(() => null),
         ]);
@@ -3169,7 +3175,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
                 places,
                 locations: places.filter((p) => p.kind === 'location').length,
                 groups: places.filter((p) => p.kind === 'group').length,
-                devices: Object.keys(tree.placed || {}).length,
+                // The same count the device list shows: real devices, a multi-channel meter once, no virtual devices.
+                devices: Array.isArray(inbox) ? inbox.filter((d) => d.client === item.id).length : Object.keys(tree.placed || {}).filter((k) => !k.startsWith('virt:')).length,
                 people: clientUsers.length,
                 active: clientUsers.filter((u) => u.is_active).length,
               };
@@ -3238,8 +3245,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       const under = locationId ? placesUnder(locationId) : null;
       return rows.filter((row) => !under || (row.place && under.has(row.place)));
     }
-    table(headers, rows, id = '') {
-      return `<div class="admin-table-wrap"${id ? ` id="${id}"` : ''}><table class="admin-table"><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row) => `<tr>${row}</tr>`).join('') : `<tr><td class="admin-empty" colspan="${headers.length}">No rows yet.</td></tr>`}</tbody></table></div>`;
+    table(headers, rows, id = '', empty = 'No rows yet.') {
+      return `<div class="admin-table-wrap"${id ? ` id="${id}"` : ''}><table class="admin-table"><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row) => `<tr>${row}</tr>`).join('') : `<tr><td class="admin-empty" colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
     }
     action(label, attrs = '', cls = 'table-action') { return `<button class="${cls}" ${attrs}>${esc(label)}</button>`; }
     renderEditor() {
@@ -3255,7 +3262,7 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         fields = `<label class="field wide">Location name<input id="editorName" maxlength="80" value="${esc(e.name || '')}" autocomplete="off"></label><p class="admin-note">${areasModel() ? `A location is an area in Home Assistant on the floor of ${esc(this.selectedClient().name)}. A device given that area in Home Assistant lands in this location.` : `A location is a 📍 label in Home Assistant. It is attached to ${esc(this.selectedClient().name)}.`}</p>`;
       } else if (e.kind === 'location-move') {
         title = `Move ${e.name}`;
-        fields = `<label class="field wide">New client<select id="editorClient">${clients.filter((x) => x.id !== portalClient).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></label>`;
+        fields = `<label class="field wide">New client<select id="editorClient">${clients.filter((x) => x.id !== portalClient).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></label>${areasModel() ? '<p class="admin-note">The location moves with its groups, devices, price, schedules and alert rules. Its people stay with the old client, so remove it from them first.</p>' : ''}`;
       } else if (e.kind === 'person') {
         const current = e.user;
         title = current ? 'Edit person' : 'New person';
@@ -3288,8 +3295,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       return `<div class="admin-editor"><div class="admin-editor-head"><div><span class="admin-kicker">${e.kind === 'person' ? 'Access' : e.kind === 'device' || e.kind === 'virtual' || e.kind === 'device-name' ? 'Devices' : 'Client setup'}</span><h3>${esc(title)}</h3></div></div><div class="form-grid">${fields}</div><div class="form-actions"><button class="quiet" data-cancel-editor="1">Cancel</button><button class="primary" data-save-editor="1">${esc(save)}</button></div></div>`;
     }
     renderClients() {
-      const rows = (this._summaries || []).map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}<small>${esc(item.slug || item.id)}</small></button></td><td>${item.locations || 0}</td><td>${item.people || 0}</td><td>${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action(this._confirmClientDelete === item.id ? 'Confirm delete' : 'Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
-      return `${this.renderEditor()}${this.table(['Client', 'Locations', 'People', 'Devices', 'Actions'], rows)}<p class="admin-note">Select a client to manage its locations and people.</p>`;
+      const rows = (this._summaries || []).map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}</button></td><td>${item.locations || 0}</td><td>${item.people || 0}</td><td>${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action(this._confirmClientDelete === item.id ? 'Confirm delete' : 'Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
+      return `${this.renderEditor()}${this.table(['Client', 'Locations', 'People', 'Devices', 'Actions'], rows, '', 'No clients yet. Start with New client.')}<p class="admin-note">Select a client to manage its locations and people.</p>`;
     }
     renderPeople() {
       const locs = this.allPlaces(), users = (this._users || []).filter((u) => {
@@ -3307,18 +3314,19 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         const parentOptions = this.deviceRows().filter((x) => x.id !== d.id && !wouldLoop(d.id, x.id)).map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
         return `<td><b>${esc(d.name)}</b><small class="table-sub">${esc(d.model || (d.virtual ? 'Virtual device' : ''))}</small></td><td>${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}</td><td>${esc(parts.group || '—')}</td><td><select class="table-select" data-device-parent="${esc(d.id)}"><option value="">Top level</option>${parentOptions}</select></td><td>${main ? 'Main' : '—'}</td><td><div class="table-actions">${this.action('Move', `data-move-device="${esc(d.id)}"`)}${this.action('Set main', `data-set-main="${esc(d.id)}"`)}${this.action('Rename', `data-edit-device="${esc(d.id)}" data-name="${esc(d.name)}"`)}${d.virtual ? this.action(this._confirmVirtualDelete === d.id ? 'Confirm delete' : 'Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : areasModel() && PORTAL.isRoot && d.place ? this.action(this._confirmUnassign === d.id ? 'Confirm remove' : 'Remove from client', `data-unassign-device="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
       });
-      return this.table(['Device', 'Type', 'Location', 'Group', 'Parent', 'Main', 'Actions'], rows);
+      const empty = locationId ? (this.hasInbox() ? 'No devices in this location yet. Assign one under Devices, All devices, or with Add device above.' : 'No devices in this location yet. Use Add device above.') : 'No devices yet.';
+      return this.table(['Device', 'Type', 'Location', 'Group', 'Parent', 'Main', 'Actions'], rows, '', empty);
     }
     renderLocations() {
       const selected = this._selectedLocation && this.locations().find((p) => p.id === this._selectedLocation);
       const rows = this.locations().map((l) => {
         const groups = placesUnder(l.id).size - 1, devices = this.deviceRows(l.id).length, main = TREE.mains?.[l.id] ? (this.deviceRows().find((d) => d.id === TREE.mains[l.id])?.name || TREE.mains[l.id]) : '—';
-        return `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}<small>${esc(l.id)}</small></button></td><td>${groups}</td><td>${devices}</td><td>${esc(main)}</td><td><div class="table-actions">${this.action('Devices', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${areasModel() ? '' : this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${this.action(this._confirmLocationDelete === l.id ? 'Confirm delete' : 'Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>`;
+        return `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td>${groups}</td><td>${devices}</td><td>${esc(main)}</td><td><div class="table-actions">${this.action('Devices', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action(this._confirmLocationDelete === l.id ? 'Confirm delete' : 'Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>`;
       });
 const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filter((id) => id !== selected.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean).map((g) => `<td><b>${esc(g.name)}</b></td><td>${esc(placeLabel(g.parent))}</td><td>${this.deviceRows().filter((d) => d.place === g.id).length}</td><td><div class="table-actions">${this.action('Rename', `data-edit-group="${esc(g.id)}" data-name="${esc(g.name)}"`)}${this.action(this._confirmGroupDelete === g.id ? 'Confirm delete' : 'Delete', `data-delete-group="${esc(g.id)}"`, 'table-action danger')}</div></td>`) : [];
-      const groups = selected && areasModel() ? `<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Groups</span><h2>${esc(selected.name)}</h2><p>Groups organise this location's devices. Deleting one moves its devices up a level.</p></div><div class="admin-actions">${this.action('New group', `data-new-group="${esc(selected.id)}"`)}</div></div>${this.table(['Group', 'Inside', 'Devices', 'Actions'], groupRows)}</section>` : '';
+      const groups = selected && areasModel() ? `<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Groups</span><h2>${esc(selected.name)}</h2><p>Groups organise this location's devices. Deleting one moves its devices up a level.</p></div><div class="admin-actions">${this.action('New group', `data-new-group="${esc(selected.id)}"`)}</div></div>${this.table(['Group', 'Inside', 'Devices', 'Actions'], groupRows, '', 'No groups yet. Groups are optional; add one with New group.')}</section>` : '';
       const devices = selected ? `${groups}<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Devices</span><h2>${esc(selected.name)}</h2><p>Assign devices here, set the main device and maintain the parent tree.</p></div><div class="admin-actions">${this.action('Add device', `data-add-device="${esc(selected.id)}"`)}${this.action('Virtual device', 'data-new-virtual="1"')}</div></div>${this.deviceRowsHtml(selected.id)}</section>` : '<p class="admin-note">Select a location to manage its devices.</p>';
-      return `${this.renderEditor()}${this.table(['Location', 'Groups', 'Devices', 'Main device', 'Actions'], rows)}${devices}`;
+      return `${this.renderEditor()}${this.table(['Location', 'Groups', 'Devices', 'Main device', 'Actions'], rows, '', 'This client has no location yet. Add one with New location; devices and people are assigned to locations.')}${devices}`;
     }
     hasInbox() { return PORTAL.isRoot && areasModel() && Array.isArray(this._inbox); }
     // Places of any client, not only the active one, for the assign dialog.
@@ -3483,6 +3491,12 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
           await this.afterChange(e.id ? 'Group renamed.' : 'Group created.');
         } else if (e.kind === 'location-move') {
           const target = value('editorClient');
+          if (areasModel()) {
+            if (!target) return;
+            await this._hass.callWS({ type: 'optim_energy/location/move', client: portalClient, location: e.id, target });
+            await this.afterChange(`Location moved to ${(PORTAL.clients || []).find((x) => x.id === target)?.name || target}.`);
+            return;
+          }
           const source = this.selectedClient(), label = e.id.startsWith('loc:') ? e.id.slice(4) : null;
           if (!target || !label) return;
           const targetItem = (PORTAL.clients || []).find((x) => x.id === target) || {};

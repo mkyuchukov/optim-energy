@@ -228,6 +228,20 @@ try {
     });
     assert.equal(await list.locator('#dplace option').filter({ hasText: 'Browser Client B' }).count(), 0, 'another client is offered as a place');
 
+    // A light with no metering is a device of the portal too: listed, switchable, and no page trips over its missing figures.
+    for (const path of ['/energy-home/home', '/energy-groups/groups', '/energy-devices/topology', '/energy-reports/report', '/energy-alerts/alerts', '/energy-setup/wiring', '/energy-setup/automations', '/energy-setup/alerts']) {
+      await adminPage.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
+      await adminPage.waitForTimeout(2500);
+    }
+    await adminPage.goto(`${base}/energy-devices/list`, { waitUntil: 'domcontentloaded' });
+    const withLamp = await waitCard(adminPage, 'building-devices-card');
+    await withLamp.locator('[data-device]').filter({ hasText: 'Browser Lamp A' }).first().waitFor({ timeout: 20000 });
+    await withLamp.locator('[data-device]').filter({ hasText: 'Browser Lamp A' }).first().click();
+    await withLamp.locator('#dname').waitFor({ timeout: 10000 });
+    await adminPage.goto(`${base}/energy-controls/controls`, { waitUntil: 'domcontentloaded' });
+    const controls = await waitCard(adminPage, 'building-controls-card');
+    await controls.getByText('Browser Lamp A').first().waitFor({ timeout: 20000 });
+
     // A password the administrator sets for a person works, and the generator fills the field.
     await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
     const people = await waitCard(adminPage, 'building-admin-table-card');
@@ -272,10 +286,24 @@ try {
     await locs.locator('[data-save-editor]').dispatchEvent('click');
     const annex = () => locs.locator('tbody tr').filter({ hasText: 'Browser Annex' }).first();
     await annex().waitFor({ timeout: 20000 });
-    assert.equal(await locs.locator('[data-move-location]').count(), 0, 'the label-only Move action is still offered');
+    // A new, empty location says what to do next and shows a name, not an internal id.
+    await annex().locator('[data-select-location]').first().dispatchEvent('click');
+    await locs.getByText('No devices in this location yet.', { exact: false }).first().waitFor({ timeout: 10000 });
+    assert.doesNotMatch(await annex().innerText(), /loc:/, 'a location row shows its internal id');
+    await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().dispatchEvent('click');
+
+    // The new location moves to the other client, where it is then deleted.
+    await annex().locator('[data-move-location]').dispatchEvent('click');
+    await locs.locator('#editorClient').selectOption(state.client_b);
+    await locs.locator('[data-save-editor]').dispatchEvent('click');
+    await annex().waitFor({ state: 'detached', timeout: 20000 });
+    await locs.locator('#clientSwitch').selectOption(state.client_b);
+    await annex().waitFor({ timeout: 20000 });
     await annex().locator('[data-delete-location]').dispatchEvent('click');
     await annex().locator('[data-delete-location]').dispatchEvent('click');
     await annex().waitFor({ state: 'detached', timeout: 20000 });
+    await locs.locator('#clientSwitch').selectOption(state.client_a);
+    await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().waitFor({ timeout: 20000 });
 
     // The device inbox: a device no client has is listed, assigned, removed and ignored from one screen.
     await root.goto(`${base}/energy-admin/devices`, { waitUntil: 'domcontentloaded' });
@@ -285,6 +313,10 @@ try {
     const spare = () => devs.locator('#inbox tbody tr').filter({ hasText: 'Browser Spare Meter' }).first();
     const show = (filter) => devs.locator('#inboxFilter').selectOption(filter);
     await spare().waitFor({ timeout: 30000 });
+    // The Clients table and the device list agree on how many devices a client has.
+    const assignedToA = await devs.evaluate((el, client) => (el._inbox || []).filter((d) => d.client === client).length, state.client_a);
+    const listedForA = await devs.evaluate((el, client) => (el._summaries || []).find((x) => x.id === client)?.devices, state.client_a);
+    assert.ok(assignedToA >= 2 && listedForA === assignedToA, `client device count ${listedForA} differs from the device list ${assignedToA}`);
     assert.match(await spare().innerText(), /Energy meter[\s\S]*power sensor[\s\S]*Not assigned yet/, 'inbox row does not say what the device is and that it is unassigned');
     await typeInto(devs.locator('#inboxSearch'), 'no such device');
     await devs.getByText('No device matches the search.').waitFor({ timeout: 10000 });

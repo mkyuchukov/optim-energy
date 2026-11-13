@@ -303,6 +303,17 @@ console.log('prices ok');
   assert.strictEqual(plug.switch, 'switch.kettle');
   assert.strictEqual(m.kindOf(plug), 'socket');
   assert.ok(!m.DEVICES.some((d) => d.id === 'hub'), 'a device with no power or energy sensor is shown as a meter');
+  // A plain light with no metering: listed and switchable, with nothing to report.
+  hass.devices = { ...hass.devices, lamp: { id: 'lamp', name: 'Hall lamp', labels: ['energy_meter'] } };
+  hass.entities = { ...hass.entities, 'light.hall': { entity_id: 'light.hall', device_id: 'lamp', platform: 'hue' } };
+  m.syncModel(hass);
+  const lamp = m.DEVICES.find((d) => d.id === 'lamp');
+  assert.ok(lamp && lamp.switch === 'light.hall' && !lamp.power && !lamp.energy, 'an unmetered light is not in the portal');
+  assert.strictEqual(m.kindOf(lamp), 'lights');
+  // Reports only ever name devices that measure, so a report never opens on a device with no figures.
+  const model = m.portalModel(hass);
+  assert.ok(model.meters.plug && !model.meters.lamp, 'the report model lists an unmetered device as a meter');
+  assert.ok(model.views.every((v) => v.items.every((x) => x.meters.length && x.meters.every((id) => model.meters[id]))), 'a report view points at a device with no meter');
   m.DEVICES.length = 0;
   console.log('any provider ok');
 }

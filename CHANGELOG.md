@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.0
+
+- Lights and switches with no metering now appear in the client portal: in Devices and Controls, and they can be scheduled. They have no power or energy to show and are left out of reports. Before, a device needed both a power and an energy sensor to appear at all.
+- A Home Assistant administrator can move a whole location to another client (Administration → Locations → Move). Its groups, devices, price, main device, wiring, virtual devices, schedules and alert rules move with it. It is refused while a person is assigned to the location or while wiring or a virtual device links it to the client's other locations.
+- A new installation starts on the floor and area model, with a floor for the first client and no placeholder location. An installation that carries an older dashboard tree keeps the label model until it is switched.
+- Statistics are no longer requested with an empty list of sensors, which Home Assistant logged as an error.
+- Administration: the Clients table counts devices the way the device list does (it used to include virtual devices and channels), names no longer show internal ids beneath them, and an empty table says what to do next.
+
 ## 0.9.1
 
 Cleanup. No change to stored data.
