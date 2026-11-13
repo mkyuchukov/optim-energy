@@ -498,6 +498,23 @@ The split, done with Administration commands and no restart. The single client "
 
 The cleanup removed what the 0.7.0 migration had kept as its rollback path: eight empty Home Assistant areas (the old rooms, which are now plugin groups) and the two old location labels. Home Assistant now has exactly two areas, one per client, and no "Other areas".
 
+### 2026-11-13 v0.12.0, label model removed
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.11.1 / 0.12.0, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.12.0-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | Unchanged after the restart: 758 and 57 entities, 5 and 4 groups, 47 and 4 placements, 4 schedules, both prices, 45 assigned / 2 ignored / 35 not portal devices, one person. Administration opens. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.11.1` from the Marketplace; the store format did not change |
+| Incidents / follow-up | None |
+
+From this version the integration only loads a store on floors and areas. The migration commands are gone, so an installation still on labels has to pass through 0.11.1.
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
