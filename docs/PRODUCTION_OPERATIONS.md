@@ -583,6 +583,21 @@ From this version a group can be moved to another location of its tenant from it
 
 What the start-up changed in Home Assistant: 51 channel devices of Cleverpine's Shelly meters (the "Phase A/B/C" and "Energy Meter 0/1" parts) had no area and were given their meter's area, "Sofia (Cleverpine)". The devices in that area went from 43 to 94, and the entities a Cleverpine user can read from 758 to 1,166. The three Zigbee devices of Optimal Industries stay as they were: they sit under the Zigbee bridge but are devices of their own.
 
+### 2026-11-13 v0.15.0, tenant preview
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.14.1 / 0.15.0, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.15.0-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | Preview of Cleverpine from Administration, Tenants: a placeholder for about three seconds, then the figures, and never "No devices in this location yet". The page names "Cleverpine · Sofia (Cleverpine)" with a way back. In preview only `energy-start` is hidden from the administrator's sidebar; back in Administration all nine tenant pages are hidden again. The health check still passes. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.14.1` from the Marketplace; no stored data changed |
+| Incidents / follow-up | None |
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
