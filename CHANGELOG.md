@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.2
+
+- Devices, Map, Connection by device is drawn as a tree, left to right, like the Power view: the location, the top devices, and under each device the devices it is the parent of. Each box shows the device's address and signal, and its line says whether it is online. With a hierarchy several levels deep, the circle from 0.17.1 spread too far to read. Connection by group keeps the circle.
+
 ## 0.17.1
 
 - Devices, Map, Connection by device shows no groups. The location is at the centre, the top devices hang from it (the main device first, with a heavier ring), and each device carries the devices it is the parent of. A device that carries others is still a device: it opens its details and its name sits under it. A virtual device is a node of its own, marked Σ with a dashed ring.
