@@ -7,6 +7,7 @@ from pathlib import Path
 
 DOMAIN = "optim_energy"
 CONF_SITE_NAME = "site_name"
+CONF_AUDIT = "audit"
 STATIC_URL_PATH = "/optim_energy_static"
 FRONTEND_DIRECTORY = Path(__file__).parent / "frontend"
 DASHBOARD_DIRECTORY = Path(__file__).parent / "dashboards"

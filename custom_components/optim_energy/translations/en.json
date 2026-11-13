@@ -15,5 +15,16 @@
     "abort": {
       "already_configured": "Optim Energy is already set up on this Home Assistant instance."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Optim Energy runtime options",
+        "description": "Audit mode logs the commands and REST requests that would be denied. Use it only for an upgrade or rollout validation and turn it off afterwards.",
+        "data": {
+          "audit": "Audit mode"
+        }
+      }
+    }
   }
 }

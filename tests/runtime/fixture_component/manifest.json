@@ -1,0 +1,10 @@
+{
+  "domain": "optim_runtime_fixture",
+  "name": "Optim Energy Runtime Fixture",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/mkyuchukov/optim-energy",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "version": "1.0.0"
+}

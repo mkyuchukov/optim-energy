@@ -1,4 +1,4 @@
-// Run: node test_schedule.js
+// Run: node tests/js/test_portal.js (or make test-js)
 const assert = require('assert');
 const { scheduleConfig, daysText } = require('../../custom_components/optim_energy/frontend/building-cards.js');
 const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
@@ -19,6 +19,26 @@ assert.strictEqual(daysText(['mon', 'wed']), 'Mon, Wed');
 console.log('ok');
 // A kept device stays out of what a group's tile and All off act on, and is still in its group.
 const m = require('../../custom_components/optim_energy/frontend/building-cards.js');
+
+// Administration can see an unassigned portal device, but not service pseudo-devices or channel children.
+const adminCatalog = m.adminDeviceCatalog(
+  [
+    { id: 'placed', labels: [] },
+    { id: 'bridge_child', labels: [], via_device_id: 'bridge' },
+    { id: 'unassigned', labels: ['light'], entry_type: null },
+    { id: 'platform', labels: [], entry_type: null },
+    { id: 'child', labels: [], via_device_id: 'placed' },
+    { id: 'service', labels: [], entry_type: 'service' },
+  ],
+  [
+    { device_id: 'placed', platform: 'shelly', entity_id: 'sensor.parent_power' },
+    { device_id: 'bridge_child', platform: 'mqtt', entity_id: 'sensor.office_power' },
+    { device_id: 'platform', platform: 'shelly', entity_id: 'sensor.load_power' },
+  ],
+  { placed: 'loc:a' },
+);
+assert.deepStrictEqual(adminCatalog.map((d) => d.id), ['placed', 'bridge_child', 'unassigned', 'platform']);
+console.log('admin devices ok');
 m.setTree({ places: [{ id: 'loc', name: 'L', kind: 'location' }], placed: {}, kinds: { a: 'lights', w: 'relay' }, kept: ['w'] });
 m.setLocation('loc');
 m.DEVICES.push({ id: 'a', name: 'A', switch: 'switch.a', place: 'loc' }, { id: 'w', name: 'W', switch: 'switch.w', place: 'loc' });
@@ -258,3 +278,31 @@ console.log('prices ok');
   await assert.rejects(m.billPages(files, { max_pages: 4 }), /at most 4 pages/i);
   console.log('bill page limit ok');
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// A device from another provider: nothing is named the Zigbee2MQTT way, and it has more than one energy sensor.
+{
+  m.setLocation(null);
+  m.setTree({ places: [], placed: {} });
+  const hass = {
+    devices: { plug: { id: 'plug', name: 'Kettle plug', manufacturer: 'Tuya', model: 'TS011F', labels: ['energy_meter'] }, hub: { id: 'hub', name: 'Hub', labels: ['energy_meter'] } },
+    entities: {
+      'switch.kettle': { entity_id: 'switch.kettle', device_id: 'plug', platform: 'tuya' },
+      'switch.kettle_child_lock': { entity_id: 'switch.kettle_child_lock', device_id: 'plug', platform: 'tuya', entity_category: 'config' },
+      'sensor.kettle_current_consumption': { entity_id: 'sensor.kettle_current_consumption', device_id: 'plug', platform: 'tuya', device_class: 'power' },
+      'sensor.kettle_today': { entity_id: 'sensor.kettle_today', device_id: 'plug', platform: 'tuya', device_class: 'energy' },
+      'sensor.kettle_total': { entity_id: 'sensor.kettle_total', device_id: 'plug', platform: 'tuya', device_class: 'energy' },
+      'sensor.hub_uptime': { entity_id: 'sensor.hub_uptime', device_id: 'hub', platform: 'tuya', device_class: 'duration' },
+    },
+    states: { 'sensor.kettle_today': { attributes: { state_class: 'measurement' } }, 'sensor.kettle_total': { attributes: { state_class: 'total_increasing' } }, 'switch.kettle': { attributes: { device_class: 'outlet' } } },
+  };
+  m.syncModel(hass);
+  const plug = m.DEVICES.find((d) => d.id === 'plug');
+  assert.ok(plug, 'a metered device from another provider is not in the portal');
+  assert.strictEqual(plug.power, 'sensor.kettle_current_consumption');
+  assert.strictEqual(plug.energy, 'sensor.kettle_total');
+  assert.strictEqual(plug.switch, 'switch.kettle');
+  assert.strictEqual(m.kindOf(plug), 'socket');
+  assert.ok(!m.DEVICES.some((d) => d.id === 'hub'), 'a device with no power or energy sensor is shown as a meter');
+  m.DEVICES.length = 0;
+  console.log('any provider ok');
+}
