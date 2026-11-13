@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.0
+
+Administration: always clear which tenant and location you are on.
+
+- Every page about one tenant shows a Tenant and a Location selector in its header. The chosen location is kept from page to page and filters Users and Devices; choosing "Manage" on a location selects it too.
+- Fixed: after switching tenant the page did not change until Refresh was pressed. It now redraws at once.
+- Devices has two tabs. **Devices** lists the selected tenant's devices, narrowed to the selected location, with Edit, Move and Remove. **Unassigned** lists what no tenant has yet: devices the portal recognises and any device that carries a label in Home Assistant, with their labels. Add-ons, services and other unlabelled entries are no longer listed. Assign opens on the selected tenant and location.
+- Wording: client is now tenant, people and person are users, client admin is tenant admin, "Everyone" is "All", "Looks like" is "Type". Error messages use the same words.
+
 ## 0.12.1
 
 A location has one name: the name of its area in Home Assistant.

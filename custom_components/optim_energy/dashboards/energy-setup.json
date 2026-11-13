@@ -136,7 +136,7 @@
       ]
     },
     {
-      "title": "People",
+      "title": "Users",
       "path": "people",
       "type": "sections",
       "max_columns": 4,

@@ -920,6 +920,7 @@ def run(version: str, *, keep: bool = False) -> None:
             assert_equal((seen[spare]["status"], seen[spare]["kind"]), ("unassigned", "meter"), "a new device is an unassigned candidate")
             assert_true("sensor.spare_device_power" in seen[spare]["why"], "the inbox does not say why the device was recognised")
             assert_true(seen[spare]["integrations"] == ["optim_runtime_fixture"], "the inbox does not name the integration")
+            assert_equal(seen[spare]["labels"], [], "labels of a device that has none")
             refused(admin_a, {"type": "optim_energy/device/inbox"}, "a client admin reading the inbox")
             refused(admin_a, {"type": "optim_energy/device/assign", "device_id": spare, "place": location_a}, "a client admin claiming an unassigned device")
             root.command({"type": "optim_energy/device/ignore", "device_id": spare, "ignored": True})

@@ -125,7 +125,7 @@ class PortalOperations:
         """Resolve the caller's client; only root may name another one."""
         client_id, ctx = self.manager.require_client_value(user, client)
         if not (ctx.get("is_root") or ctx.get("role") == ROLE_CLIENT_ADMIN):
-            raise HomeAssistantError("Only a client administrator can change portal settings")
+            raise HomeAssistantError("Only a tenant admin can change portal settings")
         payload = self.manager.tree_for(user, client_id if ctx.get("is_root") else None)
         return client_id, ctx, payload["tree"]
 
@@ -204,7 +204,7 @@ class PortalOperations:
 
     def _validate_area(self, tree: dict[str, Any], area_id: str | None) -> None:
         if area_id and area_id not in self._client_area_ids(tree):
-            raise HomeAssistantError("The area belongs to another client")
+            raise HomeAssistantError("The area belongs to another tenant")
 
     def _place_location(self, tree: dict[str, Any], place_id: str | None) -> str | None:
         if not place_id:
@@ -224,7 +224,7 @@ class PortalOperations:
             if entry.get("kind") == "location":
                 return current
             current = entry.get("parent")
-        raise HomeAssistantError("The selected group is not in this client")
+        raise HomeAssistantError("The selected group is not in this tenant")
 
     async def _async_update_entity_placement(
         self,
@@ -240,7 +240,7 @@ class PortalOperations:
     ) -> Any:
         """Update a permitted entity and, optionally, place it in a portal group."""
         if not trusted and not self._entity_allowed(user, entity_id):
-            raise HomeAssistantError("Entity belongs to another client")
+            raise HomeAssistantError("Entity belongs to another tenant")
         self._validate_area(tree, area_id)
         if place:
             location = self._place_location(tree, place)
@@ -299,7 +299,7 @@ class PortalOperations:
                 for entry in entities.entities.values()
             )
             if not owned:
-                raise HomeAssistantError("Device belongs to another client")
+                raise HomeAssistantError("Device belongs to another tenant")
         name = name_by_user.strip()
         if not name or len(name) > _MAX_NAME:
             raise HomeAssistantError("Enter a device name of up to 80 characters")
@@ -360,7 +360,7 @@ class PortalOperations:
         """Create or update a threshold helper for the caller's client."""
         client_id, _, tree = self._require_manager(user, client)
         if not self._entity_allowed(user, sensor):
-            raise HomeAssistantError("The watched entity belongs to another client")
+            raise HomeAssistantError("The watched entity belongs to another tenant")
         if (upper is None) == (lower is None):
             raise HomeAssistantError("Choose exactly one threshold")
         if not name.strip() or len(name.strip()) > _MAX_NAME:
@@ -377,14 +377,14 @@ class PortalOperations:
         helper_entity = entity_id
         if helper_entity:
             if not self._entity_allowed(user, helper_entity):
-                raise HomeAssistantError("Alert rule belongs to another client")
+                raise HomeAssistantError("Alert rule belongs to another tenant")
             current = self._entity_entry(helper_entity)
             entry_id = str(current.config_entry_id or "")
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None or entry.domain != "threshold":
                 raise HomeAssistantError("The selected entity is not a threshold rule")
             if not self._owns(user, client_id, "entries", entry_id):
-                raise HomeAssistantError("Alert rule belongs to another client")
+                raise HomeAssistantError("Alert rule belongs to another tenant")
             async with self._helper_lock:
                 init_result = await self.hass.config_entries.options.async_init(entry_id)
                 await self._async_finish_flow(
@@ -432,7 +432,7 @@ class PortalOperations:
         if config_entry is None or config_entry.domain != "threshold":
             raise HomeAssistantError("The selected entity is not a portal helper")
         if not self._owns(user, client_id, "entries", entry_id):
-            raise HomeAssistantError("Helper belongs to another client")
+            raise HomeAssistantError("Helper belongs to another tenant")
         await self.hass.config_entries.async_remove(entry_id)
         await self.manager.async_set_owned(client_id, "entries", entry_id, False)
 
@@ -459,10 +459,10 @@ class PortalOperations:
             isinstance(item, dict) and item.get("id") == virtual_id
             for item in tree.get("virtual", [])
         ):
-            raise HomeAssistantError("Virtual device belongs to another client")
+            raise HomeAssistantError("Virtual device belongs to another tenant")
         clean_members = sorted({str(value) for value in members})
         if any(not self._entity_allowed(user, value) for value in clean_members):
-            raise HomeAssistantError("A Sum member belongs to another client")
+            raise HomeAssistantError("A Sum member belongs to another tenant")
         current = (tree.get("sums", {}).get(virtual_id, {}) or {}).get(kind, {})
         if entry_id and current.get("entry") != entry_id:
             raise HomeAssistantError("Sum helper ownership is not valid")
@@ -556,10 +556,10 @@ class PortalOperations:
             raise HomeAssistantError("Invalid alert severity")
         message = alert_message(severity, rule_entity, sensor, unit)
         if not self._entity_allowed(user, rule_entity) or not self._entity_allowed(user, sensor):
-            raise HomeAssistantError("Alert rule belongs to another client")
+            raise HomeAssistantError("Alert rule belongs to another tenant")
         rule_entry = self._entity_entry(rule_entity)
         if not self._owns(user, client_id, "entries", str(rule_entry.config_entry_id or "")):
-            raise HomeAssistantError("Alert rule belongs to another client")
+            raise HomeAssistantError("Alert rule belongs to another tenant")
         config_id = f"portal_alert_{rule_entity.split('.', 1)[-1]}"
         on_actions = [
             {
@@ -611,7 +611,7 @@ class PortalOperations:
     async def async_entity_entry(self, user: Any, entity_id: str) -> dict[str, Any]:
         self._require_manager(user)
         if not self._entity_allowed(user, entity_id):
-            raise HomeAssistantError("Entity belongs to another client")
+            raise HomeAssistantError("Entity belongs to another tenant")
         entry = self._entity_entry(entity_id)
         return entry.extended_dict
 
@@ -637,7 +637,7 @@ class PortalOperations:
     ) -> dict[str, Any]:
         client_id, _, _ = self._require_manager(user, client)
         if not self._automation_owned(user, client_id, entity_id):
-            raise HomeAssistantError("Automation belongs to another client")
+            raise HomeAssistantError("Automation belongs to another tenant")
         config = self._automation_entity_config(entity_id)
         if config is None:
             raise HomeAssistantError("Automation configuration is not available")
@@ -712,18 +712,18 @@ class PortalOperations:
         client_id, _, tree = self._require_manager(user, client)
         for target in switches:
             if not self._entity_control_allowed(user, target):
-                raise HomeAssistantError("A selected switch belongs to another client")
+                raise HomeAssistantError("A selected switch belongs to another tenant")
         if place not in {
             str(item.get("id"))
             for item in tree.get("places", [])
             if isinstance(item, dict)
         }:
-            raise HomeAssistantError("Choose a group from this client")
+            raise HomeAssistantError("Choose a group from this tenant")
 
         config_id = ""
         if entity_id:
             if not self._automation_owned(user, client_id, entity_id):
-                raise HomeAssistantError("Automation belongs to another client")
+                raise HomeAssistantError("Automation belongs to another tenant")
             config_id = self._automation_config_id(entity_id)
         created = not config_id
         if created:
@@ -768,7 +768,7 @@ class PortalOperations:
     ) -> None:
         client_id, _, tree = self._require_manager(user, client)
         if not self._automation_owned(user, client_id, entity_id):
-            raise HomeAssistantError("Automation belongs to another client")
+            raise HomeAssistantError("Automation belongs to another tenant")
         config_id = self._automation_config_id(entity_id)
         if config_id:
             await self._async_write_automations(config_id, None)

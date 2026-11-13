@@ -316,7 +316,7 @@ def _guard_prices(prices: Any, locations: set[str]) -> dict[str, Any]:
     clean: dict[str, Any] = {}
     for location, price in prices.items():
         if location not in locations:
-            raise HomeAssistantError("A price is set for a location outside this client")
+            raise HomeAssistantError("A price is set for a location outside this tenant")
         if not isinstance(price, dict) or not _plain_json(price):
             raise HomeAssistantError("Price settings are not valid")
         sensor = price.get("sensor")
@@ -649,9 +649,9 @@ class TenancyManager:
         """Resolve and authorize the client for a command."""
         ctx = self.context(connection.user, requested)
         if not ctx["client"]:
-            raise HomeAssistantError("This account is not assigned to a client")
+            raise HomeAssistantError("This account is not assigned to a tenant")
         if ctx["client"] not in self.data.get("clients", {}):
-            raise HomeAssistantError("Client not found")
+            raise HomeAssistantError("Tenant not found")
         return ctx["client"], ctx
 
     def can_manage_tree(self, ctx: dict[str, Any]) -> bool:
@@ -723,14 +723,14 @@ class TenancyManager:
         """Resolve a client without a websocket connection."""
         ctx = self.context(user, requested)
         if not ctx["client"] or ctx["client"] not in self.data.get("clients", {}):
-            raise HomeAssistantError("This account is not assigned to a client")
+            raise HomeAssistantError("This account is not assigned to a tenant")
         return str(ctx["client"]), ctx
 
     async def async_save_tree(self, user: User, requested_client: str | None, tree: dict[str, Any]) -> dict[str, Any]:
         """Save a client tree after checking the caller's portal role."""
         client_id, ctx = self.require_client_value(user, requested_client)
         if not self.can_manage_tree(ctx):
-            raise HomeAssistantError("Only a client administrator can change the dashboard")
+            raise HomeAssistantError("Only a tenant admin can change the dashboard")
         if ctx["is_root"]:
             clean = _guard_tree(tree)
             # Locations and groups change only through their own commands,
@@ -749,7 +749,7 @@ class TenancyManager:
     async def async_store_tree(self, client_id: str, tree: dict[str, Any]) -> dict[str, Any]:
         """Store a tree built by root or by a checked server command."""
         if client_id not in self.data.get("clients", {}):
-            raise HomeAssistantError("Client not found")
+            raise HomeAssistantError("Tenant not found")
         self.data["trees"][client_id] = _guard_tree(tree)
         self._refresh_location_index()
         await self.async_save()
@@ -765,7 +765,7 @@ class TenancyManager:
                 return registry.async_create(candidate).floor_id
             except ValueError:
                 continue
-        raise HomeAssistantError("Could not create a floor for the client")
+        raise HomeAssistantError("Could not create a floor for the tenant")
 
     def _create_area(self, name: str, floor_id: str | None) -> str:
         # A location has one name, its area's. Home Assistant wants every area name to be different.
@@ -797,7 +797,7 @@ class TenancyManager:
         """Resolve the stored tree a root or client administrator may change."""
         client_id, ctx = self.require_client_value(user, client)
         if not self.can_manage_tree(ctx):
-            raise HomeAssistantError("Only a client administrator can change this")
+            raise HomeAssistantError("Only a tenant admin can change this")
         return client_id, ctx, self.data["trees"][client_id]
 
     async def _async_saved(self) -> None:
@@ -819,7 +819,7 @@ class TenancyManager:
         if location_id:
             place = next((p for p in _place_locations(tree) if p.get("id") == location_id), None)
             if place is None:
-                raise HomeAssistantError("Location not found for this client")
+                raise HomeAssistantError("Location not found for this tenant")
             try:
                 ar.async_get(self.hass).async_update(place["area_id"], name=name)
             except ValueError as err:
@@ -844,14 +844,14 @@ class TenancyManager:
         client_id, _, tree = self._manager_client(user, client)
         area_id = self.location_area(tree, location_id)
         if not area_id:
-            raise HomeAssistantError("Location not found for this client")
+            raise HomeAssistantError("Location not found for this tenant")
         if any(d.area_id == area_id for d in dr.async_get(self.hass).devices):
             raise HomeAssistantError("Move this location's devices somewhere else first")
         if any(
             record.get("client") == client_id and location_id in _record_locations(record)
             for record in self.data.get("users", {}).values()
         ):
-            raise HomeAssistantError("Remove this location from its people first")
+            raise HomeAssistantError("Remove this location from its users first")
         inside = {str(p["id"]) for p in _tree_places(tree) if _location_of_place(tree, str(p.get("id"))) == location_id}
         tree["places"] = [p for p in _tree_places(tree) if str(p.get("id")) not in inside]
         tree["placed"] = {k: v for k, v in (tree.get("placed") or {}).items() if v not in inside}
@@ -870,15 +870,15 @@ class TenancyManager:
             raise HomeAssistantError("Only a Home Assistant administrator can move locations")
         client_id, _, tree = self._manager_client(user, client)
         if target not in self.data.get("clients", {}) or target == client_id:
-            raise HomeAssistantError("Choose another client to move the location to")
+            raise HomeAssistantError("Choose another tenant to move the location to")
         area_id = self.location_area(tree, location_id)
         if not area_id:
-            raise HomeAssistantError("Location not found for this client")
+            raise HomeAssistantError("Location not found for this tenant")
         if any(
             record.get("client") == client_id and location_id in _record_locations(record)
             for record in self.data.get("users", {}).values()
         ):
-            raise HomeAssistantError("Remove this location from its people first; they belong to the old client")
+            raise HomeAssistantError("Remove this location from its users first; they belong to the old tenant")
         places = {str(p["id"]) for p in _tree_places(tree) if _location_of_place(tree, str(p.get("id"))) == location_id}
         placed = {str(k): str(v) for k, v in (tree.get("placed") or {}).items()}
         device_ids = {d.id for d in dr.async_get(self.hass).devices if d.area_id == area_id}
@@ -948,7 +948,7 @@ class TenancyManager:
         if group_id:
             group = places.get(group_id)
             if group is None or _is_location_place(group):
-                raise HomeAssistantError("Group not found for this client")
+                raise HomeAssistantError("Group not found for this tenant")
             group["name"] = name
             parent = parent or group.get("parent")
         else:
@@ -957,7 +957,7 @@ class TenancyManager:
             tree.setdefault("places", []).append(group)
         location = _location_of_place(tree, parent)
         if not location:
-            raise HomeAssistantError("Choose a location or group of this client to put it in")
+            raise HomeAssistantError("Choose a location or group of this tenant to put it in")
         # A group cannot sit inside itself, and it stays in its own location.
         walk, seen = parent, set()
         while walk and walk not in seen:
@@ -977,7 +977,7 @@ class TenancyManager:
         client_id, _, tree = self._manager_client(user, client)
         group = next((p for p in _tree_places(tree) if p.get("id") == group_id), None)
         if group is None or _is_location_place(group):
-            raise HomeAssistantError("Group not found for this client")
+            raise HomeAssistantError("Group not found for this tenant")
         parent = group.get("parent")
         tree["places"] = [p for p in _tree_places(tree) if p.get("id") != group_id]
         for place in tree["places"]:
@@ -1005,12 +1005,12 @@ class TenancyManager:
         owner = self._area_index().get(str(device.area_id)) if device.area_id else None
         if not ctx["is_root"]:
             if owner is None or owner[0] != client_id:
-                raise HomeAssistantError("Device belongs to another client")
+                raise HomeAssistantError("Device belongs to another tenant")
             if not place:
                 raise HomeAssistantError("Choose a location or group")
         location = _location_of_place(tree, place) if place else None
         if place and not location:
-            raise HomeAssistantError("Choose a location or group of this client")
+            raise HomeAssistantError("Choose a location or group of this tenant")
         area_id = self.location_area(tree, location) if location else None
         if place and not area_id:
             raise HomeAssistantError("This location has no area yet")
@@ -1019,7 +1019,7 @@ class TenancyManager:
             blockers = self._leaving_blockers(owner[0], device_id)
             if blockers:
                 raise HomeAssistantError(
-                    "This device is still used by its client. First remove it from "
+                    "This device is still used by its tenant. First remove it from "
                     + "; ".join(blockers)
                 )
         if owner and not leaving and owner[1] != location:
@@ -1127,6 +1127,7 @@ class TenancyManager:
             )
         devices = list(dr.async_get(self.hass).devices)
         by_id = {d.id: d for d in devices}
+        label_names = {x.label_id: x.name for x in lr.async_get(self.hass).async_list_labels()}
         kinds = {d.id: device_kind(by_device.get(d.id, [])) for d in devices}
         owner_of = {d.id: index.get(str(d.area_id)) if d.area_id else None for d in devices}
         out: list[dict[str, Any]] = []
@@ -1146,6 +1147,7 @@ class TenancyManager:
                 "kind": kind,
                 "why": why,
                 "entities": len(by_device.get(device.id, [])),
+                "labels": sorted(str(label_names.get(x, x)) for x in (device.labels or ())),
                 "client": None,
                 "location": None,
                 "group": None,
@@ -1180,7 +1182,7 @@ class TenancyManager:
         if device is None:
             raise HomeAssistantError("Device not found")
         if ignored and device.area_id and str(device.area_id) in self._area_index():
-            raise HomeAssistantError("Remove the device from its client first")
+            raise HomeAssistantError("Remove the device from its tenant first")
         current = set(self.data.get("ignored", []))
         (current.add if ignored else current.discard)(device_id)
         self.data["ignored"] = sorted(current)
@@ -1210,10 +1212,10 @@ class TenancyManager:
     async def async_create_client(self, user: User, name: str) -> dict[str, Any]:
         """Create a new client tree. Only the global administrator may call this."""
         if not self.is_root(user):
-            raise HomeAssistantError("Only a Home Assistant administrator can create clients")
+            raise HomeAssistantError("Only a Home Assistant administrator can create tenants")
         name = name.strip()
         if not name:
-            raise HomeAssistantError("Client name is required")
+            raise HomeAssistantError("Tenant name is required")
         base = _slug(name)
         client_id = base
         number = 2
@@ -1237,13 +1239,13 @@ class TenancyManager:
     async def async_update_client(self, user: User, client_id: str, name: str) -> dict[str, Any]:
         """Rename one client workspace. Only a Home Assistant administrator may call this."""
         if not self.is_root(user):
-            raise HomeAssistantError("Only a Home Assistant administrator can change clients")
+            raise HomeAssistantError("Only a Home Assistant administrator can change tenants")
         client = self.data.get("clients", {}).get(client_id)
         if client is None:
-            raise HomeAssistantError("Client not found")
+            raise HomeAssistantError("Tenant not found")
         clean = name.strip()
         if not clean or len(clean) > 80:
-            raise HomeAssistantError("Enter a client name of up to 80 characters")
+            raise HomeAssistantError("Enter a tenant name of up to 80 characters")
         client["name"] = clean
         if client.get("floor_id"):
             try:
@@ -1262,18 +1264,18 @@ class TenancyManager:
     ) -> None:
         """Delete a client, optionally revoking and deleting all of its users."""
         if not self.is_root(user):
-            raise HomeAssistantError("Only a Home Assistant administrator can delete clients")
+            raise HomeAssistantError("Only a Home Assistant administrator can delete tenants")
         if client_id not in self.data["clients"]:
-            raise HomeAssistantError("Client not found")
+            raise HomeAssistantError("Tenant not found")
         if len(self.data["clients"]) <= 1:
-            raise HomeAssistantError("At least one client must remain")
+            raise HomeAssistantError("At least one tenant must remain")
         assigned_ids = [
             user_id
             for user_id, record in self.data["users"].items()
             if record.get("client") == client_id
         ]
         if assigned_ids and not delete_users:
-            raise HomeAssistantError("Remove or reassign the client's users first")
+            raise HomeAssistantError("Remove or reassign the tenant's users first")
         targets: list[User] = []
         if delete_users:
             for user_id in assigned_ids:
@@ -1284,7 +1286,7 @@ class TenancyManager:
                     or target.system_generated
                     or target.is_owner
                 ):
-                    raise HomeAssistantError("One of the client's users cannot be deleted")
+                    raise HomeAssistantError("One of the tenant's users cannot be deleted")
                 targets.append(target)
         del self.data["clients"][client_id]
         self.data["trees"].pop(client_id, None)
@@ -1308,7 +1310,7 @@ class TenancyManager:
         else:
             client_id, ctx = self.require_client_value(user)
             if ctx["role"] != ROLE_CLIENT_ADMIN:
-                raise HomeAssistantError("Only a client administrator can list users")
+                raise HomeAssistantError("Only a tenant admin can list users")
             wanted = {client_id}
         result: list[dict[str, Any]] = []
         for ha_user in await self.hass.auth.async_get_users():
@@ -1354,13 +1356,13 @@ class TenancyManager:
         """Create a non-admin HA user and attach it to one tenant."""
         actor_client, ctx = self.require_client_value(actor, client_id)
         if not (ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN):
-            raise HomeAssistantError("Only a client administrator can create users")
+            raise HomeAssistantError("Only a tenant admin can create users")
         if client_id != actor_client:
-            raise HomeAssistantError("Clients cannot create users for another client")
+            raise HomeAssistantError("Tenants cannot create users for another tenant")
         if role not in (ROLE_CLIENT_ADMIN, ROLE_USER):
             raise HomeAssistantError("Invalid portal role")
         if role == ROLE_CLIENT_ADMIN and not ctx["is_root"]:
-            raise HomeAssistantError("Only the global administrator can create client administrators")
+            raise HomeAssistantError("Only the global administrator can create tenant admins")
         chosen = list(dict.fromkeys(str(x) for x in (locations or ([] if not location else [location])) if str(x)))
         if role == ROLE_USER and not chosen:
             raise HomeAssistantError("Choose at least one location for an ordinary user")
@@ -1368,7 +1370,7 @@ class TenancyManager:
             if location_id not in self.data.get("locations", {}):
                 raise HomeAssistantError("Location not found")
             if self.data["locations"][location_id].get("client") != client_id:
-                raise HomeAssistantError("Location belongs to another client")
+                raise HomeAssistantError("Location belongs to another tenant")
         if role == ROLE_CLIENT_ADMIN:
             chosen = []
         name = name.strip()
@@ -1429,18 +1431,18 @@ class TenancyManager:
             actor, str(record.get("client") or "") if self.is_root(actor) else None
         )
         if not (ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN):
-            raise HomeAssistantError("Only a client administrator can change users")
+            raise HomeAssistantError("Only a tenant admin can change users")
         if record.get("client") != actor_client:
-            raise HomeAssistantError("User belongs to another client")
+            raise HomeAssistantError("User belongs to another tenant")
         if not ctx["is_root"] and target.is_admin:
             raise HomeAssistantError("A Home Assistant administrator cannot be changed here")
         if not ctx["is_root"] and record.get("role") == ROLE_CLIENT_ADMIN:
-            raise HomeAssistantError("Only the global administrator can change a client administrator")
+            raise HomeAssistantError("Only the global administrator can change a tenant admin")
         target_role = role if role is not None else record.get("role")
         if target_role not in (ROLE_CLIENT_ADMIN, ROLE_USER):
             raise HomeAssistantError("Invalid portal role")
         if target_role == ROLE_CLIENT_ADMIN and not ctx["is_root"]:
-            raise HomeAssistantError("Only the global administrator can create client administrators")
+            raise HomeAssistantError("Only the global administrator can create tenant admins")
         if locations is not None:
             chosen = list(dict.fromkeys(str(x) for x in locations if str(x)))
         elif location is not None:
@@ -1453,7 +1455,7 @@ class TenancyManager:
             raise HomeAssistantError("An ordinary user needs at least one location")
         for location_id in chosen:
             if location_id not in self.data.get("locations", {}) or self.data["locations"][location_id].get("client") != actor_client:
-                raise HomeAssistantError("Location not found for this client")
+                raise HomeAssistantError("Location not found for this tenant")
         username = None
         if password is not None:
             # Checked before anything is changed, so a bad password changes nothing.
@@ -1496,13 +1498,13 @@ class TenancyManager:
             actor, str(record.get("client") or "") if self.is_root(actor) else None
         )
         if not (ctx["is_root"] or ctx["role"] == ROLE_CLIENT_ADMIN):
-            raise HomeAssistantError("Only a client administrator can delete users")
+            raise HomeAssistantError("Only a tenant admin can delete users")
         if record.get("client") != actor_client:
-            raise HomeAssistantError("User belongs to another client")
+            raise HomeAssistantError("User belongs to another tenant")
         if not ctx["is_root"] and target.is_admin:
             raise HomeAssistantError("A Home Assistant administrator cannot be deleted here")
         if not ctx["is_root"] and record.get("role") == ROLE_CLIENT_ADMIN:
-            raise HomeAssistantError("Only the global administrator can delete a client administrator")
+            raise HomeAssistantError("Only the global administrator can delete a tenant admin")
         await self.hass.auth.async_remove_user(target)
         self.data["users"].pop(user_id, None)
         await self.async_save()
