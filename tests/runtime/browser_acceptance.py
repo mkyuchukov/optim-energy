@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from acceptance import (
+    seed_legacy_dashboard,
     create_fixture_entry,
     CLIENT_ADMIN_A,
     RuntimeHarness,
@@ -48,6 +49,8 @@ def run(version: str, *, keep: bool = False) -> None:
     try:
         harness.start()
         root_token = complete_onboarding(http)
+        # These flows start on the label model and migrate, so the instance needs an older tree.
+        seed_legacy_dashboard(harness, http, root_token)
         create_config_entry(http, root_token)
         root = WebSocket(http.host, http.port)
         root.auth(root_token)

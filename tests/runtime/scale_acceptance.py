@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from acceptance import (
+    seed_legacy_dashboard,
     OWNER_PASSWORD,
     OWNER_USERNAME,
     RuntimeHarness,
@@ -163,6 +164,8 @@ def run(version: str, *, keep: bool = False) -> None:
     try:
         harness.start()
         root_token = complete_onboarding(http)
+        # These flows start on the label model and migrate, so the instance needs an older tree.
+        seed_legacy_dashboard(harness, http, root_token)
         entry_id = create_config_entry(http, root_token)
         fixture_entry_id = create_fixture_entry(http, root_token)
         root = WebSocket(http.host, http.port)

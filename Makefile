@@ -13,6 +13,7 @@ test-python:
 
 test-runtime:
 	python3 tests/runtime/acceptance.py
+	python3 tests/runtime/fresh_install.py
 
 test-scale:
 	python3 tests/runtime/scale_acceptance.py

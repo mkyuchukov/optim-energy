@@ -487,6 +487,13 @@ class TenancyManager:
                 "groups": {},
                 "owned": {},
             }
+            if initial_tree is None:
+                # Nothing to carry over, so start on "floor = client, area = location".
+                # An installation with an older dashboard tree keeps the label model
+                # until an administrator runs the migration.
+                self.data["model"] = migration.MODEL
+                self.data["trees"][DEFAULT_CLIENT]["places"] = []
+                self.data["clients"][DEFAULT_CLIENT]["floor_id"] = self._create_floor(site_name)
             changed = True
         else:
             self.data = loaded
@@ -930,6 +937,80 @@ class TenancyManager:
         ar.async_get(self.hass).async_delete(area_id)
         await self._async_saved()
         await self.async_sync_all_sidebars()
+
+    async def async_move_location(
+        self, user: User, client: str | None, location_id: str, target: str
+    ) -> dict[str, Any]:
+        """Hand a whole location, with its groups, devices and settings, to another client."""
+        if not self.is_root(user):
+            raise HomeAssistantError("Only a Home Assistant administrator can move locations")
+        client_id, _, tree = self._manager_client(user, client)
+        if target not in self.data.get("clients", {}) or target == client_id:
+            raise HomeAssistantError("Choose another client to move the location to")
+        area_id = self.location_area(tree, location_id)
+        if not area_id:
+            raise HomeAssistantError("Location not found for this client")
+        if any(
+            record.get("client") == client_id and location_id in _record_locations(record)
+            for record in self.data.get("users", {}).values()
+        ):
+            raise HomeAssistantError("Remove this location from its people first; they belong to the old client")
+        places = {str(p["id"]) for p in _tree_places(tree) if _location_of_place(tree, str(p.get("id"))) == location_id}
+        placed = {str(k): str(v) for k, v in (tree.get("placed") or {}).items()}
+        device_ids = {d.id for d in dr.async_get(self.hass).devices if d.area_id == area_id}
+        moving = device_ids | {k for k, v in placed.items() if v in places}  # devices and virtual devices
+        entity_ids = {e.entity_id for e in er.async_get(self.hass).entities.values() if e.device_id in device_ids}
+        # Anything that ties the location to the rest of its client has to be undone first.
+        parents = {str(k): str(v) for k, v in (tree.get("parents") or {}).items()}
+        if any((k in moving) != (v in moving) for k, v in parents.items()):
+            raise HomeAssistantError("Its wiring links devices in other locations; undo those links first")
+        sums = tree.get("sums") or {}
+        for virtual_id, kinds in sums.items():
+            members = {m for part in (kinds or {}).values() if isinstance(part, dict) for m in part.get("members") or []}
+            inside = str(virtual_id) in moving
+            if (inside and not members <= entity_ids) or (not inside and members & entity_ids):
+                raise HomeAssistantError("A virtual device adds up devices across locations; change it first")
+
+        other = self.data["trees"][target]
+        def take(key: str, keep: Any) -> None:
+            source = tree.get(key)
+            if isinstance(source, dict):
+                moved = {k: v for k, v in source.items() if keep(k, v)}
+                tree[key] = {k: v for k, v in source.items() if k not in moved}
+                other[key] = {**(other.get(key) or {}), **moved}
+            elif isinstance(source, list):
+                moved = [x for x in source if isinstance(x, dict) and keep(x, None)]
+                tree[key] = [x for x in source if x not in moved]
+                other[key] = [*(other.get(key) or []), *moved]
+
+        take("places", lambda place, _: str(place.get("id")) in places)
+        take("placed", lambda k, v: v in places)
+        take("parents", lambda k, v: k in moving)
+        take("virtual", lambda item, _: str(item.get("id")) in moving)
+        take("sums", lambda k, v: str(k) in moving)
+        take("mains", lambda k, v: k == location_id)
+        take("prices", lambda k, v: k == location_id)
+        take("automations", lambda item, _: str(item.get("place")) in places)
+        # Ownership of alert rules and schedules follows the devices they act on.
+        owned = self.data.setdefault("owned", {})
+        mine = owned.setdefault(client_id, {"entries": [], "automations": []})
+        theirs = owned.setdefault(target, {"entries": [], "automations": []})
+        registry = er.async_get(self.hass)
+        gone = {str(item.get("entity")) for item in other.get("automations") or [] if isinstance(item, dict)}
+        for key, belongs in (
+            ("entries", lambda x: (getattr(self.hass.config_entries.async_get_entry(x), "options", None) or {}).get("entity_id") in entity_ids),
+            ("automations", lambda x: any(e.unique_id == x and e.entity_id in gone for e in registry.entities.values())),
+        ):
+            moved = [x for x in mine.get(key, []) if belongs(x)]
+            mine[key] = [x for x in mine.get(key, []) if x not in moved]
+            theirs[key] = sorted({*theirs.get(key, []), *moved})
+        record = self.data["clients"][target]
+        if not record.get("floor_id"):
+            record["floor_id"] = self._create_floor(str(record.get("name") or target))
+        ar.async_get(self.hass).async_update(area_id, floor_id=record["floor_id"])
+        await self._async_saved()
+        await self.async_sync_all_sidebars()
+        return {"location": location_id, "client": target, "devices": len(device_ids)}
 
     async def async_save_group(
         self, user: User, client: str | None, group_id: str | None, name: str, parent: str | None
@@ -2227,6 +2308,11 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
         "location/delete",
         {**client, probatio.Required("location"): str},
         lambda user, msg: manager.async_delete_location(user, msg.get("client"), msg["location"]),
+    )
+    _command(
+        "location/move",
+        {**client, probatio.Required("location"): str, probatio.Required("target"): str},
+        lambda user, msg: manager.async_move_location(user, msg.get("client"), msg["location"], msg["target"]),
     )
     _command(
         "group/save",
