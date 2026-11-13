@@ -330,7 +330,9 @@ try {
     const assignedToA = await devs.evaluate((el, client) => (el._inbox || []).filter((d) => d.client === client).length, state.client_a);
     const listedForA = await devs.evaluate((el, client) => (el._summaries || []).find((x) => x.id === client)?.devices, state.client_a);
     assert.ok(assignedToA >= 2 && listedForA === assignedToA, `client device count ${listedForA} differs from the device list ${assignedToA}`);
-    assert.match(await spare().innerText(), /Energy meter[\s\S]*power sensor[\s\S]*Not assigned yet/, 'inbox row does not say what the device is and that it is unassigned');
+    assert.match(await spare().innerText(), /Energy meter[\s\S]*Not assigned yet/, 'inbox row does not say what the device is and that it is unassigned');
+    assert.doesNotMatch(await spare().innerText(), /sensor\./, 'the technical reason is still spelled out in the row');
+    assert.match(await spare().locator('td[title]').getAttribute('title'), /power sensor/, 'the reason is not available on hover');
     await typeInto(devs.locator('#inboxSearch'), 'no such device');
     await devs.getByText('No device matches the search.').waitFor({ timeout: 10000 });
     await typeInto(devs.locator('#inboxSearch'), 'spare');

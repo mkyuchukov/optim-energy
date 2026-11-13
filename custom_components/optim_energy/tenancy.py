@@ -857,7 +857,9 @@ class TenancyManager:
 
     def _create_area(self, name: str, client_name: str, floor_id: str | None) -> str:
         registry = ar.async_get(self.hass)
-        for candidate in (name, f"{client_name} – {name}", f"{client_name} – {name} {uuid.uuid4().hex[:4]}"):
+        # Home Assistant wants every area name to be different, and two clients may well both have a
+        # "Sofia". The portal shows the plain name; the area carries the client when it has to.
+        for candidate in (name, f"{name} ({client_name})", f"{name} ({client_name} {uuid.uuid4().hex[:4]})"):
             try:
                 return registry.async_create(candidate, floor_id=floor_id).id
             except ValueError:
@@ -897,9 +899,13 @@ class TenancyManager:
             if place is None:
                 raise HomeAssistantError("Location not found for this client")
             place["name"] = name
-            try:
-                ar.async_get(self.hass).async_update(place["area_id"], name=name)
-            except Exception:  # another area already has this name; the portal name still changes
+            for candidate in (name, f"{name} ({record.get('name') or client_id})"):
+                try:
+                    ar.async_get(self.hass).async_update(place["area_id"], name=candidate)
+                    break
+                except ValueError:  # another area already has this name; try it with the client added
+                    continue
+            else:
                 _LOGGER.warning("Optim Energy could not rename area %s", place.get("area_id"))
         else:
             if not record.get("floor_id"):

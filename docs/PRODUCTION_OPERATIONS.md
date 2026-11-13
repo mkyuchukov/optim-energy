@@ -459,6 +459,28 @@ Other changes on 2026-11-13, all through Administration commands and none needin
 
 Open operational items: every backup is stored on the VM itself, so an off-VM backup location still has to be added; and the labels and areas kept by the 0.7.0 migration are still in place as its rollback path.
 
+### 2026-11-13 v0.11.0 and the split into two clients
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, 11:06 (install) and approximately 11:20–11:25 (split) |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.10.0 / 0.11.0, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-optim-energy-v0.11.0-2026-11-13` before the install and `before-two-clients-split-2026-11-13` before the split, configuration only, on the VM |
+| Runtime suites | Unit, browser on both models, hassfest and HACS: PASS. Runtime and scale ran in CI |
+| VM smoke result | N/A |
+| Client verification | After the install: client data unchanged, Devices opens on 45 assigned devices. After the split: see below. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.10.0` from the Marketplace; for the split, restore `before-two-clients-split-2026-11-13` with Home Assistant stopped |
+| Incidents / follow-up | The ENTSO-e integration again retried its fetch after the restart |
+
+The split, done with Administration commands and no restart. The single client "Sofia" held two locations that are in fact two companies:
+
+- A new client "Optimal Industries" was created, and the location "Sofia Optimal" was moved to it with `location/move`: 3 devices, 57 entities, 4 groups, 1 virtual device with its sum, its main device and its bill price. Nothing linked it to the other location.
+- The remaining client was renamed "Cleverpine": 43 devices, 758 entities, 5 groups, 4 virtual devices, 4 schedules, its exchange price, and the one person.
+- Both locations were renamed "Sofia". Their Home Assistant areas are "Sofia (Cleverpine)" and "Sofia (Optimal Industries)", each on its client's floor, because Home Assistant does not allow two areas with one name.
+- Totals did not change: 134 devices, 1,486 entities, 45 assigned in the device list.
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
