@@ -566,6 +566,23 @@ The interface now says tenant for client and user for person. Commands, URLs and
 
 From this version a group can be moved to another location of its tenant from its Edit dialog; its sub-groups and devices go with it.
 
+### 2026-11-13 v0.14.1, channel devices and the health check
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.14.0 / 0.14.1, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.14.1-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | The health check on Administration, Tenants: "All checks passed", 134 devices and 1 user checked. Groups, placements of real devices and the device list totals unchanged. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.14.0` from the Marketplace. The areas set on the channel devices stay; to undo those as well, restore `before-0.14.1-2026-11-13` with Home Assistant stopped |
+| Incidents / follow-up | Found by the user: a tenant user saw one device in "Kitchen Lights" where the administrator saw two |
+
+What the start-up changed in Home Assistant: 51 channel devices of Cleverpine's Shelly meters (the "Phase A/B/C" and "Energy Meter 0/1" parts) had no area and were given their meter's area, "Sofia (Cleverpine)". The devices in that area went from 43 to 94, and the entities a Cleverpine user can read from 758 to 1,166. The three Zigbee devices of Optimal Industries stay as they were: they sit under the Zigbee bridge but are devices of their own.
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
