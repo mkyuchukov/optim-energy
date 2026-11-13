@@ -628,6 +628,21 @@ What the start-up changed in Home Assistant: 51 channel devices of Cleverpine's 
 | Rollback checkpoint | Reinstall `v0.15.1` from the Marketplace; no stored data changed. The new file `.storage/optim_energy.prices` can stay |
 | Incidents / follow-up | The ENTSO-e integration had been failing since the 15:18 restart and was still in `setup_retry` before this install; after this restart it loaded and prices are live again |
 
+### 2026-11-13 v0.17.0, tenant wiring, four device maps, report device count
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.16.0 / 0.17.0, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.17.0-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | Devices, Map for Cleverpine drew all four views: Connection by group (49 nodes), Connection by device (55), Power by group (49), Power by device (26). The report model gives "Kitchen Lights" 3 meters and 2 devices, so its note now says 2. Nothing was saved. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.16.0` from the Marketplace; no stored data changed |
+| Incidents / follow-up | After this restart the ENTSO-e integration was again in `setup_retry`. For the first time the portal carried on: Overview showed "Price now € 0.270" and the price chart from the 96 remembered quarter-hour prices, both marked "Not live · last read 13 Nov, 16:30" |
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
