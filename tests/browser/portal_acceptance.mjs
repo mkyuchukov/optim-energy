@@ -318,7 +318,8 @@ try {
       assert.equal(await map.locator(`[data-mode="${mode}"][aria-pressed="true"], [data-by="${by}"][aria-pressed="true"]`).count(), 2, 'the map does not show which view is chosen');
       // Connection by device has no groups in it: only the location and devices, a virtual device among them.
       if (mode === 'network' && by === 'device') {
-        assert.equal(await map.locator('#world .hub, #world [data-fold]').count(), 0, 'the device hierarchy still shows groups');
+        assert.equal(await map.locator('#world .hub').count(), 0, 'the device hierarchy still shows groups');
+        assert.ok(await map.locator('#world g.n').count() >= 3, 'the device hierarchy is not drawn as a tree');
         assert.equal(await map.locator('#world [data-open="virt:browser-main"]').count(), 1, 'a virtual device is missing from the device hierarchy');
       }
       await shot(adminPage, `map-${mode}-${by}`);
