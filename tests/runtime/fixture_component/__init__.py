@@ -54,6 +54,8 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                     probatio.Optional("entity"): bool,
                     probatio.Optional("meter"): bool,
                     probatio.Optional("light"): bool,
+                    probatio.Optional("model"): str,
+                    probatio.Optional("via"): str,
                 }
             ],
         }
@@ -73,7 +75,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
                 identifiers={("optim_runtime_fixture", spec["key"])},
                 name=spec["name"],
                 manufacturer="Optim Energy",
-                model="Runtime Fixture",
+                model=spec.get("model", "Runtime Fixture"),
+                # A channel of another fixture device, the way a meter reports each phase.
+                via_device=("optim_runtime_fixture", spec["via"]) if spec.get("via") else None,
             )
             changes: dict[str, Any] = {}
             if spec.get("area_id"):

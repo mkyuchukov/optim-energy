@@ -945,6 +945,46 @@ def run(version: str, *, keep: bool = False) -> None:
             root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": spare})
             assert_equal(inbox()[spare]["status"], "unassigned", "removed from the client")
 
+            # A meter reports each phase as a device of its own. Such a channel has to sit in its
+            # meter's area, or the tenant's users see the meter without any of its readings.
+            made = root.command(
+                {
+                    "type": "optim_runtime_fixture/create_devices",
+                    "config_entry_id": fixture_entry_id,
+                    "devices": [
+                        {"key": "phase_meter", "name": "Runtime Phase Meter", "model": "Three Phase", "area_id": area_a},
+                        {"key": "phase_meter_a", "name": "Runtime Phase Meter Phase A", "model": "Three Phase", "via": "phase_meter", "meter": True},
+                        # Same parent, another model: a device of its own, as a Zigbee plug under its bridge is.
+                        {"key": "phase_guest", "name": "Runtime Guest Device", "model": "Something Else", "via": "phase_meter", "entity": True},
+                    ],
+                }
+            )
+            meter, channel, guest = (item["id"] for item in made)
+
+            def area_of_device(device_id: str) -> str | None:
+                return next(d["area_id"] for d in root.command({"type": "config/device_registry/list"}) if d["id"] == device_id)
+
+            def user_a_reads(entity_id: str) -> bool:
+                ws = WebSocket(http.host, http.port)
+                try:
+                    ws.auth(http.login(*CLIENT_A_USER)["access_token"])
+                    return entity_id in {e["entity_id"] for e in ws.command({"type": "optim_energy/registry/list", "kind": "entity"})}
+                finally:
+                    ws.close()
+
+            wait_until(lambda: area_of_device(channel) == area_a, "a channel device did not follow its meter into the location", timeout=20)
+            assert_equal(area_of_device(guest), None, "a device of another model was pulled along with its parent")
+            wait_until(lambda: user_a_reads("sensor.phase_meter_a_power"), "the tenant's user cannot read a channel of their own meter", timeout=20)
+            assert_equal(root.command({"type": "optim_energy/health"})["problems"], [], "health problems on a consistent installation")
+            refused(admin_a, {"type": "optim_energy/health"}, "a tenant admin running the checks")
+            # Taken out of its area by hand, the channel is put back, and the check would have named it.
+            root.command({"type": "config/device_registry/update", "device_id": channel, "area_id": None})
+            wait_until(lambda: area_of_device(channel) == area_a, "a channel that lost its area was not put back", timeout=20)
+            # The meter leaves the tenant: its channel goes with it, and the user stops reading it.
+            root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": meter})
+            assert_equal(area_of_device(channel), None, "a channel stayed in the location its meter left")
+            wait_until(lambda: not user_a_reads("sensor.phase_meter_a_power"), "the user still reads a channel whose meter left", timeout=20)
+
             # A device still counted in a client's sum cannot leave that client.
             with_sum = client_tree(root, client_a)
             with_sum["virtual"] = [{"id": "virt:total", "name": "Runtime Total"}]

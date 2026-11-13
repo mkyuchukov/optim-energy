@@ -10,6 +10,14 @@ Preview of a tenant, fixed.
 - Choosing a location no longer reloads the whole app.
 - Preview is on the tenant only; the Preview button on a location is gone. It opens on the location chosen in Administration.
 
+## 0.14.1
+
+Tenant users saw fewer devices than the administrator.
+
+- Cause: a meter reports each phase or channel as a device of its own, and those channel devices had no area. A tenant's users read a device through its area, so they saw the meter without its power and energy readings, and the portal left such a device out of its group. An administrator reads everything, so nothing looked wrong from there.
+- Fix: a channel device now always sits in the area of the device it is part of. This is put right when the integration starts and again whenever a device changes, and a channel never stays behind in a location its device has left. A channel is recognised by having the same maker, model and integration entry as its parent; a Zigbee device under its bridge is not touched.
+- New: Administration, Tenants shows the result of a server check that compares what every user should see with what Home Assistant lets them read, and also reports devices stored in a group of another location, entities with an area of their own, and users or locations that point at something missing.
+
 ## 0.14.0
 
 Administration dialogs, simplified.
