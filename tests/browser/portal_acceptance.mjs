@@ -66,7 +66,7 @@ try {
   // Root client switching: A -> B -> A must update the People list atomically.
   ({ context: rootContext, page: root } = await openPage(state.root, '/energy-admin/people'));
   const rootCard = await waitCard(root, 'building-admin-table-card');
-  await rootCard.getByRole('heading', { level: 1, name: 'People' }).waitFor();
+  await rootCard.getByRole('heading', { level: 1, name: 'Users' }).waitFor();
   const rootDefault = await openPage(state.root, '/');
   await rootDefault.page.waitForURL(`${base}/energy-admin/clients`, { timeout: 30000 });
   assert.equal(
@@ -84,13 +84,15 @@ try {
     await clientSwitch.selectOption(state.client_a);
   }
   await waitUsers(root, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
+  // With the dropdown focused, as it is after a real click: the list must still change without Refresh.
+  await clientSwitch.focus();
   await clientSwitch.selectOption(state.client_b);
   await waitUsers(root, ['Browser Admin B', 'Browser User B'], ['Browser Admin A', 'Browser User A']);
   await clientSwitch.selectOption(state.client_a);
   await waitUsers(root, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
 
   // The HA administrator gets the command centre rather than the client pages.
-  for (const [path, title] of [['/energy-admin/clients', 'Clients'], ['/energy-admin/locations', 'Locations'], ['/energy-admin/devices', 'Devices']]) {
+  for (const [path, title] of [['/energy-admin/clients', 'Tenants'], ['/energy-admin/locations', 'Locations'], ['/energy-admin/devices', 'Devices']]) {
     await root.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
     const card = await waitCard(root, 'building-admin-table-card');
     await card.getByRole('heading', { level: 1, name: title }).waitFor({ timeout: 30000 });
@@ -124,7 +126,7 @@ try {
   await clientDefault.context.close();
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
   const adminCard = await waitCard(adminPage, 'building-admin-table-card');
-  await adminCard.getByRole('heading', { level: 1, name: 'People' }).waitFor({ timeout: 30000 });
+  await adminCard.getByRole('heading', { level: 1, name: 'Users' }).waitFor({ timeout: 30000 });
   assert.equal(await adminCard.locator('#clientSwitch').count(), 0, 'client administrator saw the root client switcher');
   assert.equal(await adminPage.getByText('Settings', { exact: true }).count(), 0, 'client administrator saw HA Settings');
   await waitUsers(adminPage, ['Browser Admin A', 'Browser User A'], ['Browser Admin B', 'Browser User B']);
@@ -199,7 +201,7 @@ try {
   // Clean up the browser-created user through the same UI.
   await adminPage.goto(`${base}/energy-setup/people`, { waitUntil: 'domcontentloaded' });
   const peopleAgain = await waitCard(adminPage, 'building-admin-table-card');
-  await peopleAgain.getByRole('heading', { level: 1, name: 'People' }).waitFor({ timeout: 30000 });
+  await peopleAgain.getByRole('heading', { level: 1, name: 'Users' }).waitFor({ timeout: 30000 });
   let deleteRow = peopleAgain.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
   await deleteRow.locator('[data-delete]').click();
   assert.match(await peopleAgain.locator('dialog[open] .confirm-text').innerText(), /cannot be undone/, 'deleting a person does not ask first');
@@ -317,6 +319,10 @@ try {
     await annex().waitFor({ state: 'detached', timeout: 20000 });
     await locs.locator('#clientSwitch').selectOption(state.client_a);
     await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().waitFor({ timeout: 20000 });
+    // Switching tenant clears the chosen location; choose one again for the pages that follow.
+    assert.equal(await locs.locator('#locationSwitch').inputValue(), '', 'a location of the previous tenant stayed chosen');
+    await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().dispatchEvent('click');
+    await locs.locator('#locationSwitch').evaluate((el, id) => { if (el.value !== id) throw new Error('header does not show the chosen location'); }, state.location_a_north);
 
     // The device inbox: a device no client has is listed, assigned, removed and ignored from one screen.
     await root.goto(`${base}/energy-admin/devices`, { waitUntil: 'domcontentloaded' });
@@ -324,45 +330,58 @@ try {
     await devs.getByRole('heading', { level: 1, name: 'Devices' }).waitFor({ timeout: 30000 });
     await root.locator('dialog-http-pending-config').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
     const spare = () => devs.locator('#inbox tbody tr').filter({ hasText: 'Browser Spare Meter' }).first();
+    const placedSpare = () => devs.locator('#admin tbody tr').filter({ hasText: 'Browser Spare Meter' }).first();
+    const tab = (view) => devs.locator(`[data-device-view="${view}"]`).dispatchEvent('click');
     const show = (filter) => devs.locator(`[data-inbox-filter="${filter}"]`).dispatchEvent('click');
-    await spare().waitFor({ timeout: 30000 });
-    // The Clients table and the device list agree on how many devices a client has.
+    const at = (location) => devs.locator('#locationSwitch').selectOption(location);
+    // The page opens on the tenant's own devices, and names the location chosen on the page before.
+    await devs.locator('[data-new-virtual]').first().waitFor({ timeout: 30000 });
+    assert.equal(await devs.locator('#locationSwitch').inputValue(), state.location_a_north, 'the chosen location was not kept across pages');
+    assert.equal(await placedSpare().count(), 0, 'a device no tenant has is listed among a tenant\'s devices');
+    // The Tenants table and the device list agree on how many devices a tenant has.
     const assignedToA = await devs.evaluate((el, client) => (el._inbox || []).filter((d) => d.client === client).length, state.client_a);
     const listedForA = await devs.evaluate((el, client) => (el._summaries || []).find((x) => x.id === client)?.devices, state.client_a);
-    assert.ok(assignedToA >= 2 && listedForA === assignedToA, `client device count ${listedForA} differs from the device list ${assignedToA}`);
-    assert.match(await spare().innerText(), /Energy meter[\s\S]*Not assigned yet/, 'inbox row does not say what the device is and that it is unassigned');
+    assert.ok(assignedToA >= 2 && listedForA === assignedToA, `tenant device count ${listedForA} differs from the device list ${assignedToA}`);
+    // Unassigned: what no tenant has yet.
+    await tab('unassigned');
+    await spare().waitFor({ timeout: 30000 });
+    assert.match(await spare().innerText(), /Energy meter/, 'the row does not say what the device is');
     assert.doesNotMatch(await spare().innerText(), /sensor\./, 'the technical reason is still spelled out in the row');
     assert.match(await spare().locator('td[title]').getAttribute('title'), /power sensor/, 'the reason is not available on hover');
+    assert.equal(await devs.locator('#inbox thead').getByText('Looks like').count(), 0, 'the type column still has its old name');
     await typeInto(devs.locator('#inboxSearch'), 'no such device');
     await devs.getByText('No device matches the search.').waitFor({ timeout: 10000 });
     await typeInto(devs.locator('#inboxSearch'), 'spare');
     await spare().waitFor({ timeout: 10000 });
-    await shot(root, 'devices-not-assigned');
+    await shot(root, 'devices-unassigned');
     await spare().locator('[data-inbox-assign]').dispatchEvent('click');
     await devs.locator('dialog[open] #assignClient').waitFor({ timeout: 10000 });
+    assert.equal(await devs.locator('#assignLocation').inputValue(), state.location_a_north, 'the assign dialog does not open on the chosen location');
     await shot(root, 'assign-dialog');
-    await devs.locator('#assignClient').selectOption(state.client_a);
-    await devs.locator('#assignLocation').selectOption(state.location_a_north);
     await devs.locator('[data-save-editor]').dispatchEvent('click');
     await spare().waitFor({ state: 'detached', timeout: 20000 });
-    await show('assigned');
-    await spare().waitFor({ timeout: 20000 });
-    assert.match(await spare().innerText(), /Browser Client A[\s\S]*Browser A North/, 'assigned device does not show its client and location');
+    // Devices: the tenant's devices, narrowed by the location filter.
+    await tab('devices');
+    await placedSpare().waitFor({ timeout: 20000 });
+    assert.match(await placedSpare().innerText(), /Browser A North/, 'an assigned device does not show its location');
+    await at(state.location_a_west);
+    await placedSpare().waitFor({ state: 'detached', timeout: 10000 });
+    await at('');
+    await placedSpare().waitFor({ timeout: 10000 });
     await shot(root, 'devices-assigned');
-    await spare().locator('[data-inbox-remove]').dispatchEvent('click');
+    await placedSpare().locator('[data-inbox-remove]').dispatchEvent('click');
     await devs.locator('dialog[open] [data-save-editor]').dispatchEvent('click');
-    await spare().waitFor({ state: 'detached', timeout: 20000 });
-    await show('unassigned');
+    await placedSpare().waitFor({ state: 'detached', timeout: 20000 });
+    await tab('unassigned');
     await spare().locator('[data-inbox-ignore]').dispatchEvent('click');
     await spare().waitFor({ state: 'detached', timeout: 20000 });
     await show('ignored');
     await spare().locator('[data-inbox-unignore]').dispatchEvent('click');
     await spare().waitFor({ state: 'detached', timeout: 20000 });
-    await devs.locator('[data-device-view="wiring"]').dispatchEvent('click');
+    await tab('devices');
     await devs.locator('[data-new-virtual]').first().waitFor({ timeout: 10000 });
     // One Edit per device opens a dialog with its name, place, feed and main-device switch; nothing is edited in the row.
     assert.equal(await devs.locator('#admin select[data-device-parent], #admin [data-set-main]').count(), 0, 'a device is still edited inside the table');
-    assert.equal(await devs.locator('#admin tbody tr').filter({ hasText: 'Browser Spare Meter' }).count(), 0, 'a device no client has is listed in a client\'s wiring table');
     await devs.locator('[data-edit-device]').first().dispatchEvent('click');
     await devs.locator('dialog[open] #editorParent').waitFor({ timeout: 10000 });
     await shot(root, 'device-dialog');

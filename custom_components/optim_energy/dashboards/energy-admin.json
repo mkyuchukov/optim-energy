@@ -2,7 +2,7 @@
   "title": "Administration",
   "views": [
     {
-      "title": "Clients",
+      "title": "Tenants",
       "path": "clients",
       "icon": "mdi:account-group-outline",
       "type": "sections",
@@ -72,7 +72,7 @@
       ]
     },
     {
-      "title": "People",
+      "title": "Users",
       "path": "people",
       "icon": "mdi:account-multiple-outline",
       "type": "sections",
