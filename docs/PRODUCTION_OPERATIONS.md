@@ -613,6 +613,21 @@ What the start-up changed in Home Assistant: 51 channel devices of Cleverpine's 
 | Rollback checkpoint | Reinstall `v0.15.0` from the Marketplace; no stored data changed |
 | Incidents / follow-up | Found by the user: a tenant user had no exchange price chart on Overview |
 
+### 2026-11-13 v0.16.0, Setup rebuilt, last known prices, real names
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.15.1 / 0.16.0, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.16.0-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | Tenant pages show "OSV Kitchen" and "OSV Kitchen rooms 401 and 402 T18" in full. The price memory holds 9 sensor values and 96 quarter-hour prices and reports live; Overview shows "Live" under "Price now". Setup, Locations is the new table with "Manage groups" and "Price" and none of the administrator's location buttons; the price dialog opens on IBEX with the live marker; Setup, Devices lists 46 devices. Dialogs were opened and cancelled, nothing was saved. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.15.1` from the Marketplace; no stored data changed. The new file `.storage/optim_energy.prices` can stay |
+| Incidents / follow-up | The ENTSO-e integration had been failing since the 15:18 restart and was still in `setup_retry` before this install; after this restart it loaded and prices are live again |
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
