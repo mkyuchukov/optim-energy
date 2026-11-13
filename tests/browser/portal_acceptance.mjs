@@ -319,7 +319,8 @@ try {
       // Connection by device has no groups in it: only the location and devices, a virtual device among them.
       if (mode === 'network' && by === 'device') {
         assert.equal(await map.locator('#world .hub').count(), 0, 'the device hierarchy still shows groups');
-        assert.ok(await map.locator('#world g.n').count() >= 3, 'the device hierarchy is not drawn as a tree');
+        assert.equal(await map.locator('#world g.n').count(), 0, 'the connection map by device is drawn as the power tree');
+        assert.ok(await map.locator('#world g.r').count() >= 3, 'the connection map by device is not drawn in the connection style');
         assert.equal(await map.locator('#world [data-open="virt:browser-main"]').count(), 1, 'a virtual device is missing from the device hierarchy');
       }
       await shot(adminPage, `map-${mode}-${by}`);

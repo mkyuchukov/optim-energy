@@ -1696,11 +1696,11 @@ const networkTree = (states, nowMs) => groupTree(states, nowMs, false);
 // By device, for the connection map: no groups at all. The location, then the devices at the top of the
 // hierarchy (the main device first), each carrying the devices that have it as their parent. A virtual
 // device is a node like any other; it has no connection of its own, so it says how the devices under it are.
-// A hierarchy is several levels deep, which a circle cannot show readably, so it is drawn as a tree.
+// It is drawn as rings around the location (see ringLayout), in the same style as the connection map by group.
 function deviceConnectionTree(states, nowMs) {
   const walk = (d) => {
     const kids = childrenOf(d.id).map(walk);
-    if (d.virtual) { const n = topoHub(d.id, d.name, kids); return { ...n, kind: TREE.main === d.id ? 'main' : 'virtual', device: true, real: false, sub: `Virtual · ${n.sub}` }; }
+    if (d.virtual) { const n = topoHub(d.id, d.name, kids); return { ...n, kind: TREE.main === d.id ? 'main' : 'virtual', virtual: true, icon: 'virtual', device: true, real: false, sub: `Virtual · ${n.sub}` }; }
     return { ...connectionLeaf(d, states, nowMs), kids };
   };
   const main = mainDevice(), tops = topNodes(), order = main ? [main, ...tops.filter((d) => d.id !== main.id)] : tops;
@@ -1733,12 +1733,35 @@ function radialLayout(root, shut, o = { leaf: 32, min: 70, label: 112, spread: 3
   nodes.forEach((m) => { m.x -= minX; m.y -= minY; });
   return { nodes, links, width: Math.max(...nodes.map((m) => m.x + reach(m))), height: Math.max(...nodes.map((m) => m.y + reach(m))) };
 }
+// Rings: for a device hierarchy. Each level sits on its own ring around the location, and a device's
+// share of the circle is as wide as the devices at the end of its branches. Unlike the layout above, a
+// deep hierarchy does not push everything outwards: the picture only grows by one ring per level.
+function ringLayout(root, shut, o = { ring: 124, first: 150, label: 112, leaf: 26 }) {
+  const open = (n) => (shut.has(n.id) ? [] : n.kids), leaves = new Map();
+  const count = (n) => { const kids = open(n), v = kids.length ? kids.reduce((t, k) => t + count(k), 0) : 1; leaves.set(n.id, v); return v; };
+  const total = count(root), depthOf = (n) => 1 + Math.max(0, ...open(n).map(depthOf)), levels = depthOf(root) - 1;
+  // Wide enough that the devices on the outermost ring do not touch.
+  const ring = Math.max(o.ring, levels ? (total * o.leaf) / (2 * Math.PI * levels) : 0), radius = (depth) => (depth ? o.first + (depth - 1) * ring : 0);
+  const nodes = [], links = [];
+  const place = (n, from, to, depth, parent) => {
+    const at = (from + to) / 2, r = radius(depth), me = { node: n, x: r * Math.cos(at), y: r * Math.sin(at), dir: at, depth };
+    nodes.push(me);
+    if (parent) links.push({ from: parent, to: me });
+    let a = from;
+    for (const k of open(n)) { const share = ((to - from) * leaves.get(k.id)) / leaves.get(n.id); place(k, a, a + share, depth + 1, me); a += share; }
+  };
+  place(root, -Math.PI / 2, (3 * Math.PI) / 2, 0, null);
+  const reach = (m) => (m.node === root ? 70 : o.label), minX = Math.min(...nodes.map((m) => m.x - reach(m))), minY = Math.min(...nodes.map((m) => m.y - reach(m)));
+  nodes.forEach((m) => { m.x -= minX; m.y -= minY; });
+  return { nodes, links, width: Math.max(...nodes.map((m) => m.x + reach(m))), height: Math.max(...nodes.map((m) => m.y + reach(m))) };
+}
 // Icons from Material Design Icons, which Home Assistant itself uses.
 const TOPO_ICONS = {
   location: 'm12.151 1.5882c-.3262 0-.6523.1291-.8996.3867l-8.3848 8.7354c-.0619.0644-.1223.1368-.1807.2154-.0588.0789-.1151.1638-.1688.2534-.2593.4325-.4552.9749-.5232 1.4555-.0026.018-.0076.0369-.0094.0548-.0121.0987-.0184.1944-.0184.2857v8.0124a1.2731 1.2731 0 001.2731 1.2731h7.8313l-3.4484-3.593a1.7399 1.7399 0 111.0803-1.125l2.6847 2.7972v-10.248a1.7399 1.7399 0 111.5276-0v7.187l2.6702-2.782a1.7399 1.7399 0 111.0566 1.1505l-3.7269 3.8831v2.7299h8.174a1.2471 1.2471 0 001.2471-1.2471v-8.0375c0-.0912-.0059-.1868-.0184-.2855-.0603-.4935-.2636-1.0617-.5326-1.5105-.0537-.0896-.1101-.1745-.1684-.253-.0588-.079-.1191-.1513-.181-.2158l-8.3848-8.7363c-.2473-.2577-.5735-.3866-.8995-.3864',
   hub: 'M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6Z',
   circuit: 'M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,21V20H15V21A1,1 0 0,1 14,22H10A1,1 0 0,1 9,21M12,4A5,5 0 0,0 7,9C7,11.05 8.23,12.81 10,13.58V16H14V13.58C15.77,12.81 17,11.05 17,9A5,5 0 0,0 12,4Z',
   meter: 'M7,2V13H10V22L17,10H13L17,2H7Z',
+  virtual: 'M18,6H8.83L14.83,12L8.83,18H18V20H6V18L12,12L6,6V4H18V6Z',
   zigbee: 'M4.06,6.15C3.97,6.17 3.88,6.22 3.8,6.28C2.66,7.9 2,9.87 2,12A10,10 0 0,0 12,22C15,22 17.68,20.68 19.5,18.6L17,18.85C14.25,19.15 11.45,19.19 8.66,18.96C7.95,18.94 7.24,18.76 6.59,18.45C5.73,18.06 5.15,17.23 5.07,16.29C5.06,16.13 5.12,16 5.23,15.87L7.42,13.6L15.03,5.7V5.6H10.84C8.57,5.64 6.31,5.82 4.06,6.15M20.17,17.5C20.26,17.47 20.35,17.44 20.43,17.39C21.42,15.83 22,14 22,12A10,10 0 0,0 12,2C9.22,2 6.7,3.13 4.89,4.97H5.17C8.28,4.57 11.43,4.47 14.56,4.65C15.5,4.64 16.45,4.82 17.33,5.17C18.25,5.53 18.89,6.38 19,7.37C19,7.53 18.93,7.7 18.82,7.82L9.71,17.19L9,17.95V18.06H13.14C15.5,18 17.84,17.81 20.17,17.5Z',
 };
 // Left to right. A leaf takes the next free row and a parent sits midway along its children, so nothing overlaps.
@@ -3777,7 +3800,7 @@ circle.d{fill:var(--slate)}circle.d.ok{fill:var(--ok)}circle.d.warn{fill:var(--w
 .f{cursor:pointer}.f circle{fill:var(--panel);stroke:var(--muted)}.f:hover circle{stroke:var(--fg)}.f text{fill:var(--fg);font-size:14px;text-anchor:middle}.f:focus{outline:none}.f:focus-visible circle{stroke:var(--accent);stroke-width:2}
 path.l{fill:none;stroke:var(--muted);opacity:.45;stroke-width:1.5}path.l.flow{stroke:var(--accent);opacity:.95;stroke-dasharray:7 9;animation:run 2s linear infinite}path.l.dead{stroke:var(--bad);opacity:.9;stroke-dasharray:3 5}
 .chips{display:flex;gap:6px;flex-wrap:wrap}.chip{display:inline-flex;gap:6px;align-items:center;font-size:12.5px;color:var(--fg);padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);white-space:nowrap}.chip i{width:8px;height:8px;border-radius:50%;background:var(--slate)}.chip i.ok{background:var(--ok)}.chip i.warn{background:var(--warn)}.chip i.bad{background:var(--bad)}.chip i.power{background:var(--accent)}
-.r{cursor:pointer}.r:focus{outline:none}.r .ring{fill:var(--panel);stroke:var(--slate);stroke-width:1.5}.r.ok .ring{stroke:var(--ok)}.r.warn .ring{stroke:var(--warn)}.r.bad .ring{stroke:var(--bad);stroke-width:2.5;fill:color-mix(in srgb,var(--bad) 22%,var(--panel))}.r:hover .ring,.r:focus-visible .ring{stroke-width:3}.r .ic{fill:var(--fg)}.r.ok .ic{fill:var(--ok)}.r.warn .ic{fill:var(--warn)}.r.bad .ic{fill:var(--bad)}.r.hub .ic,.r.location .ic{fill:var(--fg)}.r.location .ring{fill:color-mix(in srgb,var(--accent) 30%,var(--panel));stroke:var(--accent);stroke-width:2.5}.r.location{cursor:default}
+.r{cursor:pointer}.r:focus{outline:none}.r .ring{fill:var(--panel);stroke:var(--slate);stroke-width:1.5}.r.ok .ring{stroke:var(--ok)}.r.warn .ring{stroke:var(--warn)}.r.bad .ring{stroke:var(--bad);stroke-width:2.5;fill:color-mix(in srgb,var(--bad) 22%,var(--panel))}.r:hover .ring,.r:focus-visible .ring{stroke-width:3}.r .ic{fill:var(--fg)}.r.ok .ic{fill:var(--ok)}.r.warn .ic{fill:var(--warn)}.r.bad .ic{fill:var(--bad)}.r.hub .ic,.r.location .ic,.r.virtual .ic,.r.main .ic{fill:var(--fg)}.r.main .ring{stroke-width:3.5}.r.virtual .ring{stroke-dasharray:3 3}.fb{cursor:pointer}.fb circle{fill:var(--panel);stroke:var(--muted);stroke-width:1.2}.fb:hover circle,.fb:focus-visible circle{stroke:var(--accent);stroke-width:2}.fb text{font-size:12px;font-weight:700;fill:var(--fg);text-anchor:middle;stroke:none}.r.location .ring{fill:color-mix(in srgb,var(--accent) 30%,var(--panel));stroke:var(--accent);stroke-width:2.5}.r.location{cursor:default}
 .r text{font-size:12px;fill:var(--muted);paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round}.r text.hn{font-size:13px;font-weight:600;fill:var(--fg);text-anchor:middle}.r text.hs{text-anchor:middle}.r text.ln{fill:var(--fg)}.r.bad text.ln{fill:var(--bad)}.r .more{fill:var(--accent);font-size:11px;text-anchor:middle}
 path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s linear infinite}path.l.talk.hubl{stroke-width:2;opacity:.9}path.l.warnl{stroke:var(--warn);opacity:.9}
 @keyframes run{to{stroke-dashoffset:-32}}@media(prefers-reduced-motion:reduce){path.l.flow,path.l.talk{animation:none}}
@@ -3809,7 +3832,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
       this.startTimer();
     }
     // The circle suits groups with their devices around them; power, and any device hierarchy, is a tree.
-    get radial() { return this._mode === 'network' && this._by === 'group'; }
+    get radial() { return this._mode === 'network'; }
     tree() {
       const now = Date.now(), st = this._hass.states, group = this._by === 'group';
       if (this._mode === 'wiring') return group ? groupTree(st, now, true) : wiringTree(st, now);
@@ -3859,7 +3882,8 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
     // The map is only redrawn when its shape changes. Live values are written into it, so the moving lines never restart.
     paint() {
       const r = this.shadowRoot, st = this._hass.states, now = Date.now(), root = this.tree(), byId = new Map(), wiring = this._mode === 'wiring';
-      if (!this._shut) this._shut = this.radial ? new Set() : shutNodes(root);
+      // A device hierarchy opens three levels deep; the rest unfolds with the + on a device.
+      if (!this._shut) this._shut = this.radial && this._by === 'group' ? new Set() : shutNodes(root);
       const index = (n) => { byId.set(n.id, n); n.kids.forEach(index); };
       index(root);
       r.querySelectorAll('#mode button').forEach((b) => { const on = b.dataset.mode === this._mode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
@@ -3869,7 +3893,7 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
       const chip = (cls, text) => `<span class="chip"><i class="${cls}"></i>${text}</span>`;
       const chips = [chip('ok', `${all.length - off.length - late.length} Online`), ...(late.length ? [chip('warn', `${late.length} Delayed`)] : []), chip('bad', `${off.length} Offline`), chip('power', `${on.length} Drawing power`)].join('');
       if (r.getElementById('sum').innerHTML !== chips) r.getElementById('sum').innerHTML = chips;
-      const key = !wiring && !this.radial ? '<span><i style="border-color:var(--ok);border-top-style:dashed"></i>Online and talking</span><span><i class="bad"></i>Offline</span><span>A device carries the devices it is the parent of. Tap a device for details</span>' : wiring ? '<span><i></i>Power flowing, thicker and faster when higher</span><span><i class="off"></i>No live usage</span><span><i class="bad"></i>Offline</span><span>Tap a device for details</span>' : `<span><i style="border-color:var(--ok);border-top-style:dashed"></i>Animated line: online and talking</span><span><i class="bad"></i>Offline</span><span>Tap a device for details, tap a group to fold it</span>`;
+      const key = !wiring && this._by === 'device' ? '<span><i style="border-color:var(--ok);border-top-style:dashed"></i>Animated line: online and talking</span><span><i class="bad"></i>Offline</span><span>Each ring is one level of parent devices. Tap a device for details, + to show what is under it</span>' : wiring ? '<span><i></i>Power flowing, thicker and faster when higher</span><span><i class="off"></i>No live usage</span><span><i class="bad"></i>Offline</span><span>Tap a device for details</span>' : `<span><i style="border-color:var(--ok);border-top-style:dashed"></i>Animated line: online and talking</span><span><i class="bad"></i>Offline</span><span>Tap a device for details, tap a group to fold it</span>`;
       if (r.getElementById('key').innerHTML !== key) r.getElementById('key').innerHTML = key;
       const dr = r.getElementById('drawer'), open = DEVICES.find((d) => d.id === this._open);
       dr.hidden = !open;
@@ -3878,11 +3902,11 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
     }
     // Drawn once for each shape. Live values are written in, so the moving lines never restart.
     paintRadial(root) {
-      const r = this.shadowRoot, L = radialLayout(root, this._shut), trim = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t), byId = new Map(L.nodes.map((m) => [m.node.id, m]));
-      const sig = ['radial', this._by, ...L.nodes.map((m) => `${m.node.id}:${m.node.name}:${Math.round(m.x)}:${Math.round(m.y)}:${m.node.kids.length}`)].join('|');
+      const r = this.shadowRoot, rings = this._by === 'device', L = rings ? ringLayout(root, this._shut) : radialLayout(root, this._shut), trim = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t), byId = new Map(L.nodes.map((m) => [m.node.id, m]));
+      const sig = ['radial', this._by, [...this._shut].join(','), ...L.nodes.map((m) => `${m.node.id}:${m.node.name}:${Math.round(m.x)}:${Math.round(m.y)}:${m.node.kids.length}`)].join('|');
       if (sig !== this._sig) {
         this._sig = sig; this._lastMode = this._mode; this._layout = L;
-        const radius = (n) => (n.kind === 'location' ? 30 : n.kind === 'hub' ? 22 : 13);
+        const holds = (n) => n.kids.length > 0 || n.virtual, radius = (n) => (n.kind === 'location' ? 30 : n.kind === 'hub' ? 22 : holds(n) ? 16 : 13);
         const links = L.links.map((l) => { const ra = radius(l.from.node), rb = radius(l.to.node), dx = l.to.x - l.from.x, dy = l.to.y - l.from.y, d = Math.hypot(dx, dy) || 1; return `<path class="l" data-to="${l.to.node.id}" d="M${l.from.x + (dx / d) * ra} ${l.from.y + (dy / d) * ra}L${l.to.x - (dx / d) * rb} ${l.to.y - (dy / d) * rb}"/>`; }).join('');
         const icon = (name, size) => `<path class="ic" transform="translate(${-size / 2} ${-size / 2}) scale(${size / 24})" d="${TOPO_ICONS[name]}"/>`;
         const nodes = L.nodes.map((m) => {
@@ -3890,6 +3914,9 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
           if (n.kind === 'location') return `<g class="r location" data-id="root" transform="translate(${m.x} ${m.y})"><title>${label}</title><circle class="ring" r="30"/>${icon('location', 32)}<text class="hn" y="48">${esc(trim(n.name, 28))}</text><text class="hs" y="63">${esc(n.sub)}</text></g>`;
           if (n.kind === 'hub') { const foldable = n.kids.length > 0; return `<g class="r hub" data-id="${n.id}"${foldable ? ` data-fold="${n.id}" role="button" tabindex="0" aria-label="Fold ${label}"` : ''} transform="translate(${m.x} ${m.y})"><title>${label}</title><circle class="ring" r="22"/>${icon('hub', 22)}<text class="hn" y="38">${esc(trim(n.name, 24))}</text><text class="hs" y="52"></text></g>`; }
           const deg = (m.dir * 180) / Math.PI, left = Math.cos(m.dir) < 0;
+          // A device that carries others: still a device, with a + or − beside it for what is under it, and
+          // its name under it, upright, as a group has.
+          if (holds(n)) { const shutNow = this._shut.has(n.id), fold = n.kids.length ? `<g class="fb" data-fold="${n.id}" role="button" tabindex="0" aria-label="${shutNow ? 'Show' : 'Hide'} devices under ${label}" transform="translate(17 -13)"><circle r="8"/><text y="4">${shutNow ? '+' : '−'}</text></g>` : ''; return `<g class="r" data-id="${n.id}" transform="translate(${m.x} ${m.y})"><g data-open="${n.id}" role="button" tabindex="0" aria-label="${label}"><title>${label}</title><circle class="ring" r="16"/>${icon(n.icon, 17)}<text class="hn" y="33">${esc(trim(n.name, 22))}</text></g>${fold}</g>`; }
           return `<g class="r" data-id="${n.id}" data-open="${n.id}" role="button" tabindex="0" aria-label="${label}" transform="translate(${m.x} ${m.y})"><title>${label}</title><circle class="ring" r="13"/>${icon(n.icon, 15)}<text class="ln" transform="rotate(${left ? deg + 180 : deg})" x="${left ? -18 : 18}" y="4" text-anchor="${left ? 'end' : 'start'}">${esc(trim(n.name, 18))}</text></g>`;
         }).join('');
         r.getElementById('world').innerHTML = links + nodes;
@@ -3900,10 +3927,10 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
       for (const [id, m] of byId) {
         const n = m.node, g = r.querySelector(`[data-id="${CSS.escape(id)}"]`);
         if (!g) continue;
-        const shut = this._shut.has(id) && n.kids.length > 0, hubLike = n.kind === 'hub', base = `r${n.kind === 'location' ? ' location' : hubLike ? ' hub' : ''} ${n.key}`;
+        const shut = this._shut.has(id) && n.kids.length > 0, hubLike = n.kind === 'hub', base = `r${n.kind === 'location' ? ' location' : hubLike ? ' hub' : n.kind === 'main' ? ' main' : n.virtual ? ' virtual' : ''} ${n.key}`;
         if (g.getAttribute('class') !== base) g.setAttribute('class', base);
         if (hubLike) g.querySelector('.hs').textContent = shut ? `${n.sub}, folded${downUnder(n) ? `, ${downUnder(n)} offline` : ''}` : n.sub;
-        if (n.device) g.querySelector('title').textContent = `${n.name}, ${n.down ? 'Offline' : n.w == null ? 'No reading' : powerText(n.w)}${n.sub ? `, ${n.sub}` : ''}`;
+        if (n.device && g.querySelector('title')) g.querySelector('title').textContent = `${n.name}, ${n.down ? 'Offline' : n.w == null ? 'No reading' : powerText(n.w)}${n.sub ? `, ${n.sub}` : ''}`;
         const p = r.querySelector(`path[data-to="${CSS.escape(id)}"]`);
         if (p) { const c = `l${hubLike ? ' hubl' : ''}${n.down ? ' dead' : n.key === 'warn' ? ' warnl' : ' talk'}`; if (p.getAttribute('class') !== c) p.setAttribute('class', c); }
       }

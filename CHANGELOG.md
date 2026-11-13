@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.3
+
+- Devices, Map, Connection by device looks like a connection map again, not like the power tree. The location is in the centre and each level of parent devices is one ring around it; a device that carries others has its name under it and a + or − to show or hide what is under it. It opens three levels deep. A hierarchy of 47 devices over five levels fits the screen at about half size fully expanded, where the first circle (0.17.1) needed almost twice the room.
+
 ## 0.17.2
 
 - Devices, Map, Connection by device is drawn as a tree, left to right, like the Power view: the location, the top devices, and under each device the devices it is the parent of. Each box shows the device's address and signal, and its line says whether it is online. With a hierarchy several levels deep, the circle from 0.17.1 spread too far to read. Connection by group keeps the circle.
