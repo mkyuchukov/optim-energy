@@ -515,6 +515,23 @@ The cleanup removed what the 0.7.0 migration had kept as its rollback path: eigh
 
 From this version the integration only loads a store on floors and areas. The migration commands are gone, so an installation still on labels has to pass through 0.11.1.
 
+### 2026-11-13 v0.12.1, one name per location
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.12.0 / 0.12.1, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.12.1-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | Unchanged after the restart: 758 and 57 entities, 5 and 4 groups, 47 and 4 placements, 4 schedules, both prices, 45 assigned / 2 ignored / 35 not portal devices, one person. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.12.0` from the Marketplace; location names then stay as they are now |
+| Incidents / follow-up | None |
+
+On load both locations took their area's name, so the portal now shows "Sofia (Cleverpine)" and "Sofia 1(Optimal Industries)", the same as Home Assistant. Location ids, prices and people's assignments are keyed by id and did not change.
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
