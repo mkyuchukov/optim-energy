@@ -658,6 +658,21 @@ What the start-up changed in Home Assistant: 51 channel devices of Cleverpine's 
 | Rollback checkpoint | Reinstall `v0.17.0` from the Marketplace; no stored data changed |
 | Incidents / follow-up | 0.17.1 drew the device hierarchy as a circle. With the real five-level hierarchy it came out about 1,900 by 2,400 pixels with links up to 685 pixels, unreadable when fitted to the screen; the three-device test setup had not shown this. 0.17.2 replaced it with the tree |
 
+### 2026-11-13 v0.17.3, Connection by device as rings
+
+| Field | Value |
+| --- | --- |
+| Date/time (Europe/Sofia) | 2026-11-13, evening |
+| Operator | Production root administrator session |
+| HA version before/after | 2026.11.0 / 2026.11.0 |
+| Optim Energy before/after | 0.17.2 / 0.17.3, installed through the Marketplace update entity |
+| Backup/snapshot | Manual `before-0.17.3-2026-11-13`, configuration only, on the VM |
+| Runtime suites | All CI jobs on the merge commit: PASS |
+| VM smoke result | N/A |
+| Client verification | Devices, Map, Connection by device for Cleverpine: drawn in the connection style (round nodes, no boxes, no group nodes), 26 nodes as it opens and 47 when expanded, 1 main and 3 virtual devices marked, every line online. Expand all, Collapse all and a single fold work. Power by device still uses the box tree. No client-account login was performed |
+| Rollback checkpoint | Reinstall `v0.17.2` from the Marketplace; no stored data changed |
+| Incidents / follow-up | Reported by the user: 0.17.2 drew this view with the power view's boxes, so it read as the power view. The layout was checked against the production hierarchy's shape in a local render before this release |
+
 ## Repository protection
 
 Branch creation, updates, deletion and force pushes are restricted by the
