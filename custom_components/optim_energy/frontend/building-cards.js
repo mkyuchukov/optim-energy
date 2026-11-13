@@ -1562,35 +1562,71 @@ const CHART_CSS = `
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}.seg button{all:unset;cursor:pointer;font-size:12.5px;padding:4px 10px;color:var(--muted)}.seg button.on{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--fg)}.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 `;
 // Categorical colours, in fixed order, validated for colour-blind separation on a dark surface. A ninth device goes into Other.
+// Administration: one card per section. Filters and search sit in the card's header, the table fills it edge to
+// edge, and every edit or confirmation opens in a dialog. Spacing follows one scale: 8, 12, 16, 24.
 const ADMIN_CSS = `
-.admin{max-width:1280px;margin:0 auto;gap:20px}
-.admin-hero{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap;padding:24px 26px;border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));border-radius:20px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 10%,var(--panel)),var(--panel) 62%);box-shadow:var(--shadow)}
-.admin-hero .lede{max-width:720px}.admin-kicker{display:block;color:var(--accent);font-size:11px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;margin-bottom:7px}.admin-hero h1{margin:0;font-size:clamp(25px,3vw,36px);line-height:1.1;letter-spacing:-.035em}.admin-hero p{margin:9px 0 0;max-width:680px;color:var(--muted);font-size:14px;line-height:1.5}
+.admin{max-width:1180px;margin:0 auto;padding-bottom:24px}#admin{display:grid;gap:16px;min-width:0}
 .admin-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.admin-actions button{white-space:nowrap}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.primary:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 84%,#000)}button.quiet{background:transparent;border-color:var(--line);color:var(--fg)}button.quiet:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 8%,transparent)}button.danger-ghost{background:transparent;border-color:color-mix(in srgb,var(--bad) 45%,var(--line));color:var(--bad)}
-.admin-context{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--panel) 86%,transparent);color:var(--muted);font-size:13px}
-.admin-context .client-select{display:flex;align-items:center;gap:9px}.admin-context .client-select select{min-width:210px}.admin-context strong{color:var(--fg);font-weight:650}.admin-context .context-note{display:flex;align-items:center;gap:7px}.admin-context .context-note::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
-.admin-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.metric{display:grid;gap:3px;padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}.metric .label{color:var(--muted);font-size:12.5px}.metric .value{font-size:25px;font-weight:700;letter-spacing:-.035em;line-height:1.15}.metric .hint{color:var(--muted);font-size:12px}
-.admin-panel{display:grid;gap:14px;padding:18px 20px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow);min-width:0}.admin-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.admin-panel-head h2{margin:0;font-size:19px;letter-spacing:-.02em}.admin-panel-head p{margin:4px 0 0;color:var(--muted);font-size:13px;line-height:1.45}.admin-panel-head .admin-actions button{font-size:13px;padding:6px 10px}
-.client-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:12px}.client-card{position:relative;display:grid;gap:13px;padding:16px;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--panel) 82%,var(--page));transition:transform .15s,border-color .15s,box-shadow .15s}.client-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent) 42%,var(--line));box-shadow:0 10px 26px rgba(0,0,0,.12)}.client-card.active{border-color:var(--accent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent),var(--shadow)}.client-card-head{display:flex;gap:11px;align-items:center;min-width:0}.client-mark{width:42px;height:42px;flex:none;display:grid;place-items:center;border-radius:13px;background:color-mix(in srgb,var(--accent) 18%,var(--panel));color:var(--accent);font-weight:750;font-size:14px;letter-spacing:.02em}.client-card h3{margin:0;font-size:16px;letter-spacing:-.02em;overflow-wrap:anywhere}.client-card p{margin:3px 0 0;color:var(--muted);font-size:12.5px}.client-tags{display:flex;gap:5px;flex-wrap:wrap;min-height:22px}.tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:color-mix(in srgb,var(--fg) 7%,transparent);color:var(--muted);font-size:11.5px}.client-card-actions{display:flex;justify-content:space-between;gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:11px}.client-card-actions button{font-size:12.5px;padding:5px 9px}
-.shortcut-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.shortcut{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:11px;width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:13px;background:color-mix(in srgb,var(--panel) 78%,var(--page));cursor:pointer}.shortcut:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--panel))}.shortcut:focus-visible{outline:2px solid var(--accent)}.shortcut ha-icon{--mdc-icon-size:20px;color:var(--accent);flex:none}.shortcut b{display:block;font-size:13.5px}.shortcut span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
-.new-client,.add-person{margin:0;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--panel) 76%,var(--page));overflow:hidden}.new-client summary,.add-person summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;padding:11px 14px;font-size:13.5px;font-weight:600}.new-client summary::-webkit-details-marker,.add-person summary::-webkit-details-marker{display:none}.new-client summary::before,.add-person summary::before{content:"+";display:grid;place-items:center;width:24px;height:24px;border-radius:8px;background:var(--accent);color:#fff;font-size:18px;line-height:1}.new-client[open] summary::before,.add-person[open] summary::before{content:"−"}.inline-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;padding:0 14px 14px;border-top:1px solid var(--line);padding-top:13px}.field{display:grid;gap:4px;color:var(--muted);font-size:12px}.field input,.field select{width:100%;box-sizing:border-box;min-width:0}.field.wide{grid-column:1/-1}.form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;align-items:center}
-.people-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.search{display:flex;align-items:center;gap:7px;flex:1 1 220px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:var(--page)}.search ha-icon{--mdc-icon-size:18px;color:var(--muted);flex:none}.search input{border:0;background:transparent;padding:9px 0;min-width:0;width:100%}.people-tools select{min-width:145px}.people-count{color:var(--muted);font-size:12.5px;margin-left:auto}.people-list{display:grid;gap:7px}.person{display:grid;grid-template-columns:42px minmax(150px,1.3fr) minmax(105px,.6fr) minmax(140px,1fr) 76px auto;gap:12px;align-items:center;padding:11px 12px;border:1px solid var(--line);border-radius:13px;background:color-mix(in srgb,var(--panel) 78%,var(--page))}.person.self{border-color:color-mix(in srgb,var(--accent) 48%,var(--line))}.avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:50%;background:color-mix(in srgb,var(--accent) 18%,var(--panel));color:var(--accent);font-size:11px;font-weight:750}.person-name{min-width:0;display:grid;gap:2px}.person-name b{font-size:14px;overflow-wrap:anywhere}.person-name span{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.person-role,.person-location{min-width:0}.person-role select,.person-location select{width:100%;font-size:12.5px;padding:6px 9px}.person-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}.status-dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}.status-dot.off{background:var(--slate)}.person-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap}.person-actions button{font-size:12px;padding:5px 8px}.person-empty{padding:22px 14px;border:1px dashed var(--line);border-radius:13px;color:var(--muted);text-align:center;font-size:13px}
-.label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:8px}.label-choice{display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:13px}.label-choice input{accent-color:var(--accent)}.label-choice small{margin-left:auto;color:var(--muted);font-size:11.5px}.label-choice:has(input:checked){border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background:color-mix(in srgb,var(--accent) 8%,var(--panel))}
-.location-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:11px}.location-card{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--panel) 78%,var(--page))}.location-card h3{margin:0;font-size:16px}.location-card p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.45}.location-stats{display:flex;gap:8px;flex-wrap:wrap}.location-stats span{padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--fg) 7%,transparent);color:var(--muted);font-size:11.5px}.location-actions{display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}.location-actions button{font-size:12px;padding:5px 8px}
-.admin-note{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}.admin-note a{color:var(--accent);text-decoration:none}.flash{min-height:20px;color:var(--ok);font-size:13px}.flash.bad{color:var(--bad)}.flash:empty{display:none}
-.setup-head{padding:2px 0 4px}.setup-head .admin-kicker{margin-bottom:5px}.setup-head h1{margin:0;font-size:clamp(24px,3vw,32px);letter-spacing:-.03em}.setup-head p{margin:6px 0 0;color:var(--muted);font-size:13px}
-@media(max-width:760px){.admin-hero{padding:19px 17px}.admin-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric .value{font-size:22px}.person{grid-template-columns:36px minmax(0,1fr) auto}.person-name{grid-column:2}.person-role,.person-location,.person-status{grid-column:2/-1;grid-row:auto}.person-actions{grid-column:2/-1;justify-content:flex-start}.person-role select,.person-location select{max-width:100%}.admin-panel{padding:14px 13px}.people-count{margin-left:0}.admin-context{align-items:flex-start}.admin-context .client-select{width:100%}.admin-context .client-select select{flex:1;min-width:0}.client-card-actions{flex-wrap:wrap}}
-@media(max-width:430px){.admin-metrics{grid-template-columns:1fr 1fr}.admin-actions{width:100%}.admin-actions button{flex:1}.admin-hero h1{font-size:27px}.client-card-actions button{flex:1}}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.primary:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 84%,#000)}
+button.quiet{background:transparent;border-color:var(--line);color:var(--fg)}button.quiet:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 8%,transparent)}
+.form-actions button.danger{background:var(--bad);border-color:var(--bad);color:#fff}.form-actions button.danger:hover:not(:disabled){background:color-mix(in srgb,var(--bad) 84%,#000)}
+.admin-note{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.flash{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:5;max-width:min(560px,calc(100vw - 32px));padding:10px 16px;border-radius:10px;background:var(--fg);color:var(--page);font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25)}.flash.bad{background:var(--bad);color:#fff}.flash:empty{display:none}
 `;
 
 const ADMIN_TABLE_CSS = `
-.admin-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap;padding:4px 0 2px}.admin-head h1{margin:0;font-size:clamp(24px,3vw,32px);letter-spacing:-.03em}.admin-head p{margin:5px 0 0;color:var(--muted);font-size:13px;max-width:760px;line-height:1.45}.admin-kicker{display:block;color:var(--accent);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
-.admin-toolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.admin-toolbar.compact{padding:8px 10px}.admin-toolbar .sp{flex:1}.admin-control{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.admin-control select{min-width:220px}.toolbar-label{font-size:12px;color:var(--muted)}.toolbar-label b{color:var(--fg)}.toolbar-count{font-size:12px;color:var(--muted);margin:auto 0}.admin-actions{display:flex;gap:6px;flex-wrap:wrap}.admin-actions button,.admin-toolbar .table-action{font-size:12.5px;padding:6px 10px}
-.admin-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.admin-table{width:100%;border-collapse:collapse;font-size:13px}.admin-table th{text-align:left;color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.admin-table td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);vertical-align:middle}.admin-table tr:last-child td{border-bottom:0}.admin-table tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}.table-name{all:unset;cursor:pointer;display:grid;gap:2px;font-weight:600;color:var(--fg)}.table-name small,.table-sub{display:block;font-weight:400;color:var(--muted);font-size:11px}.table-name:hover{color:var(--accent)}.table-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.table-action{all:unset;cursor:pointer;padding:5px 8px;border:1px solid var(--line);border-radius:6px;color:var(--fg);font-size:11.5px;white-space:nowrap}.table-action:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}.table-action.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}.checks{display:grid;gap:6px;padding:4px 0}.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--fg)}.check input{width:16px;height:16px;margin:0}.table-action.on{background:color-mix(in srgb,var(--fg) 12%,transparent);font-weight:600}.admin-table input[type=checkbox]{width:16px;height:16px;margin:0}.table-select{min-width:110px;padding:5px 7px;font-size:12px}.admin-empty{text-align:center;color:var(--muted);padding:24px !important}.admin-note{color:var(--muted);font-size:12px;line-height:1.45;margin:0}
-.admin-editor{border:1px solid color-mix(in srgb,var(--accent) 38%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--accent) 5%,var(--panel));padding:13px 14px;display:grid;gap:10px}.admin-editor-head h3{margin:2px 0 0;font-size:16px}.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}.form-grid .wide{grid-column:1/-1}.form-grid .field{display:grid;gap:4px;color:var(--muted);font-size:11.5px}.form-grid input,.form-grid select{width:100%;box-sizing:border-box}.form-grid select[multiple]{min-height:90px}.form-actions{display:flex;justify-content:flex-end;gap:7px}
-@media(max-width:700px){.admin-head h1{font-size:25px}.admin-table th,.admin-table td{padding:8px}.admin-table th:nth-child(3),.admin-table td:nth-child(3){display:none}.admin-toolbar .admin-control{width:100%}.admin-toolbar .admin-control select{flex:1;min-width:0}.admin-actions{width:100%}.admin-actions button{flex:1}.table-actions{justify-content:flex-start}}
+.admin-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;flex-wrap:wrap;padding:8px 0 4px}
+.admin-head h1{margin:0;font-size:clamp(24px,3vw,30px);letter-spacing:-.03em;line-height:1.15}.admin-head p{margin:6px 0 0;color:var(--muted);font-size:13px;max-width:680px;line-height:1.45}
+.admin-kicker{display:block;color:var(--accent);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+.admin-head .admin-actions{gap:8px}.admin-head .admin-actions button{height:36px;padding:0 14px;font-size:13px}
+.admin-control{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.admin-control select{height:36px;min-width:180px;max-width:260px}
+.toolbar-label{font-size:12.5px;color:var(--muted)}.toolbar-label b{color:var(--fg)}
+.admin-banner{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:14px 16px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--accent) 6%,var(--panel))}.admin-banner>div{flex:1 1 320px;display:grid;gap:4px}
+.admin-card{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden;min-width:0}
+.admin-card-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}.admin-card-head .sp{flex:1}
+.admin-card-head h2{margin:0;font-size:15px;letter-spacing:-.01em}.admin-card-head h2 small{display:block;margin-top:2px;font-weight:400;font-size:12px;color:var(--muted)}
+.admin-card-head button{height:32px;padding:0 12px;font-size:12.5px}
+.admin-card-foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}.admin-card-foot b{color:var(--fg);font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap}.chip{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.chip:hover{color:var(--fg);border-color:var(--muted)}.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.chip.on{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 55%,var(--line));color:var(--fg);font-weight:600}
+.chip span{font-size:11.5px;font-weight:600;padding:1px 6px;border-radius:999px;background:color-mix(in srgb,var(--fg) 10%,transparent);color:var(--fg)}
+.seg-tabs{display:inline-flex;padding:3px;border-radius:9px;background:color-mix(in srgb,var(--fg) 7%,transparent)}.seg-tabs button{all:unset;box-sizing:border-box;cursor:pointer;height:28px;padding:0 12px;border-radius:7px;font-size:12.5px;color:var(--muted)}.seg-tabs button.on{background:var(--panel);color:var(--fg);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.admin-search{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--page);flex:0 1 260px;min-width:160px}.admin-search:focus-within{border-color:var(--accent)}
+.admin-search ha-icon{--mdc-icon-size:16px;color:var(--muted);flex:none}.admin-search input{all:unset;flex:1;min-width:0;font-size:13px;color:var(--fg)}
+.admin-bulk{display:flex;gap:12px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--accent) 8%,transparent);font-size:12.5px}.admin-bulk .sp{flex:1}.admin-bulk button{height:30px;padding:0 12px;font-size:12.5px}
+.admin-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.admin-card .admin-table-wrap{border:0;border-radius:0;background:transparent}
+.admin-table{width:100%;border-collapse:collapse;font-size:13px}
+.admin-table th{text-align:left;color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;background:color-mix(in srgb,var(--fg) 3%,transparent)}
+.admin-table td{padding:12px;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);vertical-align:middle}
+.admin-table th:first-child,.admin-table td:first-child{padding-left:16px}.admin-table th:last-child,.admin-table td:last-child{padding-right:16px}
+.admin-table th.act{text-align:right}.admin-table th.pick,.admin-table td.pick{width:20px;padding-right:0}.admin-table td.num,.admin-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+.admin-table tr:last-child td{border-bottom:0}.admin-table tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}.admin-table tbody tr.sel{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.admin-table input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.admin-empty{padding:28px 16px !important;text-align:center;color:var(--muted)}
+.table-name{all:unset;cursor:pointer;display:grid;gap:2px;font-weight:600;color:var(--fg)}.table-name:hover{color:var(--accent)}.table-name:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.table-sub{display:block;margin-top:2px;font-weight:400;color:var(--muted);font-size:11.5px;line-height:1.35}
+.table-actions{display:flex;gap:6px;flex-wrap:nowrap;justify-content:flex-end}
+.table-action{all:unset;box-sizing:border-box;cursor:pointer;height:28px;display:inline-flex;align-items:center;padding:0 10px;border:1px solid var(--line);border-radius:7px;color:var(--fg);font-size:12px;white-space:nowrap}
+.table-action:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}.table-action:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.table-action.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}.table-action.danger:hover{background:color-mix(in srgb,var(--bad) 10%,transparent)}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:11.5px;background:color-mix(in srgb,var(--fg) 8%,transparent);color:var(--fg);white-space:nowrap}
+.pill.accent{background:color-mix(in srgb,var(--accent) 16%,transparent)}.pill.warn{background:color-mix(in srgb,var(--warn) 18%,transparent)}.pill.muted{color:var(--muted)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted)}.dot.ok{background:var(--ok)}
+dialog.admin-modal{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:0;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--fg);box-shadow:0 24px 64px rgba(0,0,0,.35);overflow:auto}
+dialog.admin-modal::backdrop{background:rgba(0,0,0,.5)}
+.admin-editor{display:grid;gap:16px;padding:20px}
+.admin-editor header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.admin-editor h3{margin:0;font-size:18px;letter-spacing:-.02em;line-height:1.25;overflow-wrap:anywhere}
+.admin-editor .x{all:unset;cursor:pointer;width:28px;height:28px;display:grid;place-items:center;border-radius:7px;color:var(--muted);font-size:20px;line-height:1;flex:none}.admin-editor .x:hover{background:color-mix(in srgb,var(--fg) 8%,transparent);color:var(--fg)}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-grid .wide,.form-grid p{grid-column:1/-1}
+.form-grid .field{display:grid;gap:6px;color:var(--muted);font-size:12px;min-width:0}.form-grid input:not([type=checkbox]),.form-grid select{width:100%;box-sizing:border-box;height:38px}
+.inline-action{all:unset;cursor:pointer;color:var(--accent);font-size:12px;font-weight:600;justify-self:start}.inline-action:hover{text-decoration:underline}
+.checks{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;max-height:180px;overflow:auto}.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--fg)}.check input{width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.confirm-text{margin:0;font-size:14px;line-height:1.5;color:var(--fg)}
+.form-error{margin:0;color:var(--bad);font-size:13px}.form-error:empty{display:none}
+.form-actions{display:flex;justify-content:flex-end;gap:8px}.form-actions button{height:38px;padding:0 16px;font-size:13px}
+@media(max-width:700px){.admin-head{align-items:flex-start}.admin-head .admin-actions{width:100%}.admin-control{flex:1}.admin-control select{flex:1;min-width:0;max-width:none}.admin-card-head{padding:12px}.admin-search{flex:1 1 100%}.admin-table th,.admin-table td{padding:10px 8px}.admin-table th:first-child,.admin-table td:first-child{padding-left:12px}.admin-table th:last-child,.admin-table td:last-child{padding-right:12px}.admin-table .hide-s{display:none}.table-actions{flex-wrap:wrap}.form-grid{grid-template-columns:minmax(0,1fr)}.flash{bottom:96px}}
 `;
+
 const SERIES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
 const tipData = (when, note, rows) => encodeURIComponent(JSON.stringify({ when, note, rows }));
 // Stacked bars for today by hour, or the last days. parts are { name, b } with b from bucketEnergy. Total is one bar; By device splits it.
@@ -3117,18 +3153,22 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       this._adminDevices = {};
       this._editor = null;
       this._selectedLocation = null;
-      this._search = '';
       this._role = 'all';
-      this._confirmDelete = null;
-      this._confirmClientDelete = false;
-      this._confirmLocationDelete = null;
       this._error = '';
       this._inbox = null;
       this._inboxFilter = 'unassigned';
-      this._inboxSearch = '';
+      this._inboxChosen = false;
       this._picked = new Set();
       this._deviceView = 'inbox';
-      this.shadowRoot.innerHTML = `<style>${BASE}${ADMIN_CSS}${ADMIN_TABLE_CSS}</style><div class="w admin"><div id="admin"></div><div class="flash" id="flash" role="status"></div></div>`;
+      // What is typed into each search box, by the box's id.
+      this._q = { clientSearch: '', locationSearch: '', peopleSearch: '', inboxSearch: '', wiringSearch: '' };
+      this.shadowRoot.innerHTML = `<style>${BASE}${ADMIN_CSS}${ADMIN_TABLE_CSS}</style><div class="w admin"><div id="admin"></div><dialog class="admin-modal" id="editorDlg" aria-label="Edit"><div id="editorBody"></div></dialog><div class="flash" id="flash" role="status"></div></div>`;
+      const dlg = this.shadowRoot.getElementById('editorDlg');
+      const dismiss = () => { this._editor = null; this.paint(true); };
+      // Esc and a click outside the box close the dialog without saving; Enter in a field saves.
+      dlg.addEventListener('cancel', (e) => { e.preventDefault(); dismiss(); });
+      dlg.addEventListener('mousedown', (e) => { if (e.target === dlg) dismiss(); });
+      dlg.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); this.saveEditor(); } });
       const w = this.shadowRoot.querySelector('.w');
       w.addEventListener('click', (e) => this.onClick(e));
       w.addEventListener('change', (e) => this.onChange(e));
@@ -3190,6 +3230,10 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         this._catalog = Array.isArray(catalog) ? catalog : [];
         this._summaries = summaries;
         this._inbox = Array.isArray(inbox) ? inbox : null;
+        // Open on the devices waiting to be assigned when there are some, otherwise on the assigned ones,
+        // so the list is never empty on arrival. Decided once: after that the tab only changes by hand,
+        // so assigning the last waiting device does not make the list jump somewhere else.
+        if (this._inbox && !this._inboxChosen) { this._inboxChosen = true; this._inboxFilter = this._inbox.some((d) => d.status === 'unassigned') ? 'unassigned' : 'assigned'; }
         this._picked = new Set([...this._picked].filter((id) => (this._inbox || []).some((d) => d.id === id)));
         // The wiring table and its Add dialog offer what the inbox recognised, from any integration,
         // on top of the older Zigbee2MQTT and Shelly rule.
@@ -3243,31 +3287,54 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       }));
       for (const item of TREE.virtual || []) rows.push({ ...item, virtual: true, name: item.name || item.id, place: TREE.placed[item.id] || null });
       const under = locationId ? placesUnder(locationId) : null;
-      return rows.filter((row) => !under || (row.place && under.has(row.place)));
+      // With the device list available, this table is about the selected client's own devices only;
+      // a device nobody has yet belongs under Devices, not here.
+      const own = (row) => !this.hasInbox() || !!row.place;
+      return rows.filter((row) => own(row) && (!under || (row.place && under.has(row.place))));
     }
+    // ---- shared pieces: every section is one card with its filters in the head and its table edge to edge ----
     table(headers, rows, id = '', empty = 'No rows yet.') {
-      return `<div class="admin-table-wrap"${id ? ` id="${id}"` : ''}><table class="admin-table"><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row) => `<tr>${row}</tr>`).join('') : `<tr><td class="admin-empty" colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
+      const th = (h) => (typeof h === 'string' ? `<th${h === 'Actions' ? ' class="act"' : ''}>${esc(h)}</th>` : `<th class="${h.cls || ''}">${h.html ?? esc(h.text || '')}</th>`);
+      return `<div class="admin-table-wrap"${id ? ` id="${id}"` : ''}><table class="admin-table"><thead><tr>${headers.map(th).join('')}</tr></thead><tbody>${rows.length ? rows.map((row) => (typeof row === 'string' ? `<tr>${row}</tr>` : `<tr class="${row.cls || ''}">${row.html}</tr>`)).join('') : `<tr><td class="admin-empty" colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
     }
     action(label, attrs = '', cls = 'table-action') { return `<button class="${cls}" ${attrs}>${esc(label)}</button>`; }
+    card(head, body, foot = '') { return `<section class="admin-card">${head ? `<div class="admin-card-head">${head}</div>` : ''}${body}${foot ? `<div class="admin-card-foot">${foot}</div>` : ''}</section>`; }
+    chips(attr, items, current) { return `<div class="chips">${items.map(([value, label, count]) => `<button class="chip${value === current ? ' on' : ''}" data-${attr}="${esc(value)}" aria-pressed="${value === current}">${esc(label)}${count == null ? '' : `<span>${count}</span>`}</button>`).join('')}</div>`; }
+    search(id, placeholder) { return `<label class="admin-search"><ha-icon icon="mdi:magnify"></ha-icon><input id="${id}" type="search" value="${esc(this._q[id] || '')}" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}"></label>`; }
+    // Does any of these texts contain what was typed into that search box?
+    matches(id, ...texts) { const q = (this._q[id] || '').trim().toLowerCase(); return !q || texts.some((x) => String(x || '').toLowerCase().includes(q)); }
+    sorted(list, ...keys) { const text = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), 'en', { numeric: true, sensitivity: 'base' }); return [...list].sort((a, b) => { for (const k of keys) { const c = text(k(a), k(b)); if (c) return c; } return 0; }); }
+    // Ask before anything that deletes or cuts someone off. run() does the work and ends by calling afterChange.
+    confirm(title, text, label, run) { this._editor = { kind: 'confirm', title, text, label, run }; this.paint(true); }
+
+    // ---- the dialog: every edit and every confirmation ----
     renderEditor() {
       const e = this._editor;
       if (!e) return '';
-      const locs = this.allPlaces(), locations = this.locations(), clients = PORTAL.clients || [], users = this._users || [];
-      let title = 'Edit', fields = '', save = 'Save', onSubmit = '';
-      if (e.kind === 'client') {
+      const locs = this.allPlaces(), locations = this.locations(), clients = PORTAL.clients || [];
+      const text = (id, label, value = '', more = '') => `<label class="field wide">${esc(label)}<input id="${id}" maxlength="80" value="${esc(value)}" autocomplete="off"${more}></label>`;
+      const pick = (id, label, options, wide = true) => `<label class="field${wide ? ' wide' : ''}">${esc(label)}<select id="${id}">${options}</select></label>`;
+      let title = 'Edit', fields = '', save = 'Save', danger = false;
+      if (e.kind === 'confirm') {
+        title = e.title; save = e.label; danger = true;
+        fields = `<p class="confirm-text">${esc(e.text)}</p>`;
+      } else if (e.kind === 'client') {
         title = e.id ? 'Edit client' : 'New client';
-        fields = `<label class="field wide">Client name<input id="editorName" maxlength="80" value="${esc(e.name || '')}" autocomplete="off"></label>`;
+        save = e.id ? 'Save' : 'Create client';
+        fields = `${text('editorName', 'Client name', e.name || '')}${e.id ? '' : `<p class="admin-note">${areasModel() ? 'A floor with this name is created in Home Assistant. Add its locations next.' : 'Add its locations next.'}</p>`}`;
       } else if (e.kind === 'location') {
-        title = e.id ? 'Edit location' : 'New location';
-        fields = `<label class="field wide">Location name<input id="editorName" maxlength="80" value="${esc(e.name || '')}" autocomplete="off"></label><p class="admin-note">${areasModel() ? `A location is an area in Home Assistant on the floor of ${esc(this.selectedClient().name)}. A device given that area in Home Assistant lands in this location.` : `A location is a 📍 label in Home Assistant. It is attached to ${esc(this.selectedClient().name)}.`}</p>`;
+        title = e.id ? 'Edit location' : `New location for ${this.selectedClient().name}`;
+        save = e.id ? 'Save' : 'Create location';
+        fields = `${text('editorName', 'Location name', e.name || '')}<p class="admin-note">${areasModel() ? 'A location is an area in Home Assistant on this client\'s floor. A device given that area lands in this location.' : `A location is a 📍 label in Home Assistant, attached to ${esc(this.selectedClient().name)}.`}</p>`;
       } else if (e.kind === 'location-move') {
-        title = `Move ${e.name}`;
-        fields = `<label class="field wide">New client<select id="editorClient">${clients.filter((x) => x.id !== portalClient).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></label>${areasModel() ? '<p class="admin-note">The location moves with its groups, devices, price, schedules and alert rules. Its people stay with the old client, so remove it from them first.</p>' : ''}`;
+        title = `Move ${e.name} to another client`; save = 'Move location';
+        fields = `${pick('editorClient', 'New client', clients.filter((x) => x.id !== portalClient).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join(''))}${areasModel() ? '<p class="admin-note">The location moves with its groups, devices, price, schedules and alert rules. Its people stay with the old client, so remove it from them first.</p>' : ''}`;
       } else if (e.kind === 'person') {
-        const current = e.user;
-        title = current ? 'Edit person' : 'New person';
-        const selected = current?.locations || (current?.location ? [current.location] : []);
-        fields = `<label class="field">Name<input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field">Username<input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label><label class="field">${current ? 'New password' : 'Password'}<input id="editorPassword" type="${e.shown ? 'text' : 'password'}" minlength="8" autocomplete="new-password" placeholder="${current ? 'Leave empty to keep the current one' : 'At least 8 characters'}"><button type="button" class="inline-action" data-generate-password="1">Generate one</button></label><label class="field">Role<select id="editorRole">${PORTAL.isRoot ? `<option value="user">User</option><option value="client_admin"${(e.role || current?.role) === 'client_admin' ? ' selected' : ''}>Client admin</option>` : '<option value="user">User</option>'}</select></label>${(e.role || current?.role) === 'client_admin' ? '<p class="admin-note">A client administrator sees every location of the client.</p>' : `<div class="field wide"><span>Locations</span><div class="checks" id="editorLocations">${locations.map((p) => `<label class="check"><input type="checkbox" data-loc-check="${esc(p.id)}"${(e.locations || selected).includes(p.id) ? ' checked' : ''}> ${esc(placeLabel(p.id))}</label>`).join('') || '<span class="muted">This client has no location yet.</span>'}</div></div>`}`;
+        const current = e.user, role = e.role || current?.role || 'user';
+        title = current ? `Edit ${current.name || current.username}` : `New person for ${this.selectedClient().name}`;
+        save = current ? 'Save' : 'Create person';
+        const selected = e.locations || current?.locations || (current?.location ? [current.location] : []);
+        fields = `<label class="field">Name<input id="editorName" maxlength="80" value="${esc(current?.name || '')}" autocomplete="off"></label><label class="field">Username<input id="editorUsername" maxlength="80" value="${esc(current?.username || '')}" autocomplete="off"${current ? ' disabled' : ''}></label><label class="field">${current ? 'New password' : 'Password'}<input id="editorPassword" type="${e.shown ? 'text' : 'password'}" minlength="8" autocomplete="new-password" placeholder="${current ? 'Leave empty to keep it' : 'At least 8 characters'}"><button type="button" class="inline-action" data-generate-password="1">Generate one</button></label><label class="field">Role<select id="editorRole"><option value="user">User</option>${PORTAL.isRoot ? `<option value="client_admin"${role === 'client_admin' ? ' selected' : ''}>Client admin</option>` : ''}</select></label>${role === 'client_admin' ? '<p class="admin-note">A client administrator sees every location of the client and manages its people, groups and settings.</p>' : `<div class="field wide"><span>Locations this person can see</span><div class="checks" id="editorLocations">${locations.map((p) => `<label class="check"><input type="checkbox" data-loc-check="${esc(p.id)}"${selected.includes(p.id) ? ' checked' : ''}> ${esc(placeLabel(p.id))}</label>`).join('') || '<span class="admin-note">This client has no location yet. Add one under Locations first.</span>'}</div></div>`}`;
       } else if (e.kind === 'assign') {
         const names = e.devices.map((id) => (this._inbox || []).find((d) => d.id === id)?.name || id);
         title = names.length === 1 ? `Assign ${names[0]}` : `Assign ${names.length} devices`;
@@ -3276,134 +3343,177 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         const location = sites.some((p) => p.id === e.location) ? e.location : sites[0]?.id || '';
         const under = (id) => places.filter((p) => p.parent === id).flatMap((p) => [p, ...under(p.id)]);
         const groups = location ? under(location) : [];
-        fields = `<label class="field">Client<select id="assignClient">${clients.map((x) => `<option value="${esc(x.id)}"${x.id === client ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label><label class="field">Location<select id="assignLocation">${sites.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label><label class="field">Group<select id="assignGroup"><option value="">No group</option>${groups.map((p) => `<option value="${esc(p.id)}"${p.id === e.group ? ' selected' : ''}>${esc(this.placeNameIn(places, p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}</select></label>${sites.length ? '' : '<p class="admin-note">This client has no location yet. Add one under Locations first.</p>'}${names.length > 1 ? `<p class="admin-note">${esc(names.join(', '))}</p>` : ''}`;
+        fields = `${pick('assignClient', 'Client', clients.map((x) => `<option value="${esc(x.id)}"${x.id === client ? ' selected' : ''}>${esc(x.name)}</option>`).join(''))}${pick('assignLocation', 'Location', sites.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join(''), false)}${pick('assignGroup', 'Group', `<option value="">No group</option>${groups.map((p) => `<option value="${esc(p.id)}"${p.id === e.group ? ' selected' : ''}>${esc(this.placeNameIn(places, p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}`, false)}${sites.length ? '' : '<p class="admin-note">This client has no location yet. Add one under Locations first.</p>'}${names.length > 1 ? `<p class="admin-note">${esc(names.join(', '))}</p>` : ''}`;
       } else if (e.kind === 'group') {
-        title = e.id ? 'Rename group' : 'New group';
+        title = e.id ? 'Rename group' : 'New group'; save = e.id ? 'Save' : 'Create group';
         const inside = [...placesUnder(e.location)].filter((id) => id !== e.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean);
-        fields = `<label class="field wide">Group name<input id="editorName" maxlength="80" value="${esc(e.name || '')}" autocomplete="off"></label>${e.id ? '' : `<label class="field wide">Inside<select id="editorPlace">${inside.map((p) => `<option value="${esc(p.id)}">${esc(placeLabel(p.id))}</option>`).join('')}</select></label>`}<p class="admin-note">A group only organises devices. It does not change who can see them.</p>`;
+        fields = `${text('editorName', 'Group name', e.name || '')}${e.id ? '' : pick('editorPlace', 'Inside', inside.map((p) => `<option value="${esc(p.id)}">${esc(placeLabel(p.id))}</option>`).join(''))}<p class="admin-note">A group only organises devices. It does not change who can see them.</p>`;
       } else if (e.kind === 'device') {
-        title = e.move ? 'Move device' : 'Add device to group or location';
-        const devices = this.deviceRows().filter((x) => !x.virtual);
-        fields = `<label class="field wide">Device<select id="editorDevice">${devices.map((x) => `<option value="${esc(x.id)}"${x.id === e.device ? ' selected' : ''}>${esc(x.name)}${x.place ? ` · ${esc(this.placeName(x.place))}` : ''}</option>`).join('')}</select></label><label class="field wide">Group or location<select id="editorPlace">${locs.map((p) => `<option value="${esc(p.id)}"${p.id === (e.place || this._selectedLocation) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join('')}</select></label>`;
+        // Only without the device list (an installation still on labels): pick a device and where it goes.
+        title = 'Add device to a location or group'; save = 'Add device';
+        const devices = this.sorted(this.deviceRows().filter((x) => !x.virtual), (x) => x.name);
+        fields = `${pick('editorDevice', 'Device', devices.map((x) => `<option value="${esc(x.id)}"${x.id === e.device ? ' selected' : ''}>${esc(x.name)}${x.place ? ` · ${esc(this.placeName(x.place))}` : ''}</option>`).join(''))}${pick('editorPlace', 'Location or group', locs.map((p) => `<option value="${esc(p.id)}"${p.id === (e.place || this._selectedLocation) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join(''))}`;
+      } else if (e.kind === 'device-edit') {
+        // Everything about one device in one place: its name, where it is, what feeds it, and whether it is the main device.
+        const d = this.deviceRows().find((x) => x.id === e.device) || { id: e.device, name: '' }, site = placePath(d.place)[0];
+        title = `Edit ${d.name}`;
+        const others = this.sorted(this.deviceRows().filter((x) => x.id !== d.id && !wouldLoop(d.id, x.id)), (x) => x.name);
+        fields = `${text('editorName', 'Name', d.name)}${pick('editorPlace', 'Location or group', `${d.place ? '' : '<option value="">Not placed</option>'}${locs.map((p) => `<option value="${esc(p.id)}"${p.id === d.place ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join('')}`)}${pick('editorParent', 'Supplied by', `<option value="">Nothing: it is at the top</option>${others.map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}`)}<label class="check wide"><input type="checkbox" id="editorMain"${site && TREE.mains?.[site.id] === d.id ? ' checked' : ''}${site ? '' : ' disabled'}> Main device of ${esc(site?.name || 'its location')}: Overview shows its figures</label>`;
       } else if (e.kind === 'virtual') {
-        title = 'New virtual device';
-        fields = `<label class="field wide">Name<input id="editorName" maxlength="80" autocomplete="off"></label><label class="field wide">Location<select id="editorPlace">${locs.map((p) => `<option value="${esc(p.id)}"${p.id === this._selectedLocation ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join('')}</select></label>`;
-      } else if (e.kind === 'device-name') {
-        title = 'Rename device';
-        fields = `<label class="field wide">Device name<input id="editorName" maxlength="80" value="${esc(e.name || '')}" autocomplete="off"></label>`;
+        title = 'New virtual device'; save = 'Create virtual device';
+        fields = `${text('editorName', 'Name')}${pick('editorPlace', 'Location', locs.map((p) => `<option value="${esc(p.id)}"${p.id === this._selectedLocation ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join(''))}<p class="admin-note">A virtual device adds up the devices placed under it. Choose those with Edit on each device.</p>`;
       }
-      return `<div class="admin-editor"><div class="admin-editor-head"><div><span class="admin-kicker">${e.kind === 'person' ? 'Access' : e.kind === 'device' || e.kind === 'virtual' || e.kind === 'device-name' ? 'Devices' : 'Client setup'}</span><h3>${esc(title)}</h3></div></div><div class="form-grid">${fields}</div><div class="form-actions"><button class="quiet" data-cancel-editor="1">Cancel</button><button class="primary" data-save-editor="1">${esc(save)}</button></div></div>`;
+      return `<div class="admin-editor"><header><h3>${esc(title)}</h3><button type="button" class="x" data-cancel-editor="1" aria-label="Close">×</button></header><div class="form-grid">${fields}</div><p class="form-error" id="editorError" role="alert"></p><div class="form-actions"><button type="button" class="quiet" data-cancel-editor="1">Cancel</button><button type="button" class="${danger ? 'danger' : 'primary'}" data-save-editor="1">${esc(save)}</button></div></div>`;
     }
+
+    // ---- sections ----
     renderClients() {
-      const rows = (this._summaries || []).map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}</button></td><td>${item.locations || 0}</td><td>${item.people || 0}</td><td>${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action(this._confirmClientDelete === item.id ? 'Confirm delete' : 'Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
-      return `${this.renderEditor()}${this.table(['Client', 'Locations', 'People', 'Devices', 'Actions'], rows, '', 'No clients yet. Start with New client.')}<p class="admin-note">Select a client to manage its locations and people.</p>`;
+      const list = this.sorted((this._summaries || []).filter((x) => this.matches('clientSearch', x.name)), (x) => x.name || x.id);
+      const rows = list.map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}</button></td><td class="num">${item.locations || 0}</td><td class="num">${item.people || 0}</td><td class="num">${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action('Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
+      const head = `${this.search('clientSearch', 'Search clients')}<span class="sp"></span><span class="toolbar-label">${list.length} ${list.length === 1 ? 'client' : 'clients'}</span>`;
+      const empty = this._q.clientSearch ? 'No client matches the search.' : 'No clients yet. Start with New client.';
+      return this.card(head, this.table(['Client', { text: 'Locations', cls: 'num' }, { text: 'People', cls: 'num' }, { text: 'Devices', cls: 'num' }, 'Actions'], rows, '', empty), 'Open a client to manage its locations, people and devices. Preview shows the portal as that client sees it.');
     }
     renderPeople() {
-      const locs = this.allPlaces(), users = (this._users || []).filter((u) => {
-        const q = this._search.trim().toLowerCase(), role = this._role;
-        return (!q || [u.name, u.username].some((x) => String(x || '').toLowerCase().includes(q))) && (role === 'all' || u.role === role);
-      });
-      const rows = users.map((u) => `<td><b>${esc(u.name || u.username || u.id)}</b><small class="table-sub">@${esc(u.username || 'no username')}</small></td><td>${esc(this.roleName(u.role))}</td><td>${esc(this.userLocations(u))}</td><td>${u.is_active ? 'Active' : 'Disabled'}</td><td><div class="table-actions">${this.action('Edit', `data-edit-person="${esc(u.id)}"`)}${PORTAL.isRoot || (u.role !== 'client_admin' && u.id !== this._hass.user?.id) ? `${this.action(u.is_active ? 'Disable' : 'Enable', `data-toggle="${esc(u.id)}"`)}${this.action(this._confirmDelete === u.id ? 'Confirm delete' : 'Delete', `data-delete="${esc(u.id)}"`, 'table-action danger')}` : ''}</div></td>`);
-      return `${this.renderEditor()}<div class="admin-toolbar compact" id="locationmap"><span class="toolbar-label">Client locations: <b>${esc(this.locations().map((x) => x.name).join(' · ') || 'None')}</b></span></div><div class="admin-toolbar compact"><label class="field">Search<input id="peopleSearch" type="search" value="${esc(this._search)}" placeholder="Name or username"></label><label class="field">Role<select id="peopleRole"><option value="all"${this._role === 'all' ? ' selected' : ''}>All roles</option><option value="user"${this._role === 'user' ? ' selected' : ''}>Users</option><option value="client_admin"${this._role === 'client_admin' ? ' selected' : ''}>Client admins</option></select></label><span class="toolbar-count">${users.length} ${users.length === 1 ? 'person' : 'people'}</span></div>${this.table(['Person', 'Role', 'Locations', 'Status', 'Actions'], rows, 'people')}`;
+      const all = this._users || [], n = (role) => all.filter((u) => u.role === role).length;
+      // Client administrators first, then by name.
+      const users = this.sorted(all.filter((u) => (this._role === 'all' || u.role === this._role) && this.matches('peopleSearch', u.name, u.username, this.userLocations(u))), (u) => (u.role === 'client_admin' ? 0 : 1), (u) => u.name || u.username);
+      const mine = this._hass.user?.id;
+      const rows = users.map((u) => `<td><b>${esc(u.name || u.username || u.id)}</b>${u.id === mine ? ' <span class="pill muted">you</span>' : ''}<span class="table-sub">@${esc(u.username || 'no username')}</span></td><td><span class="pill${u.role === 'client_admin' ? ' accent' : ''}">${esc(this.roleName(u.role))}</span></td><td class="hide-s">${u.role === 'client_admin' ? '<span class="table-sub">All locations</span>' : esc(this.userLocations(u))}</td><td><span class="pill${u.is_active ? '' : ' warn'}"><span class="dot${u.is_active ? ' ok' : ''}"></span>${u.is_active ? 'Active' : 'Disabled'}</span></td><td><div class="table-actions">${this.action('Edit', `data-edit-person="${esc(u.id)}"`)}${PORTAL.isRoot || (u.role !== 'client_admin' && u.id !== mine) ? `${this.action(u.is_active ? 'Disable' : 'Enable', `data-toggle="${esc(u.id)}"`)}${this.action('Delete', `data-delete="${esc(u.id)}"`, 'table-action danger')}` : ''}</div></td>`);
+      const head = `${this.chips('people-role', [['all', 'Everyone', all.length], ['client_admin', 'Client admins', n('client_admin')], ['user', 'Users', n('user')]], this._role)}<span class="sp"></span>${this.search('peopleSearch', 'Search by name, username or location')}`;
+      const empty = this._q.peopleSearch || this._role !== 'all' ? 'Nobody matches.' : 'No people yet. Add the first one with New person.';
+      const foot = `<span id="locationmap">Locations of ${esc(this.selectedClient().name)}: <b>${esc(this.locations().map((x) => x.name).join(' · ') || 'none yet')}</b></span><span>${users.length} of ${all.length} shown</span>`;
+      return this.card(head, this.table(['Person', 'Role', { text: 'Locations', cls: 'hide-s' }, 'Status', 'Actions'], rows, 'people', empty), foot);
     }
+    // The wiring table: where each device of the selected client sits, what feeds it, and which one is the main device.
     deviceRowsHtml(locationId = null) {
-      const rows = this.deviceRows(locationId).map((d) => {
-        const root = placePath(d.place)[0]?.id || null;
-        const main = root ? TREE.mains?.[root] === d.id : false;
-        const parts = placeParts(d.place);
-        const parentOptions = this.deviceRows().filter((x) => x.id !== d.id && !wouldLoop(d.id, x.id)).map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
-        return `<td><b>${esc(d.name)}</b><small class="table-sub">${esc(d.model || (d.virtual ? 'Virtual device' : ''))}</small></td><td>${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}</td><td>${esc(parts.group || '—')}</td><td><select class="table-select" data-device-parent="${esc(d.id)}"><option value="">Top level</option>${parentOptions}</select></td><td>${main ? 'Main' : '—'}</td><td><div class="table-actions">${this.action('Move', `data-move-device="${esc(d.id)}"`)}${this.action('Set main', `data-set-main="${esc(d.id)}"`)}${this.action('Rename', `data-edit-device="${esc(d.id)}" data-name="${esc(d.name)}"`)}${d.virtual ? this.action(this._confirmVirtualDelete === d.id ? 'Confirm delete' : 'Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : areasModel() && PORTAL.isRoot && d.place ? this.action(this._confirmUnassign === d.id ? 'Confirm remove' : 'Remove from client', `data-unassign-device="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
+      const list = this.sorted(this.deviceRows(locationId).filter((d) => this.matches('wiringSearch', d.name, d.model, placeLabel(d.place))), (d) => placeParts(d.place).location, (d) => placeParts(d.place).group, (d) => d.name);
+      const names = Object.fromEntries(this.deviceRows().map((d) => [d.id, d.name]));
+      const rows = list.map((d) => {
+        const root = placePath(d.place)[0]?.id || null, main = root ? TREE.mains?.[root] === d.id : false, parts = placeParts(d.place), parent = TREE.parents?.[d.id];
+        return `<td><b>${esc(d.name)}</b>${main ? ' <span class="pill accent">Main</span>' : ''}<span class="table-sub">${esc(d.virtual ? 'Virtual device' : d.model || '')}</span></td><td class="hide-s">${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}<span class="table-sub">${esc(parts.group || '')}</span></td><td class="hide-s">${esc(names[parent] || '—')}</td><td><div class="table-actions">${this.action('Edit', `data-edit-device="${esc(d.id)}"`)}${d.virtual ? this.action('Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
       });
-      const empty = locationId ? (this.hasInbox() ? 'No devices in this location yet. Assign one under Devices, All devices, or with Add device above.' : 'No devices in this location yet. Use Add device above.') : 'No devices yet.';
-      return this.table(['Device', 'Type', 'Location', 'Group', 'Parent', 'Main', 'Actions'], rows, '', empty);
+      const empty = this._q.wiringSearch ? 'No device matches the search.' : locationId ? (this.hasInbox() ? 'No devices in this location yet. Assign one under Devices.' : 'No devices in this location yet. Use Add device.') : 'No devices yet.';
+      return this.table(['Device', { text: 'Type', cls: 'hide-s' }, 'Place', { text: 'Supplied by', cls: 'hide-s' }, 'Actions'], rows, '', empty);
     }
     renderLocations() {
       const selected = this._selectedLocation && this.locations().find((p) => p.id === this._selectedLocation);
-      const rows = this.locations().map((l) => {
+      const list = this.locations().filter((l) => this.matches('locationSearch', l.name));
+      const rows = list.map((l) => {
         const groups = placesUnder(l.id).size - 1, devices = this.deviceRows(l.id).length, main = TREE.mains?.[l.id] ? (this.deviceRows().find((d) => d.id === TREE.mains[l.id])?.name || TREE.mains[l.id]) : '—';
-        return `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td>${groups}</td><td>${devices}</td><td>${esc(main)}</td><td><div class="table-actions">${this.action('Devices', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action(this._confirmLocationDelete === l.id ? 'Confirm delete' : 'Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>`;
+        return { cls: selected?.id === l.id ? 'sel' : '', html: `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td class="num">${groups}</td><td class="num">${devices}</td><td class="hide-s">${esc(main)}</td><td><div class="table-actions">${this.action('Manage', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action('Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>` };
       });
-const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filter((id) => id !== selected.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean).map((g) => `<td><b>${esc(g.name)}</b></td><td>${esc(placeLabel(g.parent))}</td><td>${this.deviceRows().filter((d) => d.place === g.id).length}</td><td><div class="table-actions">${this.action('Rename', `data-edit-group="${esc(g.id)}" data-name="${esc(g.name)}"`)}${this.action(this._confirmGroupDelete === g.id ? 'Confirm delete' : 'Delete', `data-delete-group="${esc(g.id)}"`, 'table-action danger')}</div></td>`) : [];
-      const groups = selected && areasModel() ? `<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Groups</span><h2>${esc(selected.name)}</h2><p>Groups organise this location's devices. Deleting one moves its devices up a level.</p></div><div class="admin-actions">${this.action('New group', `data-new-group="${esc(selected.id)}"`)}</div></div>${this.table(['Group', 'Inside', 'Devices', 'Actions'], groupRows, '', 'No groups yet. Groups are optional; add one with New group.')}</section>` : '';
-      const devices = selected ? `${groups}<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Devices</span><h2>${esc(selected.name)}</h2><p>Assign devices here, set the main device and maintain the parent tree.</p></div><div class="admin-actions">${this.action('Add device', `data-add-device="${esc(selected.id)}"`)}${this.action('Virtual device', 'data-new-virtual="1"')}</div></div>${this.deviceRowsHtml(selected.id)}</section>` : '<p class="admin-note">Select a location to manage its devices.</p>';
-      return `${this.renderEditor()}${this.table(['Location', 'Groups', 'Devices', 'Main device', 'Actions'], rows, '', 'This client has no location yet. Add one with New location; devices and people are assigned to locations.')}${devices}`;
+      const head = `${this.search('locationSearch', 'Search locations')}<span class="sp"></span><span class="toolbar-label">${list.length} ${list.length === 1 ? 'location' : 'locations'}</span>`;
+      const empty = this._q.locationSearch ? 'No location matches the search.' : 'This client has no location yet. Add one with New location; devices and people are assigned to locations.';
+      const main = this.card(head, this.table(['Location', { text: 'Groups', cls: 'num' }, { text: 'Devices', cls: 'num' }, { text: 'Main device', cls: 'hide-s' }, 'Actions'], rows, '', empty), selected ? '' : (list.length ? 'Choose Manage on a location to see its groups and devices.' : ''));
+      if (!selected) return main;
+      const groupList = this.sorted([...placesUnder(selected.id)].filter((id) => id !== selected.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean), (g) => placeLabel(g.id));
+      const groupRows = groupList.map((g) => `<td><b>${esc(g.name)}</b></td><td>${esc(placeLabel(g.parent))}</td><td class="num">${this.deviceRows().filter((d) => d.place === g.id).length}</td><td><div class="table-actions">${this.action('Rename', `data-edit-group="${esc(g.id)}" data-name="${esc(g.name)}"`)}${this.action('Delete', `data-delete-group="${esc(g.id)}"`, 'table-action danger')}</div></td>`);
+      const groups = areasModel() ? this.card(`<h2>Groups in ${esc(selected.name)}<small>Groups organise this location's devices. They do not change who can see them.</small></h2><span class="sp"></span><button class="quiet" data-new-group="${esc(selected.id)}">New group</button>`, this.table(['Group', 'Inside', { text: 'Devices', cls: 'num' }, 'Actions'], groupRows, '', 'No groups yet. Groups are optional.')) : '';
+      const devices = this.card(`<h2>Devices in ${esc(selected.name)}<small>Edit a device to rename it, move it, or set what feeds it.</small></h2><span class="sp"></span>${this.search('wiringSearch', 'Search devices')}${this.hasInbox() ? '' : `<button class="quiet" data-add-device="${esc(selected.id)}">Add device</button>`}<button class="quiet" data-new-virtual="1">Virtual device</button>`, this.deviceRowsHtml(selected.id));
+      return `${main}${groups}${devices}`;
     }
     hasInbox() { return PORTAL.isRoot && areasModel() && Array.isArray(this._inbox); }
     // Places of any client, not only the active one, for the assign dialog.
     clientPlaces(client) { return (this._summaries || []).find((x) => x.id === client)?.places || []; }
     placeNameIn(places, id) { const out = []; const seen = new Set(); let p = places.find((x) => x.id === id); while (p && !seen.has(p.id)) { seen.add(p.id); out.unshift(p.name); p = places.find((x) => x.id === p.parent); } return out.join(' › '); }
     inboxRows() {
-      const q = this._inboxSearch.trim().toLowerCase(), f = this._inboxFilter;
-      return (this._inbox || []).filter((d) => (f === 'all' || d.status === f) && (!q || [d.name, d.model, (d.integrations || []).join(' '), d.client_name, d.location_name, d.group_name].some((x) => String(x || '').toLowerCase().includes(q))));
+      const f = this._inboxFilter, order = { unassigned: 0, assigned: 1, ignored: 2, other: 3 };
+      const list = (this._inbox || []).filter((d) => (f === 'all' || d.status === f) && this.matches('inboxSearch', d.name, d.model, (d.integrations || []).join(' '), d.client_name, d.location_name, d.group_name));
+      return this.sorted(list, (d) => order[d.status], (d) => d.client_name, (d) => d.location_name, (d) => d.name);
     }
+    viewTabs() { return this.hasInbox() ? `<div class="seg-tabs" role="tablist">${[['inbox', 'All devices'], ['wiring', 'Wiring']].map(([v, l]) => `<button class="${this._deviceView === v ? 'on' : ''}" data-device-view="${v}" role="tab" aria-selected="${this._deviceView === v}">${l}</button>`).join('')}</div>` : ''; }
+    // Every device Home Assistant knows, whichever client it belongs to.
     renderInbox() {
       const all = this._inbox || [], count = (st) => all.filter((d) => d.status === st).length, rows = this.inboxRows();
       const kind = { meter: 'Energy meter', relay: 'Relay', socket: 'Socket', light: 'Light', ac: 'AC' };
-      const filters = [['unassigned', 'Not assigned yet'], ['assigned', 'Assigned'], ['ignored', 'Ignored'], ['other', 'Not portal devices'], ['all', 'All devices']];
-      const where = (d) => d.status === 'assigned' ? `<b>${esc(d.client_name)}</b><small class="table-sub">${esc([d.location_name, d.group_name].filter(Boolean).join(' › '))}</small>`
-        : d.status === 'ignored' ? 'Ignored' : d.status === 'unassigned' ? '<b>Not assigned yet</b>' : '—';
+      const pickable = rows.filter((d) => d.status !== 'ignored'), allPicked = pickable.length > 0 && pickable.every((d) => this._picked.has(d.id));
+      const place = (d) => d.status === 'assigned' ? `${esc(d.location_name || '')}<span class="table-sub">${esc(d.group_name || '')}</span>`
+        : d.status === 'unassigned' ? '<span class="pill warn">Not assigned yet</span>' : d.status === 'ignored' ? '<span class="pill muted">Ignored</span>' : '<span class="table-sub">Not a portal device</span>';
       const html = rows.map((d) => {
-        const acts = d.status === 'assigned'
-          ? `${this.action('Move', `data-inbox-assign="${esc(d.id)}"`)}${this.action(this._confirmUnassign === d.id ? 'Confirm remove' : 'Remove from client', `data-inbox-remove="${esc(d.id)}"`, 'table-action danger')}`
+        const acts = d.status === 'assigned' ? `${this.action('Move', `data-inbox-assign="${esc(d.id)}"`)}${this.action('Remove', `data-inbox-remove="${esc(d.id)}"`, 'table-action danger')}`
           : d.status === 'ignored' ? this.action('Stop ignoring', `data-inbox-unignore="${esc(d.id)}"`)
             : `${this.action('Assign', `data-inbox-assign="${esc(d.id)}"`)}${this.action('Ignore', `data-inbox-ignore="${esc(d.id)}"`)}`;
-        return `<td><input type="checkbox" data-pick="${esc(d.id)}" aria-label="Select ${esc(d.name)}"${this._picked.has(d.id) ? ' checked' : ''}${d.status === 'ignored' ? ' disabled' : ''}></td><td><b>${esc(d.name)}</b><small class="table-sub">${esc([d.model, (d.integrations || []).join(', ')].filter(Boolean).join(' · '))}</small></td><td>${esc(kind[d.kind] || '—')}<small class="table-sub">${esc(d.why || '')}</small></td><td>${where(d)}</td><td><div class="table-actions">${acts}</div></td>`;
+        return { cls: this._picked.has(d.id) ? 'sel' : '', html: `<td class="pick"><input type="checkbox" data-pick="${esc(d.id)}" aria-label="Select ${esc(d.name)}"${this._picked.has(d.id) ? ' checked' : ''}${d.status === 'ignored' ? ' disabled' : ''}></td><td><b>${esc(d.name)}</b><span class="table-sub">${esc([d.model, (d.integrations || []).join(', ')].filter(Boolean).join(' · '))}</span></td><td class="hide-s">${esc(kind[d.kind] || '—')}<span class="table-sub">${esc(d.why || '')}</span></td><td>${esc(d.client_name || '—')}</td><td>${place(d)}</td><td><div class="table-actions">${acts}</div></td>` };
       });
-      const empty = { unassigned: 'Every recognised device is assigned to a client. New devices appear here as soon as Home Assistant knows them.', ignored: 'No ignored devices.', assigned: 'No device is assigned to a client yet.', other: 'Nothing here.', all: 'Home Assistant has no devices.' }[this._inboxFilter];
-      const table = html.length ? this.table(['', 'Device', 'Looks like', 'Client and place', 'Actions'], html, 'inbox') : `<p class="admin-note" id="inbox">${esc(this._inboxSearch ? 'No device matches the search.' : empty)}</p>`;
+      const filters = [['unassigned', 'Not assigned yet', count('unassigned')], ['assigned', 'Assigned', count('assigned')], ['ignored', 'Ignored', count('ignored')], ['other', 'Not portal devices', count('other')], ['all', 'All', all.length]];
+      const empty = this._q.inboxSearch ? 'No device matches the search.' : { unassigned: 'Nothing is waiting. Every device the portal recognises is assigned or ignored; a new one shows up here by itself.', assigned: 'No device is assigned to a client yet. Look under "Not assigned yet".', ignored: 'No ignored devices.', other: 'Nothing here.', all: 'Home Assistant has no devices.' }[this._inboxFilter];
       const picked = this._picked.size;
-      return `${this.renderEditor()}<div class="admin-toolbar compact">${this.action('All devices', 'data-device-view="inbox"', 'table-action on')}${this.action('Wiring and main devices', 'data-device-view="wiring"')}<span class="sp"></span><span class="toolbar-count">${count('unassigned')} not assigned · ${count('assigned')} assigned · ${count('ignored')} ignored</span></div><div class="admin-toolbar compact"><label class="field">Search<input id="inboxSearch" type="search" value="${esc(this._inboxSearch)}" placeholder="Name, model, integration, client"></label><label class="field">Show<select id="inboxFilter">${filters.map(([v, l]) => `<option value="${v}"${this._inboxFilter === v ? ' selected' : ''}>${esc(l)} (${v === 'all' ? all.length : count(v)})</option>`).join('')}</select></label><span class="sp"></span>${picked ? this.action(`Assign ${picked} selected`, 'data-assign-picked="1"', 'primary') : ''}</div>${table}<p class="admin-note">A device that gets a location's area in Home Assistant itself shows here as assigned, with no group.</p>`;
+      const head = `${this.viewTabs()}${this.chips('inbox-filter', filters, this._inboxFilter)}<span class="sp"></span>${this.search('inboxSearch', 'Search by name, model, integration or client')}`;
+      const bulk = picked ? `<div class="admin-bulk"><b>${picked} selected</b><span class="sp"></span><button class="quiet" data-clear-picked="1">Clear</button><button class="primary" data-assign-picked="1">Assign to a client…</button></div>` : '';
+      const table = this.table([{ cls: 'pick', html: `<input type="checkbox" data-pick-all="1" aria-label="Select all shown"${allPicked ? ' checked' : ''}${pickable.length ? '' : ' disabled'}>` }, 'Device', { text: 'Looks like', cls: 'hide-s' }, 'Client', 'Location and group', 'Actions'], html, 'inbox', empty);
+      return this.card(head, `${bulk}${table}`, `<span>A new device appears under "Not assigned yet" as soon as Home Assistant knows it. Giving it a location's area in Home Assistant assigns it too.</span><span>${rows.length} of ${all.length} shown</span>`);
     }
     renderDevices() {
       if (this.hasInbox() && this._deviceView !== 'wiring') return this.renderInbox();
-      const views = this.hasInbox() ? `<div class="admin-toolbar compact">${this.action('All devices', 'data-device-view="inbox"')}${this.action('Wiring and main devices', 'data-device-view="wiring"', 'table-action on')}</div>` : '';
-      return `${this.renderEditor()}${views}<div class="admin-toolbar compact"><span class="toolbar-count">${this.deviceRows().length} devices in ${esc(this.selectedClient().name)}</span><span class="sp"></span>${this.action('Add device', `data-add-device="${esc(this._selectedLocation || '')}"`)}${this.action('Virtual device', 'data-new-virtual="1"')}</div>${this.deviceRowsHtml(this._selectedLocation)}`;
+      const head = `${this.viewTabs()}<span class="toolbar-label">${this.deviceRows().length} devices in <b>${esc(this.selectedClient().name)}</b></span><span class="sp"></span>${this.search('wiringSearch', 'Search devices')}${this.hasInbox() ? '' : `<button class="quiet" data-add-device="${esc(this._selectedLocation || '')}">Add device</button>`}<button class="quiet" data-new-virtual="1">Virtual device</button>`;
+      return this.card(head, this.deviceRowsHtml(null), 'Edit a device to rename it, move it, set what feeds it, or make it the main device of its location.');
     }
     shell(title, lede, actions, body) {
-      const clients = PORTAL.clients || [];
-      const picker = PORTAL.isRoot && clients.length
-        ? `<label class="admin-control"><span>Active client</span><select id="clientSwitch">${clients.map((x) => `<option value="${esc(x.id)}"${x.id === portalClient ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`
+      const clients = PORTAL.clients || [], setup = this._scope === 'setup';
+      // The client selector only matters where the page is about one client.
+      const perClient = this._section !== 'clients' && !(this._section === 'devices' && this.hasInbox() && this._deviceView !== 'wiring');
+      const picker = !perClient ? '' : PORTAL.isRoot && clients.length
+        ? `<label class="admin-control"><span>Client</span><select id="clientSwitch">${this.sorted(clients, (x) => x.name).map((x) => `<option value="${esc(x.id)}"${x.id === portalClient ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`
         : `<span class="toolbar-label">Client · <b>${esc(this.selectedClient().name)}</b></span>`;
-      const setup = this._scope === 'setup';
       // An installation that has not moved to "floor = client, area = location" yet is offered the switch here.
       const m = this._migration, changes = m?.changes || {};
-      const upgrade = !setup && PORTAL.isRoot && PORTAL.model === 'labels' ? `<div class="admin-toolbar"><div><b>This installation still places devices by label.</b><p class="admin-note">The current model makes each client a floor and each location an area in Home Assistant, so a device gets its client and location from its area. ${m ? (m.report.blockers.length ? `It cannot switch yet: ${esc(m.report.blockers.join('; '))}` : `Switching would create ${changes.create_floor} floor(s) and ${changes.create_area} area(s) and move ${changes.set_device_area} device(s). Nothing is deleted. Take a backup first.`) : ''}</p></div><span class="sp"></span>${m && !m.report.blockers.length ? this.action(this._confirmMigration ? 'Confirm switch' : 'Switch now', 'data-migration-apply="1"', 'primary') : this.action('See what would change', 'data-migration-plan="1"')}</div>` : '';
-      body = `${upgrade}${body}`;
-      return `<div class="admin-head"><div><span class="admin-kicker">Optim Energy / Administration</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${actions || ''}</div></div><div class="admin-toolbar">${picker}<span class="sp"></span>${setup ? '' : this.action('Refresh', 'data-refresh="1"')}</div>${body}`;
+      const upgrade = !setup && PORTAL.isRoot && PORTAL.model === 'labels' ? `<div class="admin-banner"><div><b>This installation still places devices by label.</b><p class="admin-note">The current model makes each client a floor and each location an area in Home Assistant, so a device gets its client and location from its area. ${m ? (m.report.blockers.length ? `It cannot switch yet: ${esc(m.report.blockers.join('; '))}` : `Switching would create ${changes.create_floor} floor(s) and ${changes.create_area} area(s) and move ${changes.set_device_area} device(s). Nothing is deleted.`) : ''}</p></div>${m && !m.report.blockers.length ? '<button class="primary" data-migration-apply="1">Switch now</button>' : '<button class="quiet" data-migration-plan="1">See what would change</button>'}</div>` : '';
+      return `<div class="admin-head"><div><span class="admin-kicker">Optim Energy / Administration</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${picker}${setup ? '' : '<button class="quiet" data-refresh="1">Refresh</button>'}${actions || ''}</div></div>${upgrade}${body}`;
     }
     paint(force = false) {
       const r = this.shadowRoot;
       if (!r) return;
-      if (!force && ['INPUT', 'SELECT', 'TEXTAREA'].includes(r.activeElement?.tagName)) return;
+      // A routine redraw waits while something is being typed. A dialog that has just been saved or
+      // dismissed is not "being typed in" any more, even though its field still has the focus.
+      const active = r.activeElement, closing = !this._editor && r.getElementById('editorDlg')?.contains(active);
+      if (!force && !closing && ['INPUT', 'SELECT', 'TEXTAREA'].includes(active?.tagName)) return;
       if (this._selectedLocation && !this.locations().some((x) => x.id === this._selectedLocation)) this._selectedLocation = null;
+      const inbox = this._section === 'devices' && this.hasInbox() && this._deviceView !== 'wiring';
       const copy = {
-        clients: ['Clients', 'All client workspaces, with their locations, people and devices in one table.'],
-        locations: ['Locations', 'Locations for the selected client, with their groups, devices and main device.'],
-        people: ['People', 'Users and client administrators, with their roles and assigned locations.'],
-        devices: ['Devices', 'Home Assistant devices and virtual devices for the selected client.'],
-        overview: ['Clients', 'All client workspaces in one table.'],
+        clients: ['Clients', 'Every client, with its locations, people and devices.'],
+        locations: ['Locations', `The locations of ${this.selectedClient().name}, with their groups and devices.`],
+        people: ['People', `Who can sign in for ${this.selectedClient().name}, and what they can see.`],
+        devices: inbox ? ['Devices', 'Every device in Home Assistant: which client has it, and what is still waiting to be assigned.'] : ['Devices', `How the devices of ${this.selectedClient().name} are placed and wired.`],
       }[this._section] || ['Clients', ''];
       const body = this._section === 'people' ? this.renderPeople() : this._section === 'locations' ? this.renderLocations() : this._section === 'devices' ? this.renderDevices() : this.renderClients();
-      const actions = this._section === 'people' ? `<button class="primary" data-new-person="1">New person</button>`
-        : this._section === 'locations' ? `<button class="primary" data-new-location="1">New location</button>`
-          : this._section === 'devices' ? '' : `<button class="primary" data-new-client="1">New client</button>`;
-      // A refresh that lands while a form is open must not wipe what was typed into it.
-      const typed = this._editor && this._paintedEditor === this._editor
-        ? [...r.querySelectorAll('.admin-editor input[id], .admin-editor select[id]')].map((x) => [x.id, x.multiple ? [...x.selectedOptions].map((o) => o.value) : x.value])
-        : [];
+      const actions = this._section === 'people' ? '<button class="primary" data-new-person="1">New person</button>'
+        : this._section === 'locations' ? '<button class="primary" data-new-location="1">New location</button>'
+          : this._section === 'devices' ? '' : '<button class="primary" data-new-client="1">New client</button>';
       r.getElementById('admin').innerHTML = this.shell(copy[0], copy[1], actions, body);
+      this.paintDialog();
+      r.getElementById('flash').textContent = '';
+    }
+    // The dialog lives outside the repainted area, so the page can refresh behind it without touching it.
+    // It is drawn when it opens, and again only when a choice inside it changes what it offers (the role,
+    // the client being assigned to). What was typed so far is carried across that redraw.
+    paintDialog() {
+      const r = this.shadowRoot, dlg = r.getElementById('editorDlg'), body = r.getElementById('editorBody');
+      if (!this._editor) { this._paintedEditor = null; body.innerHTML = ''; if (dlg.open) dlg.close(); return; }
+      if (this._paintedEditor === this._editor && !this._editorStale) return;
+      this._editorStale = false;
+      const typed = this._paintedEditor === this._editor
+        ? [...body.querySelectorAll('input[id], select[id]')].map((x) => [x.id, x.type === 'checkbox' ? x.checked : x.value])
+        : [];
+      const error = this._paintedEditor === this._editor ? r.getElementById('editorError')?.textContent : '';
+      body.innerHTML = this.renderEditor();
       for (const [id, value] of typed) {
         const el = r.getElementById(id);
         if (!el) continue;
-        if (Array.isArray(value)) [...el.options].forEach((o) => { o.selected = value.includes(o.value); });
+        if (typeof value === 'boolean') el.checked = value;
         else if (el.tagName !== 'SELECT' || [...el.options].some((o) => o.value === value)) el.value = value;
       }
+      if (error) r.getElementById('editorError').textContent = error;
+      const fresh = this._paintedEditor !== this._editor;
       this._paintedEditor = this._editor;
-      r.getElementById('flash').textContent = '';
+      if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
+      if (fresh) (this._editor.kind === 'confirm' ? body.querySelector('.form-actions [data-cancel-editor]') : body.querySelector('input:not([disabled]):not([type=checkbox]), select') || body.querySelector('[data-save-editor]'))?.focus();
     }
     flash(text, bad = false) {
       const el = this.shadowRoot?.getElementById('flash');
       if (!el) return;
+      const inDialog = bad && this._editor ? this.shadowRoot.getElementById('editorError') : null;
+      if (inDialog) { inDialog.textContent = text; return; }
       el.textContent = text;
       el.classList.toggle('bad', bad);
       clearTimeout(this._msgT);
@@ -3414,15 +3524,17 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
       whoLoad = null;
       treeLoad = null;
       await ensureTree(this._hass);
-      await this.refresh();
-      this.flash(message);
+      await this.load();
+      // Forced: the change has to show, and the dialog has to close, whatever still has the focus.
+      this.paint(true);
+      if (message) this.flash(message);
     }
     async saveAdminTree(next) {
       await this._hass.callWS({ type: 'optim_energy/tree/save', tree: next, ...(PORTAL.isRoot && portalClient ? { client: portalClient } : {}) });
       setTree(next);
       modelFrom = null;
       syncModel(this._hass);
-      await this.afterChange('Device tree saved.');
+      await this.afterChange('Saved.');
     }
     async selectClient(id) {
       if (!PORTAL.isRoot || !id || id === portalClient) return;
@@ -3450,20 +3562,23 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
       const e = this._editor, r = this.shadowRoot;
       if (!e) return;
       const value = (id) => r.getElementById(id)?.value.trim() || '';
+      const need = (ok, message) => { if (!ok) this.flash(message, true); return !ok; };
       try {
-        if (e.kind === 'client') {
+        if (e.kind === 'confirm') {
+          await e.run();
+        } else if (e.kind === 'client') {
           const name = value('editorName');
-          if (!name) return;
+          if (need(name, 'Enter a client name.')) return;
           if (e.id) await this._hass.callWS({ type: 'optim_energy/client/update', client: e.id, name });
           else {
             const made = await this._hass.callWS({ type: 'optim_energy/client/create', name });
             portalClient = made.id;
             try { localStorage.setItem(CLIENT_KEY, made.id); } catch (x) { /* private window */ }
           }
-          await this.afterChange(e.id ? 'Client updated.' : 'Client created.');
+          await this.afterChange(e.id ? 'Client updated.' : 'Client created. Add its locations next.');
         } else if (e.kind === 'location') {
           const name = value('editorName');
-          if (!name) return;
+          if (need(name, 'Enter a location name.')) return;
           if (areasModel()) {
             await this._hass.callWS({ type: 'optim_energy/location/save', client: portalClient, name, ...(e.id ? { location: e.id } : {}) });
           } else if (e.id) {
@@ -3476,7 +3591,7 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
           await this.afterChange(e.id ? 'Location updated.' : 'Location created.');
         } else if (e.kind === 'assign') {
           const client = value('assignClient'), location = value('assignLocation'), place = value('assignGroup') || location;
-          if (!client || !location) { this.flash('Choose a client and a location.', true); return; }
+          if (need(client && location, 'Choose a client and a location.')) return;
           const failed = [];
           for (const id of e.devices) {
             try { await this._hass.callWS({ type: 'optim_energy/device/assign', client, device_id: id, place }); } catch (x) { failed.push(x?.message || 'Could not assign a device.'); }
@@ -3486,50 +3601,73 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
           if (failed.length) this.flash(`${failed.length} of ${e.devices.length} not assigned. ${failed[0]}`, true);
         } else if (e.kind === 'group') {
           const name = value('editorName');
-          if (!name) return;
+          if (need(name, 'Enter a group name.')) return;
           await this._hass.callWS({ type: 'optim_energy/group/save', client: portalClient, name, ...(e.id ? { group: e.id } : { parent: value('editorPlace') || e.location }) });
           await this.afterChange(e.id ? 'Group renamed.' : 'Group created.');
         } else if (e.kind === 'location-move') {
           const target = value('editorClient');
+          if (need(target, 'Choose the client to move it to.')) return;
           if (areasModel()) {
-            if (!target) return;
             await this._hass.callWS({ type: 'optim_energy/location/move', client: portalClient, location: e.id, target });
             await this.afterChange(`Location moved to ${(PORTAL.clients || []).find((x) => x.id === target)?.name || target}.`);
             return;
           }
           const source = this.selectedClient(), label = e.id.startsWith('loc:') ? e.id.slice(4) : null;
-          if (!target || !label) return;
+          if (!label) return;
           const targetItem = (PORTAL.clients || []).find((x) => x.id === target) || {};
           await this.setClientLabels(portalClient, (source.labels || []).filter((x) => x !== label));
           await this.setClientLabels(target, [...new Set([...(targetItem.labels || []), label])]);
           await this.afterChange(`Location moved to ${targetItem.name || target}.`);
         } else if (e.kind === 'person') {
           const role = value('editorRole') || 'user';
-          const selectedLocations = [...r.querySelectorAll('[data-loc-check]:checked')].map((x) => x.dataset.locCheck);
-          const locs = role === 'client_admin' ? [] : selectedLocations;
+          const locs = role === 'client_admin' ? [] : [...r.querySelectorAll('[data-loc-check]:checked')].map((x) => x.dataset.locCheck);
           const password = r.getElementById('editorPassword')?.value || '';
+          if (need(value('editorName'), 'Enter the person\'s name.')) return;
           if (!e.user) {
-            await this._hass.callWS({ type: 'optim_energy/user/create', client: portalClient, name: value('editorName'), username: value('editorUsername'), password: r.getElementById('editorPassword')?.value || '', role, locations: locs });
+            if (need(value('editorUsername'), 'Enter a username.') || need(password.length >= 8, 'The password needs at least 8 characters.')) return;
+            await this._hass.callWS({ type: 'optim_energy/user/create', client: portalClient, name: value('editorName'), username: value('editorUsername'), password, role, locations: locs });
           } else {
             await this._hass.callWS({ type: 'optim_energy/user/update', user_id: e.user.id, name: value('editorName'), role, locations: locs, ...(password ? { password } : {}) });
           }
           await this.afterChange(e.user ? 'Person updated.' : 'Person created.');
         } else if (e.kind === 'device') {
           const device = value('editorDevice'), place = value('editorPlace');
-          if (device && place) await this.assignDevice(device, place);
+          if (need(device && place, 'Choose a device and where it goes.')) return;
+          await this.assignDevice(device, place);
+        } else if (e.kind === 'device-edit') {
+          await this.saveDevice(e.device, value('editorName'), value('editorPlace'), value('editorParent') || null, !!r.getElementById('editorMain')?.checked);
         } else if (e.kind === 'virtual') {
           const name = value('editorName'), place = value('editorPlace');
-          if (!name || !place) return;
+          if (need(name && place, 'Enter a name and choose a location.')) return;
           const id = `virt:${Date.now().toString(36)}`;
           await this.saveAdminTree(treeWithDevicePlaced(treeWithVirtual(TREE, name, id), id, place));
-          this._editor = null;
-        } else if (e.kind === 'device-name') {
-          const name = value('editorName');
-          if (!name || !e.device) return;
-          await this._hass.callWS({ type: 'config/device_registry/update', device_id: e.device, name_by_user: name });
-          await this.afterChange('Device renamed.');
         }
       } catch (x) { this.flash(x?.message || 'Could not save the change.', true); }
+    }
+    // One save for the device dialog: name, place, what feeds it, and whether it is the main device.
+    async saveDevice(id, name, place, parent, main) {
+      const d = this.deviceRows().find((x) => x.id === id);
+      if (!d) return;
+      if (!name) { this.flash('Enter a name.', true); return; }
+      if (parent && wouldLoop(id, parent)) { this.flash('That would make the device feed itself.', true); return; }
+      const named = name !== d.name, moved = !!place && place !== d.place;
+      if (!d.virtual && named) {
+        await this._hass.callWS(PORTAL.isRoot
+          ? { type: 'config/device_registry/update', device_id: id, name_by_user: name }
+          : { ...clientArg(), type: 'optim_energy/device/update', device_id: id, name });
+      }
+      // A real device changes place through the checked command (its area is its location). That reloads the tree.
+      if (!d.virtual && moved) {
+        await this.assignDevice(id, place);
+      }
+      let next = TREE;
+      if (d.virtual && named) next = { ...next, virtual: next.virtual.map((v) => (v.id === id ? { ...v, name } : v)) };
+      if (d.virtual && moved) next = treeWithDevicePlaced(next, id, place);
+      if ((next.parents?.[id] || null) !== parent) next = treeWithParent(next, id, parent);
+      const site = placePath(place || d.place)[0]?.id, wasMain = !!site && next.mains?.[site] === id;
+      if (site && main !== wasMain) next = treeWithLocationMain(next, site, main ? id : null);
+      if (next !== TREE) await this.saveAdminTree(next);
+      else await this.afterChange('Device saved.');
     }
     async assignDevice(deviceId, place) {
       const devices = PORTAL.isRoot && Object.keys(this._adminDevices || {}).length ? this._adminDevices : (HASS?.devices || {});
@@ -3545,164 +3683,149 @@ const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filte
         const labels = [...new Set([...(device.labels || []).filter((x) => !NATIVE?.locIds?.has(x)), place.slice(4)])];
         await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: null, labels });
       }
-      await this.afterChange('Device location updated.');
+      await this.afterChange('Device moved.');
     }
     async onClick(e) {
       const q = (a) => e.target.closest(a);
+      const open = (editor) => { this._editor = editor; this.paint(true); };
+      const call = (msg) => this._hass.callWS(msg);
       let b;
-      if (q('[data-refresh]')) { await this.refresh(); return; }
+      if (q('[data-refresh]')) { await this.refresh(); this.flash('Up to date.'); return; }
       if ((b = q('[data-go]'))) { navigate(b.dataset.go); return; }
-      if ((b = q('[data-open-client]'))) { await this.selectClient(b.dataset.openClient); this._section = 'locations'; navigate('/energy-admin/locations'); return; }
-      if ((b = q('[data-preview-client]'))) { await this.openClientView(b.dataset.previewClient); return; }
-      if ((b = q('[data-preview-location]'))) { await this.openClientView(portalClient, b.dataset.previewLocation); return; }
-      if ((b = q('[data-new-client]'))) { this._editor = { kind: 'client' }; this.paint(true); return; }
-      if ((b = q('[data-edit-client]'))) { this._editor = { kind: 'client', id: b.dataset.editClient, name: b.dataset.name }; this.paint(true); return; }
-      if ((b = q('[data-new-location]'))) { this._editor = { kind: 'location' }; this.paint(true); return; }
-      if ((b = q('[data-edit-location]'))) { this._editor = { kind: 'location', id: b.dataset.editLocation, name: b.dataset.name }; this.paint(true); return; }
-      if ((b = q('[data-move-location]'))) { this._editor = { kind: 'location-move', id: b.dataset.moveLocation, name: b.dataset.name }; this.paint(true); return; }
-      if ((b = q('[data-select-location]'))) { this._selectedLocation = b.dataset.selectLocation; this.paint(true); return; }
-      if ((b = q('[data-new-person]'))) { this._editor = { kind: 'person' }; this.paint(true); return; }
-      if ((b = q('[data-edit-person]'))) { this._editor = { kind: 'person', user: (this._users || []).find((x) => x.id === b.dataset.editPerson) }; this.paint(true); return; }
+      if (q('[data-cancel-editor]')) { this._editor = null; this.paint(true); return; }
+      if (q('[data-save-editor]')) { await this.saveEditor(); return; }
       if (q('[data-generate-password]')) {
         // Shown in clear so it can be copied and handed to the person; it is never stored by the portal.
         const box = this.shadowRoot.getElementById('editorPassword'), bytes = crypto.getRandomValues(new Uint8Array(14)), alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
         if (box && this._editor) { this._editor.shown = true; box.type = 'text'; box.value = [...bytes].map((x) => alphabet[x % alphabet.length]).join(''); box.select(); }
         return;
       }
-      if (q('[data-migration-plan]')) {
-        try { this._migration = await this._hass.callWS({ type: 'optim_energy/migration/plan' }); this.paint(true); } catch (x) { this.flash(x?.message || 'Could not read the plan.', true); }
+      // Clients
+      if ((b = q('[data-open-client]'))) { await this.selectClient(b.dataset.openClient); this._section = 'locations'; navigate('/energy-admin/locations'); return; }
+      if ((b = q('[data-preview-client]'))) { await this.openClientView(b.dataset.previewClient); return; }
+      if (q('[data-new-client]')) { open({ kind: 'client' }); return; }
+      if ((b = q('[data-edit-client]'))) { open({ kind: 'client', id: b.dataset.editClient, name: b.dataset.name }); return; }
+      if ((b = q('[data-delete-client]'))) {
+        const id = b.dataset.deleteClient, item = (this._summaries || []).find((x) => x.id === id) || {}, name = item.name || id;
+        this.confirm(`Delete ${name}?`, `${name} is removed with its ${item.people || 0} ${item.people === 1 ? 'person' : 'people'}, who can no longer sign in. Its devices stay in Home Assistant. This cannot be undone.`, 'Delete client', async () => {
+          await call({ type: 'optim_energy/client/delete', client: id, delete_users: true });
+          portalClient = null; whoLoad = null; treeLoad = null;
+          resetPortalTree();
+          await this.afterChange(`${name} deleted.`);
+        });
         return;
       }
-      if (q('[data-migration-apply]')) {
-        if (!this._confirmMigration) { this._confirmMigration = true; this.paint(true); return; }
-        this._confirmMigration = false;
-        try { await this._hass.callWS({ type: 'optim_energy/migration/apply' }); this._migration = null; await this.afterChange('Switched. Locations are areas now.'); } catch (x) { this.flash(x?.message || 'Could not switch.', true); }
+      // Locations and groups
+      if ((b = q('[data-preview-location]'))) { await this.openClientView(portalClient, b.dataset.previewLocation); return; }
+      if (q('[data-new-location]')) { open({ kind: 'location' }); return; }
+      if ((b = q('[data-edit-location]'))) { open({ kind: 'location', id: b.dataset.editLocation, name: b.dataset.name }); return; }
+      if ((b = q('[data-move-location]'))) { open({ kind: 'location-move', id: b.dataset.moveLocation, name: b.dataset.name }); return; }
+      if ((b = q('[data-select-location]'))) { this._selectedLocation = b.dataset.selectLocation; this._q.wiringSearch = ''; this.paint(true); return; }
+      if ((b = q('[data-delete-location]'))) {
+        const id = b.dataset.deleteLocation, name = placeById(id)?.name || id;
+        this.confirm(`Delete ${name}?`, areasModel() ? `The location, its groups and its area in Home Assistant are removed. It has to be empty: no devices and no people assigned. This cannot be undone.` : 'The location and its label in Home Assistant are removed. This cannot be undone.', 'Delete location', async () => {
+          if (areasModel()) await call({ type: 'optim_energy/location/delete', client: portalClient, location: id });
+          else if (id.startsWith('loc:')) {
+            const label = id.slice(4);
+            await this.setClientLabels(portalClient, (this.selectedClient().labels || []).filter((x) => x !== label));
+            await call({ type: 'config/label_registry/delete', label_id: label });
+          } else { await this.saveAdminTree({ ...TREE, places: TREE.places.filter((p) => p.id !== id) }); return; }
+          await this.afterChange('Location deleted.');
+        });
         return;
       }
-      if ((b = q('[data-device-view]'))) { this._deviceView = b.dataset.deviceView; this._editor = null; this.paint(true); return; }
-      if ((b = q('[data-inbox-assign]'))) { const d = (this._inbox || []).find((x) => x.id === b.dataset.inboxAssign); if (d) { this._editor = { kind: 'assign', devices: [d.id], client: d.client || portalClient, location: d.location, group: d.group || '' }; this.paint(true); } return; }
-      if (q('[data-assign-picked]')) { if (this._picked.size) { this._editor = { kind: 'assign', devices: [...this._picked], client: portalClient, location: null, group: '' }; this.paint(true); } return; }
+      if ((b = q('[data-new-group]'))) { open({ kind: 'group', location: b.dataset.newGroup }); return; }
+      if ((b = q('[data-edit-group]'))) { open({ kind: 'group', id: b.dataset.editGroup, name: b.dataset.name, location: this._selectedLocation }); return; }
+      if ((b = q('[data-delete-group]'))) {
+        const id = b.dataset.deleteGroup, name = placeById(id)?.name || 'this group';
+        this.confirm(`Delete ${name}?`, 'Its devices and any groups inside it move up one level. Nobody loses access.', 'Delete group', async () => {
+          await call({ type: 'optim_energy/group/delete', client: portalClient, group: id });
+          await this.afterChange('Group deleted.');
+        });
+        return;
+      }
+      // People
+      if (q('[data-new-person]')) { open({ kind: 'person' }); return; }
+      if ((b = q('[data-edit-person]'))) { open({ kind: 'person', user: (this._users || []).find((x) => x.id === b.dataset.editPerson) }); return; }
+      if ((b = q('[data-people-role]'))) { this._role = b.dataset.peopleRole; this.paint(true); return; }
+      if ((b = q('[data-toggle]'))) {
+        const u = this._users?.find((x) => x.id === b.dataset.toggle); if (!u) return;
+        const set = async (active) => { await call({ type: 'optim_energy/user/update', user_id: u.id, is_active: active }); await this.afterChange(`${u.name} ${active ? 'enabled' : 'disabled'}.`); };
+        if (!u.is_active) { try { await set(true); } catch (x) { this.flash(x?.message || 'Could not update the person.', true); } return; }
+        this.confirm(`Disable ${u.name}?`, `${u.name} is signed out everywhere and cannot sign in until enabled again. Nothing is deleted.`, 'Disable', () => set(false));
+        return;
+      }
+      if ((b = q('[data-delete]'))) {
+        const u = this._users?.find((x) => x.id === b.dataset.delete); if (!u) return;
+        this.confirm(`Delete ${u.name}?`, `The login of ${u.name} is removed. This cannot be undone; to stop access for a while, disable the person instead.`, 'Delete person', async () => {
+          await call({ type: 'optim_energy/user/delete', user_id: u.id });
+          await this.afterChange('Person deleted.');
+        });
+        return;
+      }
+      // Devices
+      if ((b = q('[data-device-view]'))) { this._deviceView = b.dataset.deviceView; this.paint(true); return; }
+      if ((b = q('[data-inbox-filter]'))) { this._inboxFilter = b.dataset.inboxFilter; this._inboxChosen = true; this.paint(true); return; }
+      if (q('[data-clear-picked]')) { this._picked = new Set(); this.paint(true); return; }
+      if ((b = q('[data-inbox-assign]'))) { const d = (this._inbox || []).find((x) => x.id === b.dataset.inboxAssign); if (d) open({ kind: 'assign', devices: [d.id], client: d.client || portalClient, location: d.location, group: d.group || '' }); return; }
+      if (q('[data-assign-picked]')) { if (this._picked.size) open({ kind: 'assign', devices: [...this._picked], client: portalClient, location: null, group: '' }); return; }
       if ((b = q('[data-inbox-ignore], [data-inbox-unignore]'))) {
         const ignored = 'inboxIgnore' in b.dataset, id = b.dataset.inboxIgnore || b.dataset.inboxUnignore;
-        try { await this._hass.callWS({ type: 'optim_energy/device/ignore', device_id: id, ignored }); await this.afterChange(ignored ? 'Device ignored. It stays out of the list of devices to assign.' : 'Device is no longer ignored.'); } catch (x) { this.flash(x?.message || 'Could not change the device.', true); }
+        try { await call({ type: 'optim_energy/device/ignore', device_id: id, ignored }); await this.afterChange(ignored ? 'Device ignored.' : 'Device is no longer ignored.'); } catch (x) { this.flash(x?.message || 'Could not change the device.', true); }
         return;
       }
       if ((b = q('[data-inbox-remove]'))) {
         const d = (this._inbox || []).find((x) => x.id === b.dataset.inboxRemove);
         if (!d) return;
-        if (this._confirmUnassign !== d.id) { this._confirmUnassign = d.id; this.paint(true); return; }
-        this._confirmUnassign = null;
-        try { await this._hass.callWS({ type: 'optim_energy/device/assign', client: d.client, device_id: d.id }); await this.afterChange('Device removed from the client.'); } catch (x) { this.paint(true); this.flash(x?.message || 'Could not remove the device.', true); }
+        this.confirm(`Remove ${d.name} from ${d.client_name}?`, `${d.client_name} stops seeing this device at once. The device stays in Home Assistant and goes back to "Not assigned yet".`, 'Remove from client', async () => {
+          await call({ type: 'optim_energy/device/assign', client: d.client, device_id: d.id });
+          await this.afterChange('Device removed from the client.');
+        });
         return;
       }
-      if ((b = q('[data-new-group]'))) { this._editor = { kind: 'group', location: b.dataset.newGroup }; this.paint(true); return; }
-      if ((b = q('[data-edit-group]'))) { this._editor = { kind: 'group', id: b.dataset.editGroup, name: b.dataset.name, location: this._selectedLocation }; this.paint(true); return; }
-      if ((b = q('[data-delete-group]'))) {
-        const id = b.dataset.deleteGroup;
-        if (this._confirmGroupDelete !== id) { this._confirmGroupDelete = id; this.paint(true); return; }
-        this._confirmGroupDelete = null;
-        try { await this._hass.callWS({ type: 'optim_energy/group/delete', client: portalClient, group: id }); await this.afterChange('Group deleted.'); } catch (x) { this.paint(true); this.flash(x?.message || 'Could not delete the group.', true); }
-        return;
-      }
-      if ((b = q('[data-unassign-device]'))) {
-        const id = b.dataset.unassignDevice;
-        if (this._confirmUnassign !== id) { this._confirmUnassign = id; this.paint(true); return; }
-        this._confirmUnassign = null;
-        try { await this._hass.callWS({ type: 'optim_energy/device/assign', client: portalClient, device_id: id }); await this.afterChange('Device removed from the client.'); } catch (x) { this.paint(true); this.flash(x?.message || 'Could not remove the device.', true); }
-        return;
-      }
-      if ((b = q('[data-add-device]'))) { this._editor = { kind: 'device', place: b.dataset.addDevice || this._selectedLocation }; this.paint(true); return; }
-      if ((b = q('[data-move-device]'))) { const d = this.deviceRows().find((x) => x.id === b.dataset.moveDevice); this._editor = { kind: 'device', move: true, device: d?.id, place: d?.place }; this.paint(true); return; }
-      if ((b = q('[data-new-virtual]'))) { this._editor = { kind: 'virtual' }; this.paint(true); return; }
-      if ((b = q('[data-edit-device]'))) { this._editor = { kind: 'device-name', device: b.dataset.editDevice, name: b.dataset.name }; this.paint(true); return; }
-      if (q('[data-cancel-editor]')) { this._editor = null; this.paint(true); return; }
-      if (q('[data-save-editor]')) { await this.saveEditor(); return; }
-      if ((b = q('[data-toggle]'))) {
-        const u = this._users?.find((x) => x.id === b.dataset.toggle); if (!u) return;
-        try { await this._hass.callWS({ type: 'optim_energy/user/update', user_id: u.id, is_active: !u.is_active }); await this.refresh(); this.flash(`${u.name} ${u.is_active ? 'disabled' : 'enabled'}.`); } catch (x) { this.flash(x?.message || 'Could not update the person.', true); }
-        return;
-      }
-      if ((b = q('[data-delete]'))) {
-        const u = this._users?.find((x) => x.id === b.dataset.delete); if (!u) return;
-        if (this._confirmDelete !== u.id) { this._confirmDelete = u.id; this.paint(true); return; }
-        try { await this._hass.callWS({ type: 'optim_energy/user/delete', user_id: u.id }); this._confirmDelete = null; await this.refresh(); this.flash('Person deleted.'); } catch (x) { this.flash(x?.message || 'Could not delete the person.', true); }
-        return;
-      }
-      if ((b = q('[data-delete-client]'))) {
-        if (this._confirmClientDelete !== b.dataset.deleteClient) { this._confirmClientDelete = b.dataset.deleteClient; this.paint(true); return; }
-        const id = b.dataset.deleteClient, name = (PORTAL.clients || []).find((x) => x.id === id)?.name || id;
-        try {
-          await this._hass.callWS({ type: 'optim_energy/client/delete', client: id, delete_users: true });
-          this._confirmClientDelete = false;
-          portalClient = null;
-          whoLoad = null; treeLoad = null;
-          resetPortalTree();
-          await ensureTree(this._hass);
-          await this.refresh();
-          this.flash(`${name} deleted.`);
-        } catch (x) { this._confirmClientDelete = false; this.paint(true); this.flash(x?.message || 'Could not delete the client.', true); }
-        return;
-      }
-      if ((b = q('[data-delete-location]'))) {
-        const id = b.dataset.deleteLocation;
-        if (this._confirmLocationDelete !== id) { this._confirmLocationDelete = id; this.paint(true); return; }
-        try {
-          if (areasModel()) {
-            await this._hass.callWS({ type: 'optim_energy/location/delete', client: portalClient, location: id });
-          } else if (id.startsWith('loc:')) {
-            const label = id.slice(4);
-            await this.setClientLabels(portalClient, (this.selectedClient().labels || []).filter((x) => x !== label));
-            await this._hass.callWS({ type: 'config/label_registry/delete', label_id: label });
-          } else {
-            await this.saveAdminTree({ ...TREE, places: TREE.places.filter((p) => p.id !== id) });
-          }
-          this._confirmLocationDelete = null; await this.afterChange('Location deleted.');
-        } catch (x) { this._confirmLocationDelete = null; this.paint(true); this.flash(x?.message || 'Could not delete the location.', true); }
-        return;
-      }
-      if ((b = q('[data-set-main]'))) {
-        const d = this.deviceRows().find((x) => x.id === b.dataset.setMain), place = d?.place;
-        if (!place) { this.flash('Assign the device to a location first.', true); return; }
-        const location = placePath(place)[0]?.id;
-        if (location) await this.saveAdminTree(treeWithLocationMain(TREE, location, d.id));
-        return;
-      }
+      if ((b = q('[data-add-device]'))) { open({ kind: 'device', place: b.dataset.addDevice || this._selectedLocation }); return; }
+      if (q('[data-new-virtual]')) { open({ kind: 'virtual' }); return; }
+      if ((b = q('[data-edit-device]'))) { open({ kind: 'device-edit', device: b.dataset.editDevice }); return; }
       if ((b = q('[data-delete-virtual]'))) {
-        if (this._confirmVirtualDelete !== b.dataset.deleteVirtual) { this._confirmVirtualDelete = b.dataset.deleteVirtual; this.paint(true); return; }
-        this._confirmVirtualDelete = null;
-        await this.saveAdminTree(treeWithoutVirtual(TREE, b.dataset.deleteVirtual)); return;
+        const id = b.dataset.deleteVirtual, name = (TREE.virtual || []).find((v) => v.id === id)?.name || 'this virtual device';
+        this.confirm(`Delete ${name}?`, 'The virtual device and its sums are removed. The devices under it stay where they are.', 'Delete virtual device', () => this.saveAdminTree(treeWithoutVirtual(TREE, id)));
+        return;
+      }
+      // Installations still on labels
+      if (q('[data-migration-plan]')) {
+        try { this._migration = await call({ type: 'optim_energy/migration/plan' }); this.paint(true); } catch (x) { this.flash(x?.message || 'Could not read the plan.', true); }
+        return;
+      }
+      if (q('[data-migration-apply]')) {
+        this.confirm('Switch to floors and areas?', 'Each client becomes a floor and each location an area in Home Assistant, and devices are moved into those areas. Nothing is deleted, but take a backup first: undoing it means restoring that backup.', 'Switch now', async () => {
+          await call({ type: 'optim_energy/migration/apply' });
+          this._migration = null;
+          await this.afterChange('Switched. Locations are areas now.');
+        });
       }
     }
     async onChange(e) {
       const t = e.target;
       if (t.id === 'clientSwitch') { await this.selectClient(t.value); return; }
-      if (t.id === 'peopleRole') { this._role = t.value; this.paint(true); return; }
-      if (t.id === 'peopleSearch') { this._search = t.value; this.paint(true); return; }
       // A client administrator has no locations of its own, so the list goes when that role is picked.
-      if (t.id === 'editorRole' && this._editor?.kind === 'person') { this._editor.role = t.value; this._editor.locations = [...this.shadowRoot.querySelectorAll('[data-loc-check]:checked')].map((x) => x.dataset.locCheck); this.paint(true); return; }
-      if (t.id === 'inboxFilter') { this._inboxFilter = t.value; this.paint(true); return; }
+      if (t.id === 'editorRole' && this._editor?.kind === 'person') { this._editor.role = t.value; this._editorStale = true; this.paintDialog(); return; }
+      if (t.dataset.locCheck && this._editor?.kind === 'person') { this._editor.locations = [...this.shadowRoot.querySelectorAll('[data-loc-check]:checked')].map((x) => x.dataset.locCheck); return; }
       if (t.dataset.pick) { if (t.checked) this._picked.add(t.dataset.pick); else this._picked.delete(t.dataset.pick); this.paint(true); return; }
+      if (t.dataset.pickAll) { const shown = this.inboxRows().filter((d) => d.status !== 'ignored').map((d) => d.id); this._picked = t.checked ? new Set([...this._picked, ...shown]) : new Set([...this._picked].filter((id) => !shown.includes(id))); this.paint(true); return; }
       // The assign dialog narrows as you go: the client decides the locations, the location its groups.
-      if (t.id === 'assignClient' && this._editor) { Object.assign(this._editor, { client: t.value, location: null, group: '' }); this.paint(true); return; }
-      if (t.id === 'assignLocation' && this._editor) { Object.assign(this._editor, { location: t.value, group: '' }); this.paint(true); return; }
-      if (t.id === 'assignGroup' && this._editor) { this._editor.group = t.value; return; }
-      if (t.dataset.deviceParent) {
-        const parent = t.value || null;
-        if (parent && wouldLoop(t.dataset.deviceParent, parent)) { this.flash('That parent would create a loop.', true); this.paint(true); return; }
-        await this.saveAdminTree(treeWithParent(TREE, t.dataset.deviceParent, parent));
-      }
+      if (t.id === 'assignClient' && this._editor) { Object.assign(this._editor, { client: t.value, location: null, group: '' }); this._editorStale = true; this.paintDialog(); return; }
+      if (t.id === 'assignLocation' && this._editor) { Object.assign(this._editor, { location: t.value, group: '' }); this._editorStale = true; this.paintDialog(); return; }
+      if (t.id === 'assignGroup' && this._editor) { this._editor.group = t.value; }
     }
     onInput(e) {
       const id = e.target.id;
-      if (id !== 'peopleSearch' && id !== 'inboxSearch') return;
-      if (id === 'peopleSearch') this._search = e.target.value; else this._inboxSearch = e.target.value;
+      if (!(id in this._q)) return;
+      this._q[id] = e.target.value;
       const at = e.target.selectionStart;
       this.paint(true);
       // Repainting replaces the box being typed in; put the cursor back where it was.
       const box = this.shadowRoot.getElementById(id);
       if (box) { box.focus(); try { box.setSelectionRange(at, at); } catch (x) { /* search boxes may refuse */ } }
-      const input = this.shadowRoot.getElementById('peopleSearch');
-      if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
     }
   }
 

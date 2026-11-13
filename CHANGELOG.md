@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+Administration, reworked.
+
+- Every page is one card: filters and search in its header, the table filling it, a short hint in its footer. The stacked toolbars are gone and the client selector sits in the page header, shown only where a page is about one client.
+- Every edit opens in a dialog, and every delete, disable, removal and the model switch asks in a dialog first. Nothing is edited inside a table row any more. A dialog closes with Esc, a click outside it or Cancel; Enter in a field saves; an error is shown inside the dialog.
+- Devices opens on the devices waiting to be assigned, or on the assigned ones when nothing is waiting, so it is never empty on arrival. Status is a row of tabs with counts. There is a select-all box and a bar for assigning several devices at once.
+- The wiring table has one Edit per device, with its name, place, what feeds it and whether it is the main device, in place of three buttons and an inline list. It only lists the selected client's own devices.
+- People has role tabs with counts, searches name, username and location, lists client administrators first, and shows role and status as badges.
+- Clients, Locations, People, Devices and the wiring table each have a search box and are sorted by name.
+- A background refresh no longer redraws an open dialog, and a saved dialog always closes.
+
 ## 0.10.0
 
 - Lights and switches with no metering now appear in the client portal: in Devices and Controls, and they can be scheduled. They have no power or energy to show and are left out of reports. Before, a device needed both a power and an energy sensor to appear at all.

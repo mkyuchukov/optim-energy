@@ -8,7 +8,7 @@ const browser = await chromium.launch({ headless: true });
 const pageErrors = [];
 
 async function openPage(session, path) {
-  const context = await browser.newContext({ locale: 'en-GB' });
+  const context = await browser.newContext({ locale: 'en-GB', viewport: { width: 1280, height: 900 } });
   await context.addInitScript(({ hassUrl, tokens }) => {
     const stored = {
       ...tokens,
@@ -27,6 +27,13 @@ async function openPage(session, path) {
   });
   await page.goto(`${base}${path}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   return { context, page };
+}
+
+const shots = process.env.SHOTS;
+async function shot(page, name) {
+  if (!shots) return;
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${shots}/${state.model || 'labels'}-${name}.png` });
 }
 
 async function waitCard(page, selector) {
@@ -143,6 +150,8 @@ try {
   assert.ok(createdId, 'created user has no id');
 
   await createdRow.locator('[data-toggle]').click();
+  await adminCard.locator('dialog[open] .confirm-text').waitFor({ timeout: 10000 });
+  await adminCard.locator('dialog[open] [data-save-editor]').click();
   createdRow = adminCard.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
   await createdRow.getByText('Disabled', { exact: true }).waitFor({ timeout: 20000 });
   await createdRow.locator('[data-toggle]').click();
@@ -193,7 +202,8 @@ try {
   await peopleAgain.getByRole('heading', { level: 1, name: 'People' }).waitFor({ timeout: 30000 });
   let deleteRow = peopleAgain.locator('#people tbody tr').filter({ hasText: 'Browser Created User' });
   await deleteRow.locator('[data-delete]').click();
-  await deleteRow.locator('[data-delete]').click();
+  assert.match(await peopleAgain.locator('dialog[open] .confirm-text').innerText(), /cannot be undone/, 'deleting a person does not ask first');
+  await peopleAgain.locator('dialog[open] [data-save-editor]').click();
   await deleteRow.waitFor({ state: 'detached', timeout: 20000 });
 
   if (state.model === 'areas') {
@@ -249,7 +259,7 @@ try {
     await userRow.locator('[data-edit-person]').click();
     await people.locator('[data-generate-password]').click();
     assert.ok((await people.locator('#editorPassword').inputValue()).length >= 12, 'no password was generated');
-    await people.locator('[data-cancel-editor]').click();
+    await people.locator('dialog[open] .form-actions [data-cancel-editor]').click();
     const adminRow = people.locator('#people tbody tr').filter({ hasText: 'Browser Admin A' });
     assert.equal(await adminRow.locator('[data-delete], [data-toggle]').count(), 0, 'buttons the server refuses are still offered');
 
@@ -277,8 +287,11 @@ try {
     await groupRow.waitFor({ timeout: 20000 }).catch(async (error) => {
       throw new Error(`group row did not appear; page says: ${(await locs.evaluate((el) => [...(el.shadowRoot || el).children].filter((x) => x.tagName !== 'STYLE').map((x) => x.textContent).join(' ')).catch(() => '')).replace(/\s+/g, ' ').slice(0, 1500)}`, { cause: error });
     });
+    await shot(root, 'locations-managed');
     await groupRow.locator('[data-delete-group]').dispatchEvent('click');
-    await locs.locator('tbody tr').filter({ hasText: 'Browser Group' }).first().locator('[data-delete-group]').dispatchEvent('click');
+    await locs.locator('dialog[open] .confirm-text').waitFor({ timeout: 10000 });
+    await shot(root, 'confirm-dialog');
+    await locs.locator('dialog[open] [data-save-editor]').dispatchEvent('click');
     await locs.locator('tbody tr').filter({ hasText: 'Browser Group' }).first().waitFor({ state: 'detached', timeout: 20000 });
 
     await locs.locator('[data-new-location]').dispatchEvent('click');
@@ -300,7 +313,7 @@ try {
     await locs.locator('#clientSwitch').selectOption(state.client_b);
     await annex().waitFor({ timeout: 20000 });
     await annex().locator('[data-delete-location]').dispatchEvent('click');
-    await annex().locator('[data-delete-location]').dispatchEvent('click');
+    await locs.locator('dialog[open] [data-save-editor]').dispatchEvent('click');
     await annex().waitFor({ state: 'detached', timeout: 20000 });
     await locs.locator('#clientSwitch').selectOption(state.client_a);
     await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().waitFor({ timeout: 20000 });
@@ -311,7 +324,7 @@ try {
     await devs.getByRole('heading', { level: 1, name: 'Devices' }).waitFor({ timeout: 30000 });
     await root.locator('dialog-http-pending-config').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
     const spare = () => devs.locator('#inbox tbody tr').filter({ hasText: 'Browser Spare Meter' }).first();
-    const show = (filter) => devs.locator('#inboxFilter').selectOption(filter);
+    const show = (filter) => devs.locator(`[data-inbox-filter="${filter}"]`).dispatchEvent('click');
     await spare().waitFor({ timeout: 30000 });
     // The Clients table and the device list agree on how many devices a client has.
     const assignedToA = await devs.evaluate((el, client) => (el._inbox || []).filter((d) => d.client === client).length, state.client_a);
@@ -322,7 +335,10 @@ try {
     await devs.getByText('No device matches the search.').waitFor({ timeout: 10000 });
     await typeInto(devs.locator('#inboxSearch'), 'spare');
     await spare().waitFor({ timeout: 10000 });
+    await shot(root, 'devices-not-assigned');
     await spare().locator('[data-inbox-assign]').dispatchEvent('click');
+    await devs.locator('dialog[open] #assignClient').waitFor({ timeout: 10000 });
+    await shot(root, 'assign-dialog');
     await devs.locator('#assignClient').selectOption(state.client_a);
     await devs.locator('#assignLocation').selectOption(state.location_a_north);
     await devs.locator('[data-save-editor]').dispatchEvent('click');
@@ -330,8 +346,9 @@ try {
     await show('assigned');
     await spare().waitFor({ timeout: 20000 });
     assert.match(await spare().innerText(), /Browser Client A[\s\S]*Browser A North/, 'assigned device does not show its client and location');
+    await shot(root, 'devices-assigned');
     await spare().locator('[data-inbox-remove]').dispatchEvent('click');
-    await spare().locator('[data-inbox-remove]').dispatchEvent('click');
+    await devs.locator('dialog[open] [data-save-editor]').dispatchEvent('click');
     await spare().waitFor({ state: 'detached', timeout: 20000 });
     await show('unassigned');
     await spare().locator('[data-inbox-ignore]').dispatchEvent('click');
@@ -340,7 +357,28 @@ try {
     await spare().locator('[data-inbox-unignore]').dispatchEvent('click');
     await spare().waitFor({ state: 'detached', timeout: 20000 });
     await devs.locator('[data-device-view="wiring"]').dispatchEvent('click');
-    await devs.locator('[data-add-device]').first().waitFor({ timeout: 10000 });
+    await devs.locator('[data-new-virtual]').first().waitFor({ timeout: 10000 });
+    // One Edit per device opens a dialog with its name, place, feed and main-device switch; nothing is edited in the row.
+    assert.equal(await devs.locator('#admin select[data-device-parent], #admin [data-set-main]').count(), 0, 'a device is still edited inside the table');
+    assert.equal(await devs.locator('#admin tbody tr').filter({ hasText: 'Browser Spare Meter' }).count(), 0, 'a device no client has is listed in a client\'s wiring table');
+    await devs.locator('[data-edit-device]').first().dispatchEvent('click');
+    await devs.locator('dialog[open] #editorParent').waitFor({ timeout: 10000 });
+    await shot(root, 'device-dialog');
+    await devs.locator('dialog[open] .form-actions [data-cancel-editor]').dispatchEvent('click');
+    await devs.locator('dialog[open]').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+    assert.equal(await devs.locator('dialog[open]').count(), 0, 'the dialog did not close');
+    await shot(root, 'devices-wiring');
+    await root.goto(`${base}/energy-admin/people`, { waitUntil: 'domcontentloaded' });
+    const rootPeople = await waitCard(root, 'building-admin-table-card');
+    await rootPeople.locator('#people tbody tr').first().waitFor({ timeout: 20000 });
+    await shot(root, 'people');
+    await rootPeople.locator('[data-edit-person]').first().dispatchEvent('click');
+    await rootPeople.locator('dialog[open] #editorRole').waitFor({ timeout: 10000 });
+    await shot(root, 'person-dialog');
+    await rootPeople.locator('dialog[open] .form-actions [data-cancel-editor]').dispatchEvent('click');
+    await root.goto(`${base}/energy-admin/clients`, { waitUntil: 'domcontentloaded' });
+    await (await waitCard(root, 'building-admin-table-card')).locator('tbody tr').first().waitFor({ timeout: 20000 });
+    await shot(root, 'clients');
   }
 
   assert.deepEqual(pageErrors, [], `browser page errors: ${pageErrors.join('; ')}`);
