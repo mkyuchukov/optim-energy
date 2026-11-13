@@ -286,6 +286,12 @@ try {
     await locs.locator('[data-save-editor]').dispatchEvent('click');
     const annex = () => locs.locator('tbody tr').filter({ hasText: 'Browser Annex' }).first();
     await annex().waitFor({ timeout: 20000 });
+    // A new, empty location says what to do next and shows a name, not an internal id.
+    await annex().locator('[data-select-location]').first().dispatchEvent('click');
+    await locs.getByText('No devices in this location yet.', { exact: false }).first().waitFor({ timeout: 10000 });
+    assert.doesNotMatch(await annex().innerText(), /loc:/, 'a location row shows its internal id');
+    await locs.locator(`[data-select-location="${state.location_a_north}"]`).first().dispatchEvent('click');
+
     // The new location moves to the other client, where it is then deleted.
     await annex().locator('[data-move-location]').dispatchEvent('click');
     await locs.locator('#editorClient').selectOption(state.client_b);
@@ -307,6 +313,10 @@ try {
     const spare = () => devs.locator('#inbox tbody tr').filter({ hasText: 'Browser Spare Meter' }).first();
     const show = (filter) => devs.locator('#inboxFilter').selectOption(filter);
     await spare().waitFor({ timeout: 30000 });
+    // The Clients table and the device list agree on how many devices a client has.
+    const assignedToA = await devs.evaluate((el, client) => (el._inbox || []).filter((d) => d.client === client).length, state.client_a);
+    const listedForA = await devs.evaluate((el, client) => (el._summaries || []).find((x) => x.id === client)?.devices, state.client_a);
+    assert.ok(assignedToA >= 2 && listedForA === assignedToA, `client device count ${listedForA} differs from the device list ${assignedToA}`);
     assert.match(await spare().innerText(), /Energy meter[\s\S]*power sensor[\s\S]*Not assigned yet/, 'inbox row does not say what the device is and that it is unassigned');
     await typeInto(devs.locator('#inboxSearch'), 'no such device');
     await devs.getByText('No device matches the search.').waitFor({ timeout: 10000 });

@@ -3175,7 +3175,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
                 places,
                 locations: places.filter((p) => p.kind === 'location').length,
                 groups: places.filter((p) => p.kind === 'group').length,
-                devices: Object.keys(tree.placed || {}).length,
+                // The same count the device list shows: real devices, a multi-channel meter once, no virtual devices.
+                devices: Array.isArray(inbox) ? inbox.filter((d) => d.client === item.id).length : Object.keys(tree.placed || {}).filter((k) => !k.startsWith('virt:')).length,
                 people: clientUsers.length,
                 active: clientUsers.filter((u) => u.is_active).length,
               };
@@ -3244,8 +3245,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       const under = locationId ? placesUnder(locationId) : null;
       return rows.filter((row) => !under || (row.place && under.has(row.place)));
     }
-    table(headers, rows, id = '') {
-      return `<div class="admin-table-wrap"${id ? ` id="${id}"` : ''}><table class="admin-table"><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row) => `<tr>${row}</tr>`).join('') : `<tr><td class="admin-empty" colspan="${headers.length}">No rows yet.</td></tr>`}</tbody></table></div>`;
+    table(headers, rows, id = '', empty = 'No rows yet.') {
+      return `<div class="admin-table-wrap"${id ? ` id="${id}"` : ''}><table class="admin-table"><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row) => `<tr>${row}</tr>`).join('') : `<tr><td class="admin-empty" colspan="${headers.length}">${esc(empty)}</td></tr>`}</tbody></table></div>`;
     }
     action(label, attrs = '', cls = 'table-action') { return `<button class="${cls}" ${attrs}>${esc(label)}</button>`; }
     renderEditor() {
@@ -3294,8 +3295,8 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
       return `<div class="admin-editor"><div class="admin-editor-head"><div><span class="admin-kicker">${e.kind === 'person' ? 'Access' : e.kind === 'device' || e.kind === 'virtual' || e.kind === 'device-name' ? 'Devices' : 'Client setup'}</span><h3>${esc(title)}</h3></div></div><div class="form-grid">${fields}</div><div class="form-actions"><button class="quiet" data-cancel-editor="1">Cancel</button><button class="primary" data-save-editor="1">${esc(save)}</button></div></div>`;
     }
     renderClients() {
-      const rows = (this._summaries || []).map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}<small>${esc(item.slug || item.id)}</small></button></td><td>${item.locations || 0}</td><td>${item.people || 0}</td><td>${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action(this._confirmClientDelete === item.id ? 'Confirm delete' : 'Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
-      return `${this.renderEditor()}${this.table(['Client', 'Locations', 'People', 'Devices', 'Actions'], rows)}<p class="admin-note">Select a client to manage its locations and people.</p>`;
+      const rows = (this._summaries || []).map((item) => `<td><button class="table-name" data-open-client="${esc(item.id)}">${esc(item.name || item.id)}</button></td><td>${item.locations || 0}</td><td>${item.people || 0}</td><td>${item.devices || 0}</td><td><div class="table-actions">${this.action('Open', `data-open-client="${esc(item.id)}"`)}${this.action('Preview', `data-preview-client="${esc(item.id)}"`)}${this.action('Edit', `data-edit-client="${esc(item.id)}" data-name="${esc(item.name || '')}"`)}${this.action(this._confirmClientDelete === item.id ? 'Confirm delete' : 'Delete', `data-delete-client="${esc(item.id)}"`, 'table-action danger')}</div></td>`);
+      return `${this.renderEditor()}${this.table(['Client', 'Locations', 'People', 'Devices', 'Actions'], rows, '', 'No clients yet. Start with New client.')}<p class="admin-note">Select a client to manage its locations and people.</p>`;
     }
     renderPeople() {
       const locs = this.allPlaces(), users = (this._users || []).filter((u) => {
@@ -3313,18 +3314,19 @@ if (areasModel()) r.getElementById('tree').innerHTML = this.groupTree(locs, coun
         const parentOptions = this.deviceRows().filter((x) => x.id !== d.id && !wouldLoop(d.id, x.id)).map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
         return `<td><b>${esc(d.name)}</b><small class="table-sub">${esc(d.model || (d.virtual ? 'Virtual device' : ''))}</small></td><td>${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}</td><td>${esc(parts.group || '—')}</td><td><select class="table-select" data-device-parent="${esc(d.id)}"><option value="">Top level</option>${parentOptions}</select></td><td>${main ? 'Main' : '—'}</td><td><div class="table-actions">${this.action('Move', `data-move-device="${esc(d.id)}"`)}${this.action('Set main', `data-set-main="${esc(d.id)}"`)}${this.action('Rename', `data-edit-device="${esc(d.id)}" data-name="${esc(d.name)}"`)}${d.virtual ? this.action(this._confirmVirtualDelete === d.id ? 'Confirm delete' : 'Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : areasModel() && PORTAL.isRoot && d.place ? this.action(this._confirmUnassign === d.id ? 'Confirm remove' : 'Remove from client', `data-unassign-device="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
       });
-      return this.table(['Device', 'Type', 'Location', 'Group', 'Parent', 'Main', 'Actions'], rows);
+      const empty = locationId ? (this.hasInbox() ? 'No devices in this location yet. Assign one under Devices, All devices, or with Add device above.' : 'No devices in this location yet. Use Add device above.') : 'No devices yet.';
+      return this.table(['Device', 'Type', 'Location', 'Group', 'Parent', 'Main', 'Actions'], rows, '', empty);
     }
     renderLocations() {
       const selected = this._selectedLocation && this.locations().find((p) => p.id === this._selectedLocation);
       const rows = this.locations().map((l) => {
         const groups = placesUnder(l.id).size - 1, devices = this.deviceRows(l.id).length, main = TREE.mains?.[l.id] ? (this.deviceRows().find((d) => d.id === TREE.mains[l.id])?.name || TREE.mains[l.id]) : '—';
-        return `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}<small>${esc(l.id)}</small></button></td><td>${groups}</td><td>${devices}</td><td>${esc(main)}</td><td><div class="table-actions">${this.action('Devices', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action(this._confirmLocationDelete === l.id ? 'Confirm delete' : 'Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>`;
+        return `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td>${groups}</td><td>${devices}</td><td>${esc(main)}</td><td><div class="table-actions">${this.action('Devices', `data-select-location="${esc(l.id)}"`)}${this.action('Preview', `data-preview-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action(this._confirmLocationDelete === l.id ? 'Confirm delete' : 'Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>`;
       });
 const groupRows = selected && areasModel() ? [...placesUnder(selected.id)].filter((id) => id !== selected.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean).map((g) => `<td><b>${esc(g.name)}</b></td><td>${esc(placeLabel(g.parent))}</td><td>${this.deviceRows().filter((d) => d.place === g.id).length}</td><td><div class="table-actions">${this.action('Rename', `data-edit-group="${esc(g.id)}" data-name="${esc(g.name)}"`)}${this.action(this._confirmGroupDelete === g.id ? 'Confirm delete' : 'Delete', `data-delete-group="${esc(g.id)}"`, 'table-action danger')}</div></td>`) : [];
-      const groups = selected && areasModel() ? `<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Groups</span><h2>${esc(selected.name)}</h2><p>Groups organise this location's devices. Deleting one moves its devices up a level.</p></div><div class="admin-actions">${this.action('New group', `data-new-group="${esc(selected.id)}"`)}</div></div>${this.table(['Group', 'Inside', 'Devices', 'Actions'], groupRows)}</section>` : '';
+      const groups = selected && areasModel() ? `<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Groups</span><h2>${esc(selected.name)}</h2><p>Groups organise this location's devices. Deleting one moves its devices up a level.</p></div><div class="admin-actions">${this.action('New group', `data-new-group="${esc(selected.id)}"`)}</div></div>${this.table(['Group', 'Inside', 'Devices', 'Actions'], groupRows, '', 'No groups yet. Groups are optional; add one with New group.')}</section>` : '';
       const devices = selected ? `${groups}<section class="admin-panel"><div class="admin-panel-head"><div><span class="admin-kicker">Devices</span><h2>${esc(selected.name)}</h2><p>Assign devices here, set the main device and maintain the parent tree.</p></div><div class="admin-actions">${this.action('Add device', `data-add-device="${esc(selected.id)}"`)}${this.action('Virtual device', 'data-new-virtual="1"')}</div></div>${this.deviceRowsHtml(selected.id)}</section>` : '<p class="admin-note">Select a location to manage its devices.</p>';
-      return `${this.renderEditor()}${this.table(['Location', 'Groups', 'Devices', 'Main device', 'Actions'], rows)}${devices}`;
+      return `${this.renderEditor()}${this.table(['Location', 'Groups', 'Devices', 'Main device', 'Actions'], rows, '', 'This client has no location yet. Add one with New location; devices and people are assigned to locations.')}${devices}`;
     }
     hasInbox() { return PORTAL.isRoot && areasModel() && Array.isArray(this._inbox); }
     // Places of any client, not only the active one, for the assign dialog.
