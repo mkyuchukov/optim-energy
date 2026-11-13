@@ -26,7 +26,8 @@ from .const import (
 from .dashboards import DASHBOARD_SPECS, build_dashboard_configs
 from .firewall import RestFirewall, WebsocketFirewall
 from .portal_ops import async_register_portal_commands
-from .tenancy import TenancyManager, async_register_commands
+from .prices import PriceMemory
+from .tenancy import MARKET_PRICE_PLATFORMS, TenancyManager, async_register_commands
 
 _LOGGER = logging.getLogger(__name__)
 _FRONTEND_KEY = f"{DOMAIN}_frontend"
@@ -58,6 +59,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Stage two: the same guards start answering from real tenant data.
     await manager.async_initialize(entry.data[CONF_SITE_NAME])
+    manager.prices = PriceMemory(hass, MARKET_PRICE_PLATFORMS)
+    await manager.prices.async_start()
     async_register_commands(hass, manager)
     async_register_portal_commands(hass, manager)
     audit = bool(entry.options.get("audit", False))
@@ -92,6 +95,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         websocket_firewall.uninstall()
     manager: TenancyManager | None = hass.data.pop(_TENANCY_KEY, None)
     if manager is not None:
+        if manager.prices is not None:
+            manager.prices.stop()
         await manager.async_unload()
     urls: set[str] = hass.data.pop(_FRONTEND_KEY, set())
     for url in urls:

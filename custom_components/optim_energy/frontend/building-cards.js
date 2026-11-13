@@ -39,7 +39,7 @@ let portalClient = null;
 try { portalClient = typeof localStorage === 'undefined' ? null : localStorage.getItem(CLIENT_KEY); } catch (e) { /* private window */ }
 if (typeof window !== 'undefined') window.portalContext = PORTAL;
 // The screens that show one location. Choosing locations, adding devices and the structure itself cover all of them.
-const NEEDS_LOCATION = /^\/(energy-(home|groups|controls|devices|reports|alerts)\/|energy-setup\/wiring)/;
+const NEEDS_LOCATION = /^\/energy-(home|groups|controls|devices|reports|alerts)\//;
 let currentLocation = null;
 let portalUser = null;
 try { currentLocation = typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(LOCATION_KEY); } catch (e) { /* private window */ }
@@ -232,9 +232,16 @@ function priceRule(hass, loc = currentLocation, mode = null) {
   }
   if (chosen === 'fixed') return { mode: 'fixed', now: Number(p?.fixed) || 0, final: () => Number(p?.fixed) || 0, vat: true };
   if (chosen === 'exchange') {
-    const sensor = (p?.sensor && st[p.sensor] ? p.sensor : ibexSensor(hass, loc)), s = st[sensor], div = /mwh/i.test(s?.attributes?.unit_of_measurement || '') ? 1000 : 1, withVat = p?.vat !== false;
+    const sensor = (p?.sensor && (st[p.sensor] || PRICE_MEMORY?.values?.[p.sensor]) ? p.sensor : ibexSensor(hass, loc)), s = st[sensor], div = /mwh/i.test(s?.attributes?.unit_of_measurement || '') ? 1000 : 1, withVat = p?.vat !== false;
     const final = (raw) => (raw / div + (Number(p?.extra) || 0)) * (withVat ? 1.2 : 1), nowRaw = parseFloat(s?.state);
     if (sensor && Number.isFinite(nowRaw)) return { mode: 'exchange', sensor, div, now: final(nowRaw), final, vat: withVat };
+    // No reading now: the last known price for this quarter-hour, or the last value the sensor had.
+    const kept = PRICE_MEMORY?.values?.[sensor], t = Date.now(), slot = priceList(hass).find((x) => x.t <= t && t < x.t + 900000);
+    const lastRaw = slot ? slot.raw : parseFloat(kept?.state);
+    if (sensor && Number.isFinite(lastRaw)) {
+      const d = /mwh/i.test(kept?.unit || s?.attributes?.unit_of_measurement || '') ? 1000 : 1, f = (raw) => (raw / d + (Number(p?.extra) || 0)) * (withVat ? 1.2 : 1);
+      return { mode: 'exchange', sensor, div: d, now: f(lastRaw), final: f, vat: withVat, stale: true };
+    }
   }
   // No setting, or no exchange reading: the helper's price, said so, rather than a wrong number.
   return { mode: 'helper', now: helper, final: () => helper, vat: null, ...(chosen === 'exchange' || p?.mode === 'exchange' ? { missing: true } : {}) };
@@ -244,9 +251,31 @@ function priceOf(hass, loc = currentLocation) { return priceRule(hass, loc).now;
 if (typeof window !== 'undefined') window.portalPriceInfo = (h) => { const r = priceRule(h); return { now: r.now, vat: vatNote(r) }; };
 if (typeof window !== 'undefined') window.portalPrice = (h) => priceOf(h);
 // The exchange prices the sensor knows, every 15 minutes, today and tomorrow: [{ t, raw }].
+// The market prices come from another integration. While it gives no readings (after a restart, or when its
+// source is down) the portal uses what the server last saw, and says they are not live.
+let PRICE_MEMORY = null, priceMemoryAt = 0;
+async function loadPriceMemory(hass, force = false) {
+  if (!force && Date.now() - priceMemoryAt < 300000) return PRICE_MEMORY;
+  priceMemoryAt = Date.now();
+  try { PRICE_MEMORY = await hass.callWS({ type: 'optim_energy/price/last' }); } catch (e) { /* an older server: live prices only */ }
+  return PRICE_MEMORY;
+}
+const priceRows = (today, tomorrow) => [...(today || []), ...(tomorrow || [])].map((x) => ({ t: +new Date(String(x.time).replace(' ', 'T')), raw: Number(x.price) })).filter((x) => Number.isFinite(x.t) && Number.isFinite(x.raw));
+const livePrices = (hass) => Object.values(hass.states).find((x) => Array.isArray(x.attributes?.prices_today) && x.attributes.prices_today.length);
 function priceList(hass) {
-  const s = Object.values(hass.states).find((x) => Array.isArray(x.attributes?.prices_today));
-  return s ? [...s.attributes.prices_today, ...(s.attributes.prices_tomorrow || [])].map((x) => ({ t: +new Date(String(x.time).replace(' ', 'T')), raw: x.price })).filter((x) => Number.isFinite(x.t) && Number.isFinite(x.raw)) : [];
+  const s = livePrices(hass);
+  return s ? priceRows(s.attributes.prices_today, s.attributes.prices_tomorrow) : priceRows(PRICE_MEMORY?.today, PRICE_MEMORY?.tomorrow);
+}
+// Whether the exchange price is being read right now, and when it last was.
+function priceStatus(hass) {
+  const live = !!livePrices(hass) || Object.keys(PRICE_MEMORY?.values || {}).some((id) => Number.isFinite(parseFloat(hass.states[id]?.state)));
+  return { live, at: PRICE_MEMORY?.at ? PRICE_MEMORY.at * 1000 : null, known: live || !!PRICE_MEMORY?.at };
+}
+function priceStatusChip(hass) {
+  const st = priceStatus(hass);
+  if (st.live) return '<span class="live" title="The exchange price is being read now"><i></i>Live</span>';
+  const when = st.at ? new Date(st.at).toLocaleString('en-GB', { timeZone: hass.config.time_zone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  return `<span class="live off" title="The price source gives no readings now"><i></i>${st.at ? `Not live · last read ${when}` : 'Not live'}</span>`;
 }
 // The location's price for the hour that holds t: the average of its 15-minute exchange prices when the sensor still lists them,
 // else that hour's average from Home Assistant's history, else the price now. Margin, fees and VAT as in priceOf.
@@ -279,7 +308,8 @@ function priceDayAverage(hass, nowMs = Date.now()) {
 function pricePanel(hass, W = 600, nowMs = Date.now()) {
   const rule = priceRule(hass);
   if (rule.mode !== 'exchange') return '';
-  const rows = priceList(hass).filter((x) => x.t + 900000 > nowMs).sort((a, b) => a.t - b.t).map((x) => ({ t: x.t, raw: x.raw / rule.div, v: rule.final(x.raw) }));
+  const known = priceList(hass).sort((a, b) => a.t - b.t), ahead = known.filter((x) => x.t + 900000 > nowMs), past = !ahead.length && known.length > 0;
+  const rows = (past ? known.slice(-96) : ahead).map((x) => ({ t: x.t, raw: x.raw / rule.div, v: rule.final(x.raw) }));
   if (!rows.length) return '';
   const tz = hass.config.time_zone, part = (t, o) => new Date(t).toLocaleString('en-GB', { timeZone: tz, ...o }), hm = (t) => part(t, { hour: '2-digit', minute: '2-digit' });
   const today = part(nowMs, { day: 'numeric' }), dayOf = (t) => (part(t, { day: 'numeric' }) === today ? '' : `${part(t, { weekday: 'short' })} `);
@@ -299,7 +329,7 @@ function pricePanel(hass, W = 600, nowMs = Date.now()) {
   const avgLine = `<line x1="0" x2="${W}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--accent)" stroke-dasharray="4 3" pointer-events="none"/><text x="${W}" y="${y(avg) - 3}" text-anchor="end" fill="var(--accent)" font-size="10">average ${eur(avg)}</text>`;
   const chart = `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Price per kWh every 15 minutes from now"><text x="0" y="10" fill="var(--muted)" font-size="10">${eur(max)}</text><line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--line)"/>${cols}${avgLine}</svg><div class="tip" hidden></div></div>`;
   const key = '<div class="key"><span><i style="background:var(--fg)"></i>Now</span><span><i style="background:var(--ok)"></i>Lowest quarter</span><span><i style="background:var(--bad)"></i>Highest quarter</span></div>';
-  return `<div class="box"><div class="chead"><h3>Price per kWh, every 15 minutes</h3><span class="chart-src" aria-label="Price source: IBEX"><b>IBEX</b><span>${vatNote(rule)}</span></span></div><small class="muted">Lowest ${dayOf(lo.t)}${hm(lo.t)} · ${eur(lo.v)} · Highest ${dayOf(hi.t)}${hm(hi.t)} · ${eur(hi.v)}</small>${chart}${key}</div>`;
+  return `<div class="box"><div class="chead"><h3>${past ? 'Last known price per kWh' : 'Price per kWh, every 15 minutes'}</h3><span class="chart-src" aria-label="Price source: IBEX"><b>IBEX</b><span>${vatNote(rule)}</span>${priceStatusChip(hass)}</span></div><small class="muted">Lowest ${dayOf(lo.t)}${hm(lo.t)} · ${eur(lo.v)} · Highest ${dayOf(hi.t)}${hm(hi.t)} · ${eur(hi.v)}</small>${chart}${key}</div>`;
 }
 // Reading a bill. Which model and what it is told are in the integration's bill-reader.json.
 // This code only sends the pages, checks what comes back and does the maths. The API address and key are in Home Assistant's rest_command.
@@ -345,9 +375,12 @@ const billDay = (s) => (s ? new Date(`${s}T12:00:00Z`).toLocaleDateString('en-GB
 // The IBEX price sensor: the one a location already uses, else ENTSO-e's current price.
 function ibexSensor(hass, loc) {
   const chosen = TREE.prices?.[loc]?.sensor;
-  if (chosen && hass.states[chosen]) return chosen;
+  if (chosen && (hass.states[chosen] || PRICE_MEMORY?.values?.[chosen])) return chosen;
   const ids = Object.keys(hass.states).filter((id) => id.startsWith('sensor.') && hass.entities?.[id]?.platform === 'entsoe' && /\/\s*(k|m)wh/i.test(hass.states[id].attributes?.unit_of_measurement || ''));
-  return ids.find((id) => /current/.test(id)) || ids[0] || null;
+  // With the source down the sensors carry no unit; the ones remembered by the server still do.
+  const kept = Object.entries(PRICE_MEMORY?.values || {}).filter(([, v]) => /\/\s*(k|m)wh/i.test(v.unit || '')).map(([id]) => id);
+  const all = ids.length ? ids : kept;
+  return all.find((id) => /current/.test(id)) || all[0] || null;
 }
 // The two prices a bill gives. Fixed: what one kWh cost in all, VAT included. Follows IBEX: the margin over the exchange price, before VAT.
 function billPrices(bill, fig) {
@@ -549,7 +582,7 @@ function ensureTree(hass) {
     try {
       const [payload, labels, devices, entities] = await Promise.all([
         hass.callWS({ type: 'optim_energy/tree/get', ...(client ? { client } : {}) }),
-        reg('label'), reg('device'), reg('entity'),
+        reg('label'), reg('device'), reg('entity'), loadPriceMemory(hass, true),
       ]);
       if (payload) { PORTAL.client = payload.client; PORTAL.clientName = payload.client_name || ''; }
       NATIVE = serverPlaces(payload?.tree, Array.isArray(labels) ? labels : []);
@@ -777,11 +810,7 @@ function syncModel(hass) {
     // switched and scheduled; it simply has no power or energy to report.
   }).filter((m) => m.channels?.length || (m.power && m.energy) || m.switch);
   const virtual = TREE.virtual.map((v) => ({ id: v.id, name: v.name, type: 'Virtual device', model: 'Sum of the devices under it', place: placeById(TREE.placed[v.id])?.id || null, virtual: true, report: `dev:${v.id}` }));
-  // One name everywhere: a word every switch in a location starts with (such as "ACME") says nothing there, so it is left off.
-  const byLoc = new Map();
-  for (const m of [...meters, ...channelMeters]) { const loc = placePath(m.place)[0]?.id; if (loc && m.switch) { if (!byLoc.has(loc)) byLoc.set(loc, []); byLoc.get(loc).push(m.name); } }
-  const prefix = new Map([...byLoc].map(([loc, names]) => { const w = names[0].split(' ')[0]; return [loc, names.length > 1 && names.every((n) => n.split(' ').length > 1 && n.split(' ')[0] === w) ? `${w} ` : null]; }));
-  for (const m of [...meters, ...channelMeters]) { const p = prefix.get(placePath(m.place)[0]?.id); if (p && m.name.startsWith(p) && m.name.length > p.length) { m.fullName = m.name; const rest = m.name.slice(p.length); m.name = rest.charAt(0).toUpperCase() + rest.slice(1); } }
+  // A device is called what it is called in Home Assistant, everywhere and for everyone.
   allNodes = [...meters, ...virtual];
   // Only the chosen location exists from here on, so every page, total and alert follows it. With no locations set up yet, all devices show.
   const here = currentLocation ? placesUnder(currentLocation) : null, inScope = (d) => (here ? here.has(d.place) : !hasLocations());
@@ -1117,13 +1146,6 @@ function layoutRooms(rooms) {
     x += r.w + gap; rowD = Math.max(rowD, r.d);
   }
   return out;
-}
-// A tile has room for about 12 letters. What every device in the location or group shares says nothing, so it goes; a number keeps the word before it.
-function shortNames(names, everyName) {
-  const shared = (list) => { const w = list.map((n) => n.split(' ')); let i = 0; while (list.length > 1 && w.every((x) => x.length > i + 1 && x[i] === w[0][i])) i += 1; return i; };
-  const out = (n, k) => n.split(' ').slice(k).join(' ');
-  const first = shared(everyName), rest = names.map((n) => out(n, first)), k = shared(rest);
-  return rest.map((n) => { const words = n.split(' '), keep = /^\d/.test(words[k] || '') ? Math.max(k - 1, 0) : k, t = out(n, keep); return t.charAt(0).toUpperCase() + t.slice(1); });
 }
 // Only what is placed under it, so the whole location can never reach another location's switches.
 function switchesIn(sp) {
@@ -1486,6 +1508,7 @@ const AUTO_CSS = `.chead{display:flex;justify-content:space-between;align-items:
 .box .sc{border:0;box-shadow:none;background:none;padding:0;border-radius:0;border-bottom:1px solid var(--line)}.box .sc:last-child{border-bottom:0}
 `;
 const BASE = `
+.live{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--ok);white-space:nowrap}.live i{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}.live.off{color:var(--bad)}.live.off i{background:var(--bad)}
 .w.loading>*{display:none!important}.w.loading::before,.w.loading::after{content:'';display:block;border-radius:var(--radius);background:linear-gradient(90deg,var(--panel) 25%,color-mix(in srgb,var(--fg) 7%,var(--panel)) 37%,var(--panel) 63%);background-size:400% 100%;animation:sk 1.4s ease infinite}.w.loading::before{height:96px}.w.loading::after{height:260px}@keyframes sk{0%{background-position:100% 50%}100%{background-position:0 50%}}@media(prefers-reduced-motion:reduce){.w.loading::before,.w.loading::after{animation:none}}.sk{display:block;border-radius:var(--radius);background:linear-gradient(90deg,var(--panel) 25%,color-mix(in srgb,var(--fg) 7%,var(--panel)) 37%,var(--panel) 63%);background-size:400% 100%;animation:sk 1.4s ease infinite;border:1px solid var(--line)}
 .locbar{display:flex;gap:6px;flex-wrap:wrap;padding:0;margin:-4px 0 -8px;font-family:var(--ha-font-family-body,Roboto,sans-serif)}.locbar button{all:unset;cursor:pointer;display:inline-flex;align-items:center;max-width:100%}.locbar button:hover .lp{background:color-mix(in srgb,var(--primary-text-color) 12%,transparent)}.locbar button:focus-visible .lp{outline:2px solid var(--primary-color)}.lp{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px 0 7px;border-radius:14px;font-size:12.5px;font-weight:600;color:var(--primary-text-color);background:color-mix(in srgb,var(--primary-text-color) 7%,transparent);transition:background .15s}.lp ha-icon{--mdc-icon-size:15px;display:flex;color:var(--primary-color)}.lp ha-icon:last-child{color:var(--secondary-text-color)}
 :host{display:block;--lit:#ffb300;--page:var(--primary-background-color);--panel:var(--card-background-color);--line:var(--divider-color);--fg:var(--primary-text-color);--muted:var(--secondary-text-color);--slate:var(--disabled-text-color);--accent:color-mix(in srgb,var(--primary-color) 82%,var(--primary-text-color));--radius:14px;--shadow:0 1px 2px rgba(0,0,0,.10),0 6px 20px rgba(0,0,0,.07);--ok:var(--success-color);--warn:var(--warning-color);--bad:var(--error-color);--track:color-mix(in srgb,var(--fg) 10%,transparent)}
@@ -1562,6 +1585,7 @@ const ADMIN_TABLE_CSS = `
 .chips{display:flex;gap:6px;flex-wrap:wrap}.chip{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;font-size:12.5px;color:var(--muted);white-space:nowrap}
 .chip:hover{color:var(--fg);border-color:var(--muted)}.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.chip.on{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 55%,var(--line));color:var(--fg);font-weight:600}
 .chip span{font-size:11.5px;font-weight:600;padding:1px 6px;border-radius:999px;background:color-mix(in srgb,var(--fg) 10%,transparent);color:var(--fg)}
+.seg-tabs.full{display:flex}.seg-tabs.full button{flex:1;text-align:center;height:32px}.price-big{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:12px 14px;border-radius:10px;background:color-mix(in srgb,var(--fg) 5%,transparent);font-size:12.5px;color:var(--muted)}.price-big b{font-size:22px;letter-spacing:-.02em;color:var(--fg);white-space:nowrap}.price-big.new{background:color-mix(in srgb,var(--accent) 12%,transparent)}.form-grid input[type=file]{height:auto;padding:8px;border:1px dashed var(--line);border-radius:8px;background:var(--page);font-size:12.5px;color:var(--fg)}
 .seg-tabs{display:inline-flex;padding:3px;border-radius:9px;background:color-mix(in srgb,var(--fg) 7%,transparent)}.seg-tabs button{all:unset;box-sizing:border-box;cursor:pointer;height:28px;padding:0 12px;border-radius:7px;font-size:12.5px;color:var(--muted)}.seg-tabs button.on{background:var(--panel);color:var(--fg);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.18)}
 .admin-search{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--page);flex:0 1 260px;min-width:160px}.admin-search:focus-within{border-color:var(--accent)}
 .admin-search ha-icon{--mdc-icon-size:16px;color:var(--muted);flex:none}.admin-search input{all:unset;flex:1;min-width:0;font-size:13px;color:var(--fg)}
@@ -2688,7 +2712,7 @@ ul.tree ul>li::after{content:"";position:absolute;left:-14px;top:20px;width:12px
 @media(max-width:620px){.node{grid-template-columns:repeat(3,minmax(0,1fr))}.who{grid-column:1/-1}.val{text-align:left}}
 </style><div class="w"><div class="intro"><span class="muted" id="sum"></span><span class="warn" id="warn"></span><span class="err" id="err"></span></div><div class="add" id="add"></div><ul class="tree" id="tree"></ul></div>`;
       const r = this.shadowRoot;
-      r.getElementById('add').addEventListener('click', (e) => { if (e.target.closest('[data-wiring]')) { navigate('/energy-setup/wiring'); return; } const all = e.target.closest('[data-fold-all]'); if (all) { this._shut = new Set(all.dataset.foldAll === 'shut' ? treeNodes().filter((d) => childrenOf(d.id).length).map((d) => d.id) : []); this.paint(); return; } if (e.target.closest('[data-new]')) { const i = r.getElementById('vname'), name = i.value.trim(); if (name) { const id = `virt:${Date.now().toString(36)}`; this._openUnder = id; this.commit(treeWithDevicePlaced(treeWithVirtual(TREE, name, id), id, currentLocation), `${name} added. Tick the devices under it.`); } } });
+      r.getElementById('add').addEventListener('click', (e) => { if (e.target.closest('[data-wiring]')) { navigate('/energy-setup/devices'); return; } const all = e.target.closest('[data-fold-all]'); if (all) { this._shut = new Set(all.dataset.foldAll === 'shut' ? treeNodes().filter((d) => childrenOf(d.id).length).map((d) => d.id) : []); this.paint(); return; } if (e.target.closest('[data-new]')) { const i = r.getElementById('vname'), name = i.value.trim(); if (name) { const id = `virt:${Date.now().toString(36)}`; this._openUnder = id; this.commit(treeWithDevicePlaced(treeWithVirtual(TREE, name, id), id, currentLocation), `${name} added. Tick the devices under it.`); } } });
       r.getElementById('tree').addEventListener('click', (e) => this.onClick(e));
       r.getElementById('tree').addEventListener('toggle', (e) => { const id = e.target.dataset?.underBox; if (id) this._openUnder = e.target.open ? id : this._openUnder === id ? null : this._openUnder; }, true);
       r.getElementById('tree').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.dataset.rename) e.target.blur(); });
@@ -2849,6 +2873,7 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
     async refresh() {
       if (!PORTAL.treeReady) return;
       const h = this._hass, now = Date.now(), tz = h.config.time_zone, meters = homeDevices().filter((d) => d.energy);
+      loadPriceMemory(h);
       // Another tenant or location than last time: what was shown is not this one's.
       const key = `${portalClient}|${currentLocation}`;
       if (this._key !== key) { this._key = key; this._loaded = false; this._parts = null; this._totals = null; this._failed = false; this.paint(); }
@@ -2888,7 +2913,7 @@ ul.gtree ul>li::before{content:"";position:absolute;left:-11px;top:-5px;bottom:0
       const since = t?.firstRow && fmtDay(t.firstRow, h) > `${fmtDay(now, h).slice(0, 7)}-01` && fmtDay(t.firstRow, h).startsWith(fmtDay(now, h).slice(0, 7)) ? `since ${new Date(t.firstRow).toLocaleString('en-GB', { timeZone: h.config.time_zone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}<br>` : '';
       // The price now: the location's price with margin, fees and VAT, and how it stands against the rest of today.
       const pnow = rule.now, dayAvg = priceDayAverage(h, now), diff = dayAvg ? Math.round((pnow / dayAvg - 1) * 100) : null;
-      const priceSub = `${vat} · ${rule.missing ? 'No exchange price, helper used' : rule.mode === 'exchange' ? (diff == null ? 'Exchange price' : diff === 0 ? "Today's average" : `${Math.abs(diff)}% ${diff > 0 ? 'above' : 'below'} today's average`) : rule.mode === 'fixed' ? 'Custom fixed price' : rule.mode === 'bill' ? 'Bill price' : 'Price helper'}`;
+      const priceSub = `${vat} · ${rule.missing ? 'No exchange price, helper used' : rule.mode === 'exchange' ? (diff == null ? 'Exchange price' : diff === 0 ? "Today's average" : `${Math.abs(diff)}% ${diff > 0 ? 'above' : 'below'} today's average`) : rule.mode === 'fixed' ? 'Custom fixed price' : rule.mode === 'bill' ? 'Bill price' : 'Price helper'}${rule.mode === 'exchange' || rule.missing ? `<br>${priceStatusChip(h)}` : ''}`;
       // Today first, then the moment: power and price now; then the month and its busiest hour; then alerts.
       r.getElementById('top').innerHTML = `<div class="kpis">
 ${kpi('Usage today', t ? `${t.today.toFixed(1)} kWh` : '—', t ? `${money(t.todayEur ?? t.today * tariff)}` : '')}${kpi('Usage now', powerText(n.total))}${kpi('Price now', `€ ${pnow.toFixed(3)}<small style="font-size:11px;font-weight:500;color:var(--muted)"> /kWh</small>`, priceSub)}
@@ -2901,224 +2926,6 @@ ${kpi('Usage this month', t ? `${t.month.toFixed(0)} kWh` : '—', t ? `${since}
   }
   // Setup: every location and group in one tree, for admins. Pick one on the left, change it on the right.
   // Locations, floors and areas live in Home Assistant. Here they are only listed, with the one thing that is still the portal's: the main device.
-  class ManageCard extends Base {
-    get noBar() { return true; }
-    build() {
-      this.shadowRoot.innerHTML = `<style>${BASE}
-.layout{display:grid;grid-template-columns:minmax(240px,340px) minmax(0,1fr);gap:16px;align-items:start}@media(max-width:860px){.layout{grid-template-columns:minmax(0,1fr)}}
-.box{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:grid;gap:10px;min-width:0;align-content:start}
-ul.t,ul.t ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}ul.t ul{margin-top:4px;padding-left:18px}
-.n{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:6px;border:1px solid var(--line);font-size:14px}
-.gacts{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.gform{display:flex;gap:6px;flex-wrap:wrap;padding:6px 0}.gform input{flex:1;min-width:120px;height:34px;box-sizing:border-box}
-label.f{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}label.f select{width:100%;box-sizing:border-box;height:36px}
-.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:10px}.cfg-hint{font-size:12px;color:var(--muted);line-height:1.35;margin-top:2px}
-.main{display:grid;gap:12px;min-width:0}
-${SHEET_CSS}.bk{display:grid;grid-template-columns:auto auto;justify-content:space-between;gap:6px 16px;font-size:13.5px}.bk span:nth-child(odd){color:var(--muted)}.bk span:nth-child(even){text-align:right}
-.big{display:flex;justify-content:space-between;align-items:baseline;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,transparent)}.big b{font-size:22px}
-.price-head{display:flex;justify-content:space-between;gap:8px 14px;align-items:flex-start;flex-wrap:wrap}.price-head h3{margin:0}.price-head p{margin:2px 0 0;max-width:680px;color:var(--muted);font-size:12.5px}
-.price-list{display:grid;gap:8px}.price-row{display:grid;grid-template-columns:minmax(190px,.85fr) minmax(320px,1.35fr);gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--fg) 2%,transparent)}
-.price-main{display:grid;gap:3px;min-width:0}.price-name{font-size:14px;font-weight:600}.price-now{font-size:19px;font-weight:650;line-height:1.2;letter-spacing:-.02em}.price-now small{font-size:11.5px;font-weight:400;letter-spacing:0;color:var(--muted)}.price-meta{display:flex;gap:7px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:11.5px;line-height:1.35}
-.inline-action{all:unset;cursor:pointer;color:var(--accent);font-size:11.5px;font-weight:600}.inline-action:hover{text-decoration:underline}.inline-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.price-select{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.price-choice{all:unset;box-sizing:border-box;cursor:pointer;display:grid;gap:2px;min-width:0;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--panel);text-align:center}.price-choice:hover{border-color:var(--muted)}.price-choice:focus-visible{outline:2px solid var(--accent);outline-offset:1px}.price-choice[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--panel))}.price-choice b{font-size:12.5px;font-weight:650}.price-choice small{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.price-choice[aria-pressed="true"] small{color:var(--fg)}
-.price-edit{grid-column:1/-1;padding-top:2px}@media(max-width:720px){.price-row{grid-template-columns:1fr}.price-now{font-size:18px}}
-.pb,.tp{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.ai{display:inline-flex;align-items:center;gap:6px}.ai ha-icon{--mdc-icon-size:16px;display:flex}.tp label.f{flex:1 1 180px}.tp input{width:100%;box-sizing:border-box;height:36px}
-.seg{display:flex;gap:4px;padding:4px;border-radius:12px;background:color-mix(in srgb,var(--fg) 6%,transparent)}.seg button{flex:1}.seg button[aria-pressed="true"]{background:var(--panel);box-shadow:var(--shadow);color:var(--fg);font-weight:600}
-.warn{color:var(--warn);font-size:13px}.okc{color:var(--ok);font-size:13px}.lines{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:12.5px;padding-top:6px}
-</style><div class="w"><span class="err" id="err"></span><div class="layout"><div class="box" id="tree"></div><div class="main" id="main"></div></div>
-<dialog id="billDlg" aria-labelledby="billT"><div class="dh"><h3 id="billT">Upload a bill</h3><button class="x" data-bill-close="1" aria-label="Close">×</button></div><div class="db" id="billBody"></div><div class="df" id="billFoot"></div></dialog></div>`;
-      const w = this.shadowRoot.querySelector('.w');
-      w.addEventListener('click', (e) => {
-        const g = e.target.closest('[data-group-new],[data-group-rename],[data-group-delete],[data-group-save],[data-group-cancel]');
-        if (g) { this.groupAction(g); return; }
-        const n = e.target.closest('[data-nav],[data-bill],[data-bill-close],[data-bill-save],[data-bill-again],[data-price-mode],[data-type],[data-type-cancel],[data-type-save],[data-ibex],[data-ibex-cancel],[data-ibex-save]');
-        if (!n) return;
-        if (n.dataset.nav) navigate(n.dataset.nav);
-        else if (n.dataset.priceMode) this.choosePriceMode(n.dataset.loc, n.dataset.priceMode);
-        else if (n.dataset.type) this.openTyped(n.dataset.type);
-        else if (n.dataset.typeCancel) { this._typing = null; this.paint(); }
-        else if (n.dataset.typeSave) this.saveTyped(n.dataset.typeSave);
-        else if (n.dataset.ibex) this.openIbex(n.dataset.ibex);
-        else if (n.dataset.ibexCancel) { this._ibexEdit = null; this.paint(); }
-        else if (n.dataset.ibexSave) this.saveIbex(n.dataset.ibexSave);
-        else if (n.dataset.bill) this.openBill(n.dataset.bill);
-        else if (n.dataset.billClose) { this._bill = null; this.paintBill(); }
-        else if (n.dataset.billAgain) { this._bill = { loc: this._bill.loc, model: this._bill.model, step: 'pick' }; this.paintBill(); }
-        else if (n.dataset.billSave) this.saveBill();
-      });
-      const dlg = this.shadowRoot.getElementById('billDlg');
-      dlg.addEventListener('cancel', (e) => { e.preventDefault(); if (this._bill?.step !== 'busy') { this._bill = null; this.paintBill(); } });
-      dlg.addEventListener('change', (e) => { if (e.target.id === 'billFile' && e.target.files.length) this.runBill([...e.target.files]); });
-      w.addEventListener('input', (e) => { if (e.target.id === 'typed') this._typed = e.target.value; if (e.target.id === 'ibexExtra') this._ibexValue = e.target.value; });
-      w.addEventListener('keydown', (e) => {
-        if (e.target.id === 'typed' && e.key === 'Enter') this.saveTyped(this._typing);
-        if (e.target.id === 'ibexExtra' && e.key === 'Enter') this.saveIbex(this._ibexEdit);
-        if (e.target.id === 'typed' && e.key === 'Escape') { this._typing = null; this.paint(); }
-        if (e.target.id === 'ibexExtra' && e.key === 'Escape') { this._ibexEdit = null; this.paint(); }
-      });
-      w.addEventListener('change', (e) => {
-        const t = e.target, d = t.dataset;
-        if (d.mainFor !== undefined) commitTree(this, treeWithLocationMain(TREE, d.mainFor, t.value));
-      });
-    }
-    async refresh() { this.paint(); }
-    // Upload a bill: the reader finds the bill total and kWh. The stored price is the all-in rate, VAT included.
-    async openBill(loc) {
-      this._bill = { loc, step: 'pick' };
-      this.paintBill();
-      try { const cfg = await billSettings(); if (this._bill?.loc === loc) { this._bill.model = cfg.model; this.paintBill(); } } catch (e) { this._bill = { loc, step: 'error', msg: e.message }; this.paintBill(); }
-    }
-    async runBill(files) {
-      const b = this._bill;
-      Object.assign(b, { step: 'busy', files: files.map((f) => f.name).join(', ') });
-      this.paintBill();
-      try {
-        const read = await readBill(this._hass, files), pr = billPrices(read.bill, null);
-        if (!(pr.fixed > 0)) throw new Error('The bill did not give a total and kWh that can make a price.');
-        if (this._bill === b) Object.assign(b, { step: 'done', ...read });
-      } catch (e) { if (this._bill === b) Object.assign(b, { step: 'error', msg: e.message || String(e) }); }
-      this.paintBill();
-    }
-    openTyped(loc) {
-      this._typing = loc; this._typed = null; this._ibexEdit = null; this.paint();
-      this.shadowRoot.getElementById('typed')?.focus();
-    }
-    // A typed price is a custom fixed price, VAT included.
-    saveTyped(loc) {
-      const i = this.shadowRoot.getElementById('typed');
-      i?.setCustomValidity('');
-      const v = Number(String(i?.value ?? this._typed ?? '').replace(',', '.'));
-      if (!(v > 0 && v < 5)) { i?.setCustomValidity('Enter the price per kWh in euros, for example 0.32'); i?.reportValidity(); return; }
-      this._typing = null;
-      commitTree(this, treeWithPrice(TREE, loc, { mode: 'fixed', fixed: Math.round(v * 10000) / 10000, fixedSource: { kind: 'typed', read: new Date().toISOString().slice(0, 10) } }), 'Custom price saved');
-    }
-    openIbex(loc) {
-      const p = TREE.prices?.[loc];
-      this._ibexEdit = loc; this._ibexValue = String(Number(p?.extra) || 0); this._typing = null; this.paint();
-      this.shadowRoot.getElementById('ibexExtra')?.focus();
-    }
-    saveIbex(loc) {
-      const i = this.shadowRoot.getElementById('ibexExtra'), sensor = ibexSensor(this._hass, loc);
-      i?.setCustomValidity('');
-      const v = Number(String(i?.value ?? this._ibexValue ?? '0').replace(',', '.'));
-      if (!(v >= 0 && v < 5)) { i?.setCustomValidity('Enter the margin in euros per kWh, for example 0.05'); i?.reportValidity(); return; }
-      if (!sensor) { showToast(this, 'No IBEX price sensor is available'); return; }
-      this._ibexEdit = null;
-      commitTree(this, treeWithPrice(TREE, loc, { mode: 'exchange', sensor, extra: Math.round(v * 10000) / 10000, vat: true, exchangeSource: { kind: 'typed', read: new Date().toISOString().slice(0, 10) } }), 'IBEX price selected');
-    }
-    choosePriceMode(loc, mode) {
-      const p = TREE.prices?.[loc], sensor = ibexSensor(this._hass, loc);
-      if (mode === 'bill' && !(Number(p?.bill) > 0)) { this.openBill(loc); return; }
-      if (mode === 'fixed' && !(Number(p?.fixed) > 0)) { this.openTyped(loc); return; }
-      if (mode === 'exchange' && !sensor) { showToast(this, 'No IBEX price sensor is available'); return; }
-      if (p?.mode === mode) return;
-      const patch = mode === 'exchange' ? { mode, sensor, extra: Number(p?.extra) || 0, vat: true } : { mode };
-      commitTree(this, treeWithPrice(TREE, loc, patch), mode === 'bill' ? 'Bill price selected' : mode === 'exchange' ? 'IBEX price selected' : 'Custom price selected');
-    }
-    saveBill() {
-      const b = this._bill;
-      if (!b || !this.billCanSave()) return;
-      const pr = billPrices(b.bill, null), r2 = (v) => (v == null ? null : Math.round(v * 100) / 100), r4 = (v) => Math.round(v * 10000) / 10000;
-      const src = {
-        kind: 'bill', from: b.bill.period_from, to: b.bill.period_to, kwh: b.bill.kwh,
-        total_excl_vat: r2(pr.totalExcl), vat: r2(pr.vat), total_incl_vat: r2(pr.totalIncl),
-        file: b.files, read: new Date().toISOString().slice(0, 10), model: b.model,
-      };
-      commitTree(this, treeWithPrice(TREE, b.loc, { mode: 'bill', bill: r4(pr.fixed), billSource: src }), 'Bill price saved');
-      this._bill = null;
-      this.paintBill();
-    }
-    billCanSave() {
-      const b = this._bill, pr = b?.bill && billPrices(b.bill, null);
-      return !!pr && pr.fixed > 0;
-    }
-    paintBill() {
-      const r = this.shadowRoot, dlg = r.getElementById('billDlg'), b = this._bill;
-      if (!b) { if (dlg.open) dlg.close(); return; }
-      r.getElementById('billT').textContent = `Upload a bill · ${placeById(b.loc)?.name || ''}`;
-      const num = (v, d) => (v == null ? '—' : Number(v).toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d }));
-      const eur = (v, d = 2) => (v == null ? '—' : `€ ${num(v, d)}`), small = (t) => `<span class="muted" style="font-size:12.5px">${t}</span>`;
-      let body = '', foot = '<button data-bill-close="1">Cancel</button><span class="sp"></span>';
-      if (b.step === 'pick') body = `<label class="f">The bill, as a PDF or photos of its pages<input type="file" id="billFile" accept="application/pdf,image/jpeg,image/png,image/webp" multiple></label>${small(`The pages go to ${esc(b.model || 'the AI model')} through Home Assistant to be read. Nothing changes until you use the price.`)}`;
-      else if (b.step === 'busy') { body = `<span>Reading ${esc(b.files)}…</span>${small('This can take up to a minute.')}`; foot = '<span class="sp"></span>'; }
-      else if (b.step === 'error') { body = `<span class="warn">${esc(b.msg)}</span>`; foot += '<button class="gold" data-bill-again="1">Try again</button>'; }
-      else {
-        const bill = b.bill, pr = billPrices(bill, null), linesSum = (bill.lines || []).reduce((t, l) => t + (Number(l.amount_excl_vat) || 0), 0);
-        const linesOk = pr.totalExcl == null || Math.abs(linesSum - pr.totalExcl) <= Math.max(0.5, pr.totalExcl * 0.01);
-        const vatAssumed = bill.total_incl_vat == null && bill.vat == null;
-        const checks = [
-          linesOk ? '' : `<span class="warn">The listed charges add up to ${eur(linesSum)}, but the bill total before VAT is ${eur(pr.totalExcl)}. Check the figures.</span>`,
-          vatAssumed ? '<span class="warn">VAT was not printed on the bill, so 20% was added.</span>' : '',
-          bill.notes ? small(`The reader noted: ${esc(bill.notes)}`) : '',
-        ].join('');
-        const how = `<details><summary style="cursor:pointer">Bill details</summary><div class="bk" style="padding-top:8px"><span>Bill period</span><span>${billDay(bill.period_from)} - ${billDay(bill.period_to)}</span>${bill.supplier ? `<span>Supplier</span><span>${esc(bill.supplier)}</span>` : ''}${bill.metering_points?.length ? `<span>Metering point</span><span>${bill.metering_points.map(esc).join('<br>')}</span>` : ''}<span>Energy on the bill</span><span>${num(bill.kwh, 0)} kWh</span><span>Total before VAT</span><span>${eur(pr.totalExcl)}</span><span>VAT</span><span>${eur(pr.vat)}</span><span>Total with VAT</span><span>${eur(pr.totalIncl)}</span></div>
-${bill.fromBgn ? small('The bill is in leva; turned into euros at 1.95583.') : ''}
-${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(l.name || '')}</span><span>${eur(l.amount_excl_vat)}</span>`).join('')}</div>` : ''}${small(`Read by ${esc(b.model)} from ${b.pages} ${b.pages === 1 ? 'page' : 'pages'}.`)}</details>`;
-        body = `<div class="big"><span>All-in price per kWh, incl. VAT</span><b>${eur(pr.fixed, 3)}</b></div>${small(`Calculated as ${eur(pr.totalIncl)} total with VAT divided by ${num(bill.kwh, 0)} kWh.`)}${checks}${how}`;
-        foot += `<button data-bill-again="1">Read another</button><button class="gold" data-bill-save="1"${this.billCanSave() ? '' : ' disabled'}>Use bill price</button>`;
-      }
-      r.getElementById('billBody').innerHTML = body;
-      r.getElementById('billFoot').innerHTML = foot;
-      if (!dlg.open) dlg.showModal();
-    }
-    // Each location has three saved choices. Selecting one changes the active price without deleting the other two.
-    priceBox(locs) {
-      const h = this._hass, eur = (v) => `€ ${Number(v).toFixed(3)}`;
-      const one = (l) => {
-        const id = l.id, p = TREE.prices?.[id] || {}, active = p.mode, sensor = ibexSensor(h, id);
-        const billValue = Number(p.bill) > 0 ? Number(p.bill) : null, fixedValue = Number(p.fixed) > 0 ? Number(p.fixed) : null;
-        const exRule = sensor ? priceRule(h, id, 'exchange') : null, exValue = exRule?.mode === 'exchange' ? exRule.now : null, rule = priceRule(h, id);
-        const pick = (mode, name, value, empty) => `<button class="price-choice" data-price-mode="${mode}" data-loc="${id}" aria-pressed="${active === mode}"><b>${name}</b><small>${value == null ? empty : eur(value)}</small></button>`;
-        const billSrc = p.billSource, fixedSrc = p.fixedSource;
-        const how = !active ? 'No source chosen. The Home Assistant price helper is shown.'
-          : active === 'bill' ? (billSrc?.from ? `Saved from the bill for ${billDay(billSrc.from)} - ${billDay(billSrc.to)}.` : 'No bill uploaded yet.')
-          : active === 'exchange' ? `Live IBEX plus ${eur(Number(p.extra) || 0)} before VAT.${rule.missing ? ' No market reading; the price helper is shown.' : ''}`
-          : `Custom fixed price${fixedSrc?.read ? `, set ${billDay(fixedSrc.read)}` : ''}.`;
-        const action = this._typing === id || this._ibexEdit === id ? '' : active === 'bill' ? `<button class="inline-action" data-bill="${id}">${billValue == null ? 'Add bill' : 'Update bill'}</button>`
-          : active === 'exchange' ? `<button class="inline-action" data-ibex="${id}">Adjust margin</button>`
-          : active === 'fixed' ? `<button class="inline-action" data-type="${id}">Change price</button>` : '';
-        let edit = '';
-        if (this._typing === id) edit = `<div class="tp"><label class="f">Custom fixed price per kWh, VAT included (€)<input type="text" id="typed" inputmode="decimal" autocomplete="off" placeholder="0.320" value="${esc(this._typed ?? (fixedValue == null ? '' : String(fixedValue)))}"></label><button data-type-cancel="1">Cancel</button><button class="gold" data-type-save="${id}">Save</button></div>`;
-        else if (this._ibexEdit === id) edit = `<div class="tp"><label class="f">Above IBEX, before VAT (€/kWh)<input type="text" id="ibexExtra" inputmode="decimal" autocomplete="off" placeholder="0.050" value="${esc(this._ibexValue ?? String(Number(p.extra) || 0))}"></label><button data-ibex-cancel="1">Cancel</button><button class="gold" data-ibex-save="${id}">Save margin</button></div>`;
-        return `<div class="price-row"><div class="price-main"><div class="price-name">${esc(l.name)}</div><div class="price-now">${eur(rule.now)} <small>/ kWh, ${vatNote(rule)}${active === 'exchange' && !rule.missing ? ' now' : ''}</small></div><div class="price-meta"><span>${how}</span>${action}</div></div><div class="price-select" role="group" aria-label="Price source for ${esc(l.name)}">${pick('bill', 'Bill', billValue, 'Upload')}${pick('exchange', 'IBEX', exValue, 'Unavailable')}${pick('fixed', 'Fixed', fixedValue, 'Set')}</div>${edit ? `<div class="price-edit">${edit}</div>` : ''}</div>`;
-      };
-      return `<div class="box"><div class="price-head"><div><h3>Price per kWh</h3><p>Choose one per location. Switching is immediate; the other choices stay saved.</p></div></div><div class="price-list">${locs.map(one).join('')}</div></div>`;
-    }
-    // Groups of each location, with add, rename and delete. A group only organises devices.
-    groupTree(locs, count) {
-      const ed = this._groupEdit, can = portalCanManage();
-      const form = (label) => `<div class="gform"><input id="gname" maxlength="80" value="${esc(ed.name || '')}" placeholder="Group name" aria-label="Group name" autocomplete="off"><button class="gold" data-group-save="1">${label}</button><button data-group-cancel="1">Cancel</button></div>`;
-      const acts = (p, isGroup) => (can ? `<span class="gacts"><button class="inline-action" data-group-new="${esc(p.id)}">Add group</button>${isGroup ? `<button class="inline-action" data-group-rename="${esc(p.id)}">Rename</button><button class="inline-action" data-group-delete="${esc(p.id)}">${this._groupConfirm === p.id ? 'Confirm delete' : 'Delete'}</button>` : ''}</span>` : '');
-      const node = (p, isGroup) => `<li>${ed?.mode === 'rename' && ed.id === p.id ? form('Save') : `<div class="n"><span>${isGroup ? esc(p.name) : `<b>${esc(p.name)}</b>`} <span class="muted">${count(p.id)}</span></span>${acts(p, isGroup)}</div>`}${ed?.mode === 'new' && ed.parent === p.id ? form('Add') : ''}${branch(p.id)}</li>`;
-      const branch = (parent) => { const kids = placeChildren(parent); return kids.length ? `<ul>${kids.map((p) => node(p, true)).join('')}</ul>` : ''; };
-      return `<h3>Locations and groups</h3><ul class="t">${locs.map((l) => node(l, false)).join('') || '<li class="muted">No location yet. Your administrator adds locations.</li>'}</ul><div class="cfg-hint">Groups organise a location's devices; they do not change who can see them. Deleting a group moves its devices up a level. Move a device from its own page under Devices.</div>`;
-    }
-    async groupAction(n) {
-      const d = n.dataset, r = this.shadowRoot, done = async () => { this._groupEdit = null; this._groupConfirm = null; treeLoad = null; await ensureTree(this._hass); this.paint(); };
-      const fail = (x) => { r.getElementById('err').textContent = x?.message || 'Could not change the group.'; };
-      r.getElementById('err').textContent = '';
-      if (d.groupNew) { this._groupEdit = { mode: 'new', parent: d.groupNew, name: '' }; this._groupConfirm = null; this.paint(true); r.getElementById('gname')?.focus(); return; }
-      if (d.groupRename) { this._groupEdit = { mode: 'rename', id: d.groupRename, name: placeById(d.groupRename)?.name || '' }; this._groupConfirm = null; this.paint(true); r.getElementById('gname')?.focus(); return; }
-      if (d.groupCancel) { this._groupEdit = null; this.paint(true); return; }
-      if (d.groupDelete) {
-        if (this._groupConfirm !== d.groupDelete) { this._groupConfirm = d.groupDelete; this.paint(true); return; }
-        try { await this._hass.callWS({ ...clientArg(), type: 'optim_energy/group/delete', group: d.groupDelete }); await done(); } catch (x) { fail(x); }
-        return;
-      }
-      if (d.groupSave) {
-        const ed = this._groupEdit, name = r.getElementById('gname')?.value.trim();
-        if (!ed || !name) return;
-        try { await this._hass.callWS({ ...clientArg(), type: 'optim_energy/group/save', name, ...(ed.mode === 'rename' ? { group: ed.id } : { parent: ed.parent }) }); await done(); } catch (x) { fail(x); }
-      }
-    }
-    paint(force = false) {
-      const r = this.shadowRoot, h = this._hass, count = (id) => { const under = placesUnder(id); return allNodes.filter((d) => !d.virtual && under.has(d.place)).length; };
-      if (!force && ['SELECT', 'INPUT'].includes(r.activeElement?.tagName)) return;
-      const branch = (parent) => { const kids = placeChildren(parent); return kids.length ? `<ul>${kids.map((p) => `<li><div class="n"><span>${esc(p.name)}</span><span class="muted">${count(p.id)}</span></div>${branch(p.id)}</li>`).join('')}</ul>` : ''; };
-      const locs = TREE.places.filter((p) => p.kind === 'location').sort(byName);
-      r.getElementById('tree').innerHTML = this.groupTree(locs, count);
-      r.getElementById('main').innerHTML = `${locs.length && portalCanWire() ? `<div class="box"><h3>Main device</h3><span class="muted">The device whose figures Overview shows.</span>${locs.map((l) => { const under = placesUnder(l.id), now = TREE.mains?.[l.id] || ''; const opts = allNodes.filter((d) => under.has(d.place) && (d.virtual || kindOf(d) === 'meter' || d.id === now)).sort(byName); return `<label class="f">${esc(l.name)}<select data-main-for="${l.id}"><option value="">None: add up the top devices</option>${opts.map((d) => `<option value="${d.id}"${d.id === now ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>`; }).join('')}</div>` : ''}${this.priceBox(locs)}`;
-    }
-  }
   // A table-first administration surface. The old client-facing cards are
   // intentionally not used here: the job is to inspect and change the tenant
   // model quickly, not to browse one client's energy workspace.
@@ -3275,7 +3082,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const under = locationId ? placesUnder(locationId) : null;
       // With the device list available, this table is about the selected client's own devices only;
       // a device nobody has yet belongs under Devices, not here.
-      const own = (row) => !this.hasInbox() || !!row.place;
+      // A device with no place belongs under Unassigned, and a channel of a placed meter is part of that meter.
+      const own = (row) => row.virtual || (!!row.place && !(row.via_device_id && TREE.placed[row.via_device_id]));
       return rows.filter((row) => own(row) && (!under || (row.place && under.has(row.place))));
     }
     // ---- shared pieces: every section is one card with its filters in the head and its table edge to edge ----
@@ -3343,11 +3151,6 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const devices = this.sorted(this.deviceRows(location).filter((d) => !d.virtual), (d) => d.name);
         const inGroup = devices.filter((d) => e.members.has(d.id)).length;
         fields = `${text('editorName', 'Group name', e.name || '')}${pick('groupLocation', 'Location', locations.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join(''), false)}${pick('groupParent', 'Inside group', `<option value="">None</option>${inside.map((p) => `<option value="${esc(p.id)}"${p.id === parent ? ' selected' : ''}>${esc(placeLabel(p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}`, false)}<div class="field wide"><span class="field-top">Devices in this group<span class="field-hint" id="groupCount">${inGroup} of ${devices.length}</span></span><div class="checks tall" id="groupDevices">${devices.map((d) => `<label class="check"><input type="checkbox" data-group-device="${esc(d.id)}"${e.members.has(d.id) ? ' checked' : ''}> <span>${esc(d.name)}</span>${d.place && d.place !== location && d.place !== e.id ? `<span class="check-sub">${esc(placeById(d.place)?.name || '')}</span>` : ''}</label>`).join('') || '<span class="admin-note">This location has no devices yet.</span>'}</div></div>`;
-      } else if (e.kind === 'device') {
-        // For a client administrator, who has no device list: pick a device and where it goes.
-        title = 'Add device to a location or group'; save = 'Add device';
-        const devices = this.sorted(this.deviceRows().filter((x) => !x.virtual), (x) => x.name);
-        fields = `${pick('editorDevice', 'Device', devices.map((x) => `<option value="${esc(x.id)}"${x.id === e.device ? ' selected' : ''}>${esc(x.name)}${x.place ? ` · ${esc(this.placeName(x.place))}` : ''}</option>`).join(''))}${pick('editorPlace', 'Location or group', locs.map((p) => `<option value="${esc(p.id)}"${p.id === (e.place || this._selectedLocation) ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join(''))}`;
       } else if (e.kind === 'device-edit') {
         // Everything about one device in one place: its name, where it is, its parent device, and whether it is the main one.
         const d = this.deviceRows().find((x) => x.id === e.device) || { id: e.device, name: '' }, was = placePath(d.place)[0]?.id || '';
@@ -3359,7 +3162,28 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         const groups = location ? under(location) : [], group = groups.some((p) => p.id === e.group) ? e.group : '';
         const others = this.sorted(this.deviceRows().filter((x) => x.id !== d.id && !wouldLoop(d.id, x.id)), (x) => x.name);
         const pickTenant = PORTAL.isRoot && !d.virtual && clients.length > 1 ? pick('deviceClient', 'Tenant', clients.map((x) => `<option value="${esc(x.id)}"${x.id === tenant ? ' selected' : ''}>${esc(x.name)}</option>`).join('')) : '';
-        fields = `${text('editorName', 'Name', d.name)}${pickTenant}${pick('deviceLocation', 'Location', sites.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join(''), false)}${pick('deviceGroup', 'Group', `<option value="">No group</option>${groups.map((p) => `<option value="${esc(p.id)}"${p.id === group ? ' selected' : ''}>${esc(this.placeNameIn(places, p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}`, false)}${elsewhere ? '<p class="admin-note">Moving to another tenant: the old tenant stops seeing this device at once.</p>' : `${pick('editorParent', 'Parent device', `<option value="">None</option>${others.map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}`)}<label class="check wide"><input type="checkbox" id="editorMain"${was && TREE.mains?.[was] === d.id ? ' checked' : ''}> Main device</label>`}`;
+        fields = `${text('editorName', 'Name', d.name)}${pickTenant}${pick('deviceLocation', 'Location', sites.map((p) => `<option value="${esc(p.id)}"${p.id === location ? ' selected' : ''}>${esc(p.name)}</option>`).join(''), false)}${pick('deviceGroup', 'Group', `<option value="">No group</option>${groups.map((p) => `<option value="${esc(p.id)}"${p.id === group ? ' selected' : ''}>${esc(this.placeNameIn(places, p.id).split(' › ').slice(1).join(' › '))}</option>`).join('')}`, false)}${elsewhere ? '<p class="admin-note">Moving to another tenant: the old tenant stops seeing this device at once.</p>' : !portalCanWire() ? '' : `${pick('editorParent', 'Parent device', `<option value="">None</option>${others.map((x) => `<option value="${esc(x.id)}"${TREE.parents?.[d.id] === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}`)}<label class="check wide"><input type="checkbox" id="editorMain"${was && TREE.mains?.[was] === d.id ? ' checked' : ''}> Main device</label>`}`;
+      } else if (e.kind === 'price') {
+        // One place for what a kWh costs at a location. The three sources stay saved; one is in use.
+        const p = TREE.prices?.[e.loc] || {}, h = this._hass, eur = (v) => `€ ${Number(v).toFixed(3)}`, rule = priceRule(h, e.loc);
+        title = `Price for ${placeById(e.loc)?.name || ''}`; save = 'Use this price';
+        const tabs = [['exchange', 'IBEX'], ['bill', 'Bill'], ['fixed', 'Fixed']];
+        const inUse = { bill: 'the bill', exchange: 'IBEX', fixed: 'a fixed price', helper: 'nothing yet' }[rule.mode];
+        let part = '';
+        if (e.mode === 'exchange') {
+          const sensor = ibexSensor(h, e.loc), ex = sensor ? priceRule(h, e.loc, 'exchange') : null;
+          part = `<div class="price-big"><span>Exchange price now${ex?.stale ? ', last known' : ''}</span><b>${ex && ex.mode === 'exchange' ? eur(ex.now) : '—'}</b></div><div class="field wide"><span class="field-top">Source${priceStatusChip(h)}</span></div><label class="field wide"><span class="field-top">Margin above IBEX, before VAT (€ per kWh)</span><input id="priceExtra" inputmode="decimal" autocomplete="off" placeholder="0.050" value="${esc(e.extra ?? String(Number(p.extra) || 0))}"></label><p class="admin-note">The price follows the exchange every 15 minutes. 20% VAT is added to the exchange price plus the margin.</p>`;
+        } else if (e.mode === 'fixed') {
+          part = `<label class="field wide"><span class="field-top">Price per kWh, VAT included (€)</span><input id="priceFixed" inputmode="decimal" autocomplete="off" placeholder="0.320" value="${esc(e.fixed ?? (Number(p.fixed) > 0 ? String(p.fixed) : ''))}"></label><p class="admin-note">One price at all hours.</p>`;
+        } else {
+          const b = e.bill, saved = Number(p.bill) > 0 ? `<div class="price-big"><span>Saved bill price${p.billSource?.from ? `, ${billDay(p.billSource.from)} - ${billDay(p.billSource.to)}` : ''}</span><b>${eur(p.bill)}</b></div>` : '';
+          let read = '';
+          if (b?.step === 'busy') read = `<p class="admin-note" role="status">Reading ${esc(b.files)}… This can take up to a minute.</p>`;
+          else if (b?.step === 'error') read = `<p class="form-error" style="display:block">${esc(b.msg)}</p>`;
+          else if (b?.step === 'done') { const pr = billPrices(b.bill, null); read = `<div class="price-big new"><span>From ${esc(b.files)}: ${Number(b.bill.kwh).toLocaleString('en-GB')} kWh, € ${Number(pr.totalIncl).toFixed(2)} with VAT</span><b>${eur(pr.fixed)}</b></div>`; }
+          part = `${b?.step === 'done' ? '' : saved}${read}<label class="field wide"><span class="field-top">${saved ? 'Upload a newer bill' : 'Upload a bill'} (PDF or photos of its pages)</span><input type="file" id="billFile" accept="application/pdf,image/jpeg,image/png,image/webp" multiple${b?.step === 'busy' ? ' disabled' : ''}></label><p class="admin-note">The bill is read to find its total and its kWh; the price is the total with VAT divided by the kWh. Nothing changes until you press Use this price.</p>`;
+        }
+        fields = `<div class="wide"><div class="seg-tabs full" role="tablist">${tabs.map(([v, l]) => `<button type="button" class="${e.mode === v ? 'on' : ''}" data-price-tab="${v}" role="tab" aria-selected="${e.mode === v}">${l}</button>`).join('')}</div></div><p class="admin-note">In use now: <b>${esc(inUse)}</b>, ${eur(rule.now)} per kWh ${vatNote(rule)}.</p>${part}`;
       } else if (e.kind === 'virtual') {
         title = 'New virtual device'; save = 'Create virtual device';
         fields = `${text('editorName', 'Name')}${pick('editorPlace', 'Location or group', locs.map((p) => `<option value="${esc(p.id)}"${p.id === this._selectedLocation ? ' selected' : ''}>${esc(placeLabel(p.id))}</option>`).join(''))}<p class="admin-note">A virtual device adds up the devices that have it as their parent device.</p>`;
@@ -3396,21 +3220,24 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       const listed = new Set(this.hasInbox() ? this._inbox.filter((d) => d.status === 'assigned').map((d) => d.id) : []);
       const rows = list.map((d) => {
         const root = placePath(d.place)[0]?.id || null, main = root ? TREE.mains?.[root] === d.id : false, parts = placeParts(d.place), parent = TREE.parents?.[d.id];
-        return `<td><b>${esc(d.name)}</b>${main ? ' <span class="pill accent">Main</span>' : ''}<span class="table-sub">${esc(d.virtual ? 'Virtual device' : d.model || '')}</span></td><td class="hide-s">${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}<span class="table-sub">${esc(parts.group || '')}</span></td><td class="hide-s">${esc(names[parent] || '—')}</td><td><div class="table-actions">${this.action('Edit', `data-edit-device="${esc(d.id)}"`)}${d.virtual ? this.action('Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : listed.has(d.id) ? this.action('Remove', `data-inbox-remove="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
+        return `<td><b>${esc(d.name)}</b>${main ? ' <span class="pill accent">Main</span>' : ''}<span class="table-sub">${esc(d.virtual ? 'Virtual device' : d.model || '')}</span></td><td class="hide-s">${esc(this.typeOf(d))}</td><td>${esc(parts.location || '—')}<span class="table-sub">${esc(parts.group || '')}</span></td><td class="hide-s">${esc(names[parent] || '—')}</td><td><div class="table-actions">${d.virtual && !portalCanWire() ? '' : this.action('Edit', `data-edit-device="${esc(d.id)}"`)}${d.virtual ? (portalCanWire() ? this.action('Delete', `data-delete-virtual="${esc(d.id)}"`, 'table-action danger') : '') : listed.has(d.id) ? this.action('Remove', `data-inbox-remove="${esc(d.id)}"`, 'table-action danger') : ''}</div></td>`;
       });
-      const empty = this._q.wiringSearch ? 'No device matches the search.' : locationId ? (this.hasInbox() ? 'No devices in this location yet. Assign one from Unassigned.' : 'No devices in this location yet. Use Add device.') : 'No devices yet.';
+      const empty = this._q.wiringSearch ? 'No device matches the search.' : locationId ? (this.hasInbox() ? 'No devices in this location yet. Assign one from Unassigned.' : 'No devices in this location yet. Your administrator assigns them.') : 'No devices yet.';
       return this.table(['Device', { text: 'Type', cls: 'hide-s' }, 'Place', { text: 'Parent device', cls: 'hide-s' }, 'Actions'], rows, '', empty);
     }
     renderLocations() {
       const selected = this._selectedLocation && this.locations().find((p) => p.id === this._selectedLocation);
-      const list = this.locations().filter((l) => this.matches('locationSearch', l.name));
+      const list = this.locations().filter((l) => this.matches('locationSearch', l.name)), owner = this.owner();
       const rows = list.map((l) => {
         const groups = placesUnder(l.id).size - 1, devices = this.deviceRows(l.id).length, main = TREE.mains?.[l.id] ? (this.deviceRows().find((d) => d.id === TREE.mains[l.id])?.name || TREE.mains[l.id]) : '—';
-        return { cls: selected?.id === l.id ? 'sel' : '', html: `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td class="num">${groups}</td><td class="num">${devices}</td><td class="hide-s">${esc(main)}</td><td><div class="table-actions">${this.action('Manage groups', `data-select-location="${esc(l.id)}"`)}${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action('Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}</div></td>` };
+        const rule = priceRule(this._hass, l.id), source = { bill: 'Bill', exchange: 'IBEX', fixed: 'Fixed', helper: 'Not set' }[rule.mode] || '';
+        const price = `<b>€ ${rule.now.toFixed(3)}</b><span class="table-sub">${esc(source)}${rule.stale ? ' · last known' : ''}</span>`;
+        const own = owner ? `${this.action('Edit', `data-edit-location="${esc(l.id)}" data-name="${esc(l.name)}"`)}${(PORTAL.clients || []).length > 1 ? this.action('Move', `data-move-location="${esc(l.id)}" data-name="${esc(l.name)}"`) : ''}${this.action('Delete', `data-delete-location="${esc(l.id)}"`, 'table-action danger')}` : '';
+        return { cls: selected?.id === l.id ? 'sel' : '', html: `<td><button class="table-name" data-select-location="${esc(l.id)}">${esc(l.name)}</button></td><td class="num">${groups}</td><td class="num">${devices}</td><td>${price}</td><td class="hide-s">${esc(main)}</td><td><div class="table-actions">${this.action('Manage groups', `data-select-location="${esc(l.id)}"`)}${this.action('Price', `data-price="${esc(l.id)}"`)}${own}</div></td>` };
       });
       const head = `${this.search('locationSearch', 'Search locations')}<span class="sp"></span><span class="toolbar-label">${list.length} ${list.length === 1 ? 'location' : 'locations'}</span>`;
-      const empty = this._q.locationSearch ? 'No location matches the search.' : 'This tenant has no location yet. Add one with New location; devices and users are assigned to locations.';
-      const main = this.card(head, this.table(['Location', { text: 'Groups', cls: 'num' }, { text: 'Devices', cls: 'num' }, { text: 'Main device', cls: 'hide-s' }, 'Actions'], rows, '', empty), selected ? '' : (list.length ? 'Choose Manage groups on a location to see and edit its groups.' : ''));
+      const empty = this._q.locationSearch ? 'No location matches the search.' : owner ? 'This tenant has no location yet. Add one with New location; devices and users are assigned to locations.' : 'No location yet. Your administrator adds locations.';
+      const main = this.card(head, this.table(['Location', { text: 'Groups', cls: 'num' }, { text: 'Devices', cls: 'num' }, 'Price per kWh', { text: 'Main device', cls: 'hide-s' }, 'Actions'], rows, '', empty), selected ? '' : (list.length ? 'Manage groups shows a location\'s groups. Price sets what a kWh costs there.' : ''));
       if (!selected) return main;
       const groupList = this.sorted([...placesUnder(selected.id)].filter((id) => id !== selected.id).map((id) => TREE.places.find((p) => p.id === id)).filter(Boolean), (g) => placeLabel(g.id));
       const groupRows = groupList.map((g) => `<td><b>${esc(g.name)}</b></td><td>${esc(placeLabel(g.parent))}</td><td class="num">${this.deviceRows().filter((d) => d.place === g.id).length}</td><td><div class="table-actions">${this.action('Edit', `data-edit-group="${esc(g.id)}" data-name="${esc(g.name)}"`)}${this.action('Delete', `data-delete-group="${esc(g.id)}"`, 'table-action danger')}</div></td>`);
@@ -3418,6 +3245,9 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       return `${main}${groups}`;
     }
     hasInbox() { return PORTAL.isRoot && Array.isArray(this._inbox); }
+    // Administration, where a Home Assistant administrator creates, moves and deletes locations.
+    // Setup shows the same tables to a tenant admin without those.
+    owner() { return PORTAL.isRoot && this._scope !== 'setup'; }
     // Places of any client, not only the active one, for the assign dialog.
     clientPlaces(client) { return (this._summaries || []).find((x) => x.id === client)?.places || []; }
     placeNameIn(places, id) { const out = []; const seen = new Set(); let p = places.find((x) => x.id === id); while (p && !seen.has(p.id)) { seen.add(p.id); out.unshift(p.name); p = places.find((x) => x.id === p.parent); } return out.join(' › '); }
@@ -3453,8 +3283,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
     renderDevices() {
       if (this.hasInbox() && this._deviceView === 'unassigned') return this.renderUnassigned();
       const at = this._selectedLocation, n = this.deviceRows(at).length;
-      const head = `${this.viewTabs()}<span class="toolbar-label">${n} ${n === 1 ? 'device' : 'devices'} in <b>${esc(at ? this.placeName(at) : this.selectedClient().name)}</b></span><span class="sp"></span>${this.search('wiringSearch', 'Search devices')}${this.hasInbox() ? '' : `<button class="quiet" data-add-device="${esc(at || '')}">Add device</button>`}<button class="quiet" data-new-virtual="1">New virtual device</button>`;
-      return this.card(head, this.deviceRowsHtml(at), 'Edit a device to rename it, move it, set its parent device, or make it the main device.');
+      const head = `${this.viewTabs()}<span class="toolbar-label">${n} ${n === 1 ? 'device' : 'devices'} in <b>${esc(at ? this.placeName(at) : this.selectedClient().name)}</b></span><span class="sp"></span>${this.search('wiringSearch', 'Search devices')}${portalCanWire() ? '<button class="quiet" data-new-virtual="1">New virtual device</button>' : ''}`;
+      return this.card(head, this.deviceRowsHtml(at), portalCanWire() ? 'Edit a device to rename it, move it, set its parent device, or make it the main device.' : 'Edit a device to rename it or move it to another location or group.');
     }
     shell(title, lede, actions, body) {
       const clients = PORTAL.clients || [], setup = this._scope === 'setup';
@@ -3466,7 +3296,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         : `<span class="toolbar-label">Tenant · <b>${esc(this.selectedClient().name)}</b></span>`;
       const where = `<label class="admin-control"><span>Location</span><select id="locationSwitch"><option value="">All locations</option>${this.locations().map((l) => `<option value="${esc(l.id)}"${l.id === at ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>`;
       const picker = perClient ? `${tenant}${every ? '' : where}` : '';
-      return `<div class="admin-head"><div><span class="admin-kicker">Optim Energy / Administration</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${picker}${setup ? '' : '<button class="quiet" data-refresh="1">Refresh</button>'}${actions || ''}</div></div>${body}`;
+      return `<div class="admin-head"><div><span class="admin-kicker">Optim Energy / ${setup ? 'Setup' : 'Administration'}</span><h1>${esc(title)}</h1><p>${esc(lede)}</p></div><div class="admin-actions">${picker}${setup ? '' : '<button class="quiet" data-refresh="1">Refresh</button>'}${actions || ''}</div></div>${body}`;
     }
     paint(force = false) {
       const r = this.shadowRoot;
@@ -3482,11 +3312,11 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         clients: ['Tenants', 'Every tenant, with its locations, users and devices.'],
         locations: ['Locations', `The locations of ${name} and their groups.`],
         people: ['Users', this.everyTenant() ? 'Everyone who can sign in, across all tenants.' : `Who can sign in for ${spot}, and what they can see.`],
-        devices: ['Devices', this.hasInbox() && this._deviceView === 'unassigned' ? 'Devices that no tenant has yet.' : `The devices of ${spot}: where they are and how they are wired.`],
+        devices: ['Devices', this.hasInbox() && this._deviceView === 'unassigned' ? 'Devices that no tenant has yet.' : `The devices of ${spot} and where they are.`],
       }[this._section] || ['Tenants', ''];
       const body = this._section === 'people' ? this.renderPeople() : this._section === 'locations' ? this.renderLocations() : this._section === 'devices' ? this.renderDevices() : this.renderClients();
       const actions = this._section === 'people' ? '<button class="primary" data-new-person="1">New user</button>'
-        : this._section === 'locations' ? '<button class="primary" data-new-location="1">New location</button>'
+        : this._section === 'locations' ? (this.owner() ? '<button class="primary" data-new-location="1">New location</button>' : '')
           : this._section === 'devices' ? '' : '<button class="primary" data-new-client="1">New tenant</button>';
       r.getElementById('admin').innerHTML = this.shell(copy[0], copy[1], actions, body);
       this.paintDialog();
@@ -3501,7 +3331,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       if (this._paintedEditor === this._editor && !this._editorStale) return;
       this._editorStale = false;
       const typed = this._paintedEditor === this._editor
-        ? [...body.querySelectorAll('input[id], select[id]')].map((x) => [x.id, x.type === 'checkbox' ? x.checked : x.value])
+        ? [...body.querySelectorAll('input[id], select[id]')].filter((x) => x.type !== 'file').map((x) => [x.id, x.type === 'checkbox' ? x.checked : x.value])
         : [];
       const error = this._paintedEditor === this._editor ? r.getElementById('editorError')?.textContent : '';
       body.innerHTML = this.renderEditor();
@@ -3627,10 +3457,25 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
             await this._hass.callWS({ type: 'optim_energy/user/update', user_id: e.user.id, name: value('editorName'), role, locations: locs, ...(password ? { password } : {}) });
           }
           await this.afterChange(e.user ? 'User updated.' : 'User created.');
-        } else if (e.kind === 'device') {
-          const device = value('editorDevice'), place = value('editorPlace');
-          if (need(device && place, 'Choose a device and where it goes.')) return;
-          await this.assignDevice(device, place);
+        } else if (e.kind === 'price') {
+          const p = TREE.prices?.[e.loc] || {}, today = new Date().toISOString().slice(0, 10), num = (id) => Number(String(value(id)).replace(',', '.')), r4 = (v) => Math.round(v * 10000) / 10000;
+          let patch;
+          if (e.mode === 'exchange') {
+            const sensor = ibexSensor(this._hass, e.loc), extra = num('priceExtra');
+            if (need(sensor, 'No exchange price sensor is available.') || need(extra >= 0 && extra < 5, 'Enter the margin in euros per kWh, for example 0.05.')) return;
+            patch = { mode: 'exchange', sensor, extra: r4(extra), vat: true, exchangeSource: { kind: 'typed', read: today } };
+          } else if (e.mode === 'fixed') {
+            const fixed = num('priceFixed');
+            if (need(fixed > 0 && fixed < 5, 'Enter the price per kWh in euros, for example 0.32.')) return;
+            patch = { mode: 'fixed', fixed: r4(fixed), fixedSource: { kind: 'typed', read: today } };
+          } else if (e.bill?.step === 'done') {
+            const b = e.bill, pr = billPrices(b.bill, null), r2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
+            patch = { mode: 'bill', bill: r4(pr.fixed), billSource: { kind: 'bill', from: b.bill.period_from, to: b.bill.period_to, kwh: b.bill.kwh, total_excl_vat: r2(pr.totalExcl), vat: r2(pr.vat), total_incl_vat: r2(pr.totalIncl), file: b.files, read: today, model: b.model } };
+          } else {
+            if (need(e.bill?.step !== 'busy', 'The bill is still being read.') || need(Number(p.bill) > 0, 'Upload a bill first.')) return;
+            patch = { mode: 'bill' };
+          }
+          await this.saveAdminTree(treeWithPrice(TREE, e.loc, patch));
         } else if (e.kind === 'device-edit') {
           await this.saveDevice(e.device, value('editorName'), value('deviceGroup') || value('deviceLocation'), value('editorParent') || null, !!r.getElementById('editorMain')?.checked, value('deviceClient') || portalClient);
         } else if (e.kind === 'virtual') {
@@ -3664,6 +3509,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       if (!d.virtual && moved) {
         await this.assignDevice(id, place);
       }
+      // Wiring and the main device decide what a tenant sees, so only an administrator changes them.
+      if (!portalCanWire()) { await this.afterChange('Device saved.'); return; }
       let next = TREE;
       if (d.virtual && named) next = { ...next, virtual: next.virtual.map((v) => (v.id === id ? { ...v, name } : v)) };
       if (d.virtual && moved) next = treeWithDevicePlaced(next, id, place);
@@ -3672,6 +3519,18 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
       if (site && main !== wasMain) next = treeWithLocationMain(next, site, main ? id : null);
       if (next !== TREE) await this.saveAdminTree(next);
       else await this.afterChange('Device saved.');
+    }
+    // Read an uploaded bill inside the price dialog. Nothing is saved until the price is used.
+    async readPriceBill(files) {
+      const e = this._editor, again = () => { if (this._editor === e) { this._editorStale = true; this.paintDialog(); } };
+      e.bill = { step: 'busy', files: files.map((f) => f.name).join(', ') };
+      again();
+      try {
+        const cfg = await billSettings().catch(() => ({})), read = await readBill(this._hass, files), pr = billPrices(read.bill, null);
+        if (!(pr.fixed > 0)) throw new Error('The bill did not give a total and kWh that can make a price.');
+        Object.assign(e.bill, { step: 'done', model: cfg.model, ...read });
+      } catch (x) { e.bill = { step: 'error', msg: x?.message || String(x) }; }
+      again();
     }
     async assignDevice(deviceId, place) {
       const devices = PORTAL.isRoot && Object.keys(this._adminDevices || {}).length ? this._adminDevices : (HASS?.devices || {});
@@ -3724,6 +3583,8 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         });
         return;
       }
+      if ((b = q('[data-price]'))) { const mode = TREE.prices?.[b.dataset.price]?.mode; open({ kind: 'price', loc: b.dataset.price, mode: ['bill', 'exchange', 'fixed'].includes(mode) ? mode : 'exchange' }); return; }
+      if ((b = q('[data-price-tab]')) && this._editor?.kind === 'price') { this._editor.mode = b.dataset.priceTab; this._editorStale = true; this.paintDialog(); return; }
       if ((b = q('[data-new-group]'))) { open({ kind: 'group', location: b.dataset.newGroup, parent: '', members: new Set() }); return; }
       if ((b = q('[data-edit-group]'))) { const id = b.dataset.editGroup, site = placePath(id)[0]?.id || this._selectedLocation, up = placeById(id)?.parent; open({ kind: 'group', id, name: b.dataset.name, location: site, parent: up && up !== site ? up : '', members: new Set(this.deviceRows().filter((d) => !d.virtual && d.place === id).map((d) => d.id)) }); return; }
       if ((b = q('[data-delete-group]'))) {
@@ -3773,7 +3634,6 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         });
         return;
       }
-      if ((b = q('[data-add-device]'))) { open({ kind: 'device', place: b.dataset.addDevice || this._selectedLocation }); return; }
       if (q('[data-new-virtual]')) { open({ kind: 'virtual' }); return; }
       if ((b = q('[data-edit-device]'))) { const at = this.deviceRows().find((x) => x.id === b.dataset.editDevice)?.place, site = placePath(at)[0]?.id || ''; open({ kind: 'device-edit', device: b.dataset.editDevice, location: site, group: at && at !== site ? at : '' }); return; }
       if ((b = q('[data-delete-virtual]'))) {
@@ -3791,6 +3651,7 @@ ${bill.lines?.length ? `<div class="lines">${bill.lines.map((l) => `<span>${esc(
         if (this._allTenants || (was && t.value === portalClient)) { await this.load(); this.paint(true); } else await this.selectClient(t.value);
         return;
       }
+      if (t.id === 'billFile' && this._editor?.kind === 'price' && t.files.length) { await this.readPriceBill([...t.files]); return; }
       if (t.id === 'locationSwitch') { this._selectedLocation = t.value || null; this._q.wiringSearch = ''; this.paint(true); return; }
       // A client administrator has no locations of its own, so the list goes when that role is picked.
       if (t.id === 'editorRole' && this._editor?.kind === 'person') { this._editor.role = t.value; this._editorStale = true; this.paintDialog(); return; }
@@ -4047,7 +3908,6 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
   reg('building-topology-card', TopologyCard, 'Topology');
   reg('building-home-card', HomeCard, 'Home');
   reg('building-admin-table-card', AdminTableCard, 'Administration (table view)');
-  reg('building-manage-card', ManageCard, 'Locations and groups');
   reg('energy-nav-card', NavCard, 'Bottom bar');
   reg('building-device-map-card', DeviceMapCard, 'Device map');
   reg('building-portal-start-card', PortalStartCard, 'Portal start');
@@ -4059,4 +3919,4 @@ path.l.talk{stroke:var(--ok);opacity:.75;stroke-dasharray:5 6;animation:run 2.4s
   reg('building-alerts-card', AlertsCard, 'Building alerts');
 }
 
-if (typeof module !== 'undefined') module.exports = { billPrices, billKind, billPages, parseBill, exchangeRows, billExtra, dayStartMs, priceRule, vatNote, chartPrice, priceList, priceSeries, pricePanel, combineTotals, priceOf, treeWithPrice, ruleAutomation, ruleTargets, ruleAutoId, autoRuns, whenShort, autoTitle, sumPlan, parseSchedule, serverPlaces, nativePlaced, adminDeviceCatalog, spreadCatchUp, statGaps, cfgSwitches, guessControls, kindOf, typeLabel, scheduleConfig, daysText, groupSwitches, liveSwitches, isKept, shortNames, layoutRooms, radialLayout, layoutTree, wiringTree, networkTree, countUnder, downUnder, shutNodes, shutBelow, allParents, alarmRules, energyChart, chartBox, treeWithLocationMain, valueText, nowPanel, powerText, isMeasuring, setLocation, placesUnder, placePath, placeParts, placeLabel, flatPlaces, placedDevices, treeWithDevicePlaced, setTree, TREE, rootsIn, countedIn, readingsOf, homeDevices, buildingRoots, subtreeOf, nodeEnergy, unmeasuredOf, breakdownRows, wouldLoop, treeWithParent, treeWithMain, treeWithVirtual, treeWithoutVirtual, qualityRows, syncModel, portalModel, devicePower, withLiveHour, liveReadings, combineTotals, hourSoFar, mergeEnergy, spacePower, controlChanged, ALERT_SETTINGS, assessAlarm, worstIn, valueAt, groupAlarms, networkSummary, alertsHtml, resolveSpace, inSpace, devicesIn, deviceHealth, bucketEnergy, computeActive, alarmPeriods, alarmInfo, networkRestarts, duration, hourTip, deviceStatus, filterDevices, minutes, DEVICES, BRIDGE };
+if (typeof module !== 'undefined') module.exports = { loadPriceMemory, priceStatus, billPrices, billKind, billPages, parseBill, exchangeRows, billExtra, dayStartMs, priceRule, vatNote, chartPrice, priceList, priceSeries, pricePanel, combineTotals, priceOf, treeWithPrice, ruleAutomation, ruleTargets, ruleAutoId, autoRuns, whenShort, autoTitle, sumPlan, parseSchedule, serverPlaces, nativePlaced, adminDeviceCatalog, spreadCatchUp, statGaps, cfgSwitches, guessControls, kindOf, typeLabel, scheduleConfig, daysText, groupSwitches, liveSwitches, isKept, layoutRooms, radialLayout, layoutTree, wiringTree, networkTree, countUnder, downUnder, shutNodes, shutBelow, allParents, alarmRules, energyChart, chartBox, treeWithLocationMain, valueText, nowPanel, powerText, isMeasuring, setLocation, placesUnder, placePath, placeParts, placeLabel, flatPlaces, placedDevices, treeWithDevicePlaced, setTree, TREE, rootsIn, countedIn, readingsOf, homeDevices, buildingRoots, subtreeOf, nodeEnergy, unmeasuredOf, breakdownRows, wouldLoop, treeWithParent, treeWithMain, treeWithVirtual, treeWithoutVirtual, qualityRows, syncModel, portalModel, devicePower, withLiveHour, liveReadings, combineTotals, hourSoFar, mergeEnergy, spacePower, controlChanged, ALERT_SETTINGS, assessAlarm, worstIn, valueAt, groupAlarms, networkSummary, alertsHtml, resolveSpace, inSpace, devicesIn, deviceHealth, bucketEnergy, computeActive, alarmPeriods, alarmInfo, networkRestarts, duration, hourTip, deviceStatus, filterDevices, minutes, DEVICES, BRIDGE };

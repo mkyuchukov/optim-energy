@@ -47,7 +47,8 @@ MANAGED_GROUP_PREFIX = f"{DOMAIN}_"
 DEFAULT_CLIENT = "default"
 MAX_TREE_BYTES = 2 * 1024 * 1024
 # ponytail: the one market-price integration in use. Make it a setting when a second source appears.
-_MARKET_PRICE_PLATFORMS = frozenset({"entsoe"})
+MARKET_PRICE_PLATFORMS = frozenset({"entsoe"})
+_MARKET_PRICE_PLATFORMS = MARKET_PRICE_PLATFORMS
 _NAME_TAKEN = 'Home Assistant already has an area called "{}". Choose another name.'
 ROLE_CLIENT_ADMIN = "client_admin"
 ROLE_USER = "user"
@@ -431,6 +432,8 @@ class TenancyManager:
             hass, STORAGE_VERSION, STORAGE_KEY, private=True, atomic_writes=True
         )
         self.data: dict[str, Any] = {}
+        # Set by the integration's setup: the last market prices seen (see prices.py).
+        self.prices: Any = None
         self._sync_lock = asyncio.Lock()
         self._sync_cancel = None
         self._unsubscribers: list[Any] = []
@@ -1152,6 +1155,15 @@ class TenancyManager:
                     state = self.hass.states.get(automation_id)
                     out.append(f'the schedule "{state.name if state else automation_id}"')
         return out
+
+    def price_snapshot(self, user: User) -> dict[str, Any]:
+        """The last market prices seen and whether they are live. The same for every tenant."""
+        ctx = self.context(user)
+        if not ctx["is_root"] and not ctx["role"]:
+            raise HomeAssistantError("This account is not assigned to a tenant")
+        if self.prices is None:
+            return {"at": None, "values": {}, "today": [], "tomorrow": [], "live": False}
+        return self.prices.snapshot()
 
     def _device_integrations(self, device: Any) -> list[str]:
         """Name the integration a device comes from."""
@@ -2086,6 +2098,7 @@ def async_register_commands(hass: HomeAssistant, manager: TenancyManager) -> Non
         lambda user, msg: manager.async_assign_device(user, msg.get("client"), msg["device_id"], msg.get("place") or None),
     )
     _command("device/inbox", {}, lambda user, msg: manager.device_inbox(user))
+    _command("price/last", {}, lambda user, msg: manager.price_snapshot(user))
     _command(
         "device/ignore",
         {probatio.Required("device_id"): str, probatio.Required("ignored"): bool},

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.0
+
+Setup for tenant admins, rebuilt; prices that survive an outage; real device names.
+
+- **Device names are shown as they are in Home Assistant.** The portal used to leave off a first word that every switch in a location shared, so "OSV Kitchen" was shown as "Kitchen". That shortening is gone.
+- **Last known prices.** The server remembers the last exchange prices it saw. While the price source gives no readings (after a restart, or when it cannot be reached) the price, the costs and the price chart use them, and a marker says "Not live · last read ..." in red; green "Live" otherwise. The marker is under "Price now", on the price chart and in the price dialog.
+- **Setup, Locations.** The same table and dialogs as Administration: "Manage groups" with the group Edit dialog, and "Price", a dialog with the three sources (IBEX with its margin, a bill upload, a fixed price). A tenant admin cannot add, rename, move or delete a location; the buttons are not there.
+- **Setup, Devices** replaces Wiring: a table of the tenant's devices with an Edit dialog for the name, location and group. The parent device, the main device and virtual devices stay with the administrator.
+- Administration, Locations has the Price dialog too.
+
 ## 0.15.1
 
 - Fixed: a tenant account did not see the exchange (IBEX) price chart, and its exchange price fell back to the helper. The market price sensors belong to no location, so tenants were not allowed to read them; every tenant can read them now.

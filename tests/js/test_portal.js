@@ -67,13 +67,6 @@ m.setTree({ places: [], placed: {}, kinds: { o: 'appliance', n: 'none' } });
 assert.strictEqual(m.kindOf({ id: 'o', name: 'X', switch: 's' }), 'relay'); assert.strictEqual(m.kindOf({ id: 'n', name: 'X', switch: 's' }), 'meter');
 assert.strictEqual(m.typeLabel({ id: 'q', name: 'Main Meter' }), 'Energy meter');
 console.log('names ok');
-// Names drop what the location and the group already say, and two lights never read the same.
-const every = ['ACME Hallway NE', 'ACME Hallway NW', 'ACME room 401', 'ACME room 402', 'ACME Kitchen', 'ACME Water machine'];
-assert.deepStrictEqual(m.shortNames(['ACME Hallway NE', 'ACME Hallway NW'], every), ['NE', 'NW']);
-assert.deepStrictEqual(m.shortNames(['ACME room 401', 'ACME room 402'], every), ['Room 401', 'Room 402']);
-assert.deepStrictEqual(m.shortNames(['ACME Kitchen'], every), ['Kitchen']);
-assert.deepStrictEqual(m.shortNames(['Corridor'], ['Corridor', 'Office']), ['Corridor']);
-console.log('short names ok');
 // Rooms never overlap and every light sits inside its room.
 const L = (n) => Array.from({ length: n }, (_, i) => ({ id: `l${i}` }));
 const laid = m.layoutRooms([{ id: 'a', lights: L(1) }, { id: 'b', lights: L(4) }, { id: 'c', lights: L(1) }, { id: 'd', lights: L(6) }, { id: 'e', lights: L(10) }, { id: 'f', lights: [] }]);
@@ -299,6 +292,7 @@ console.log('prices ok');
   const lamp = m.DEVICES.find((d) => d.id === 'lamp');
   assert.ok(lamp && lamp.switch === 'light.hall' && !lamp.power && !lamp.energy, 'an unmetered light is not in the portal');
   assert.strictEqual(m.kindOf(lamp), 'lights');
+  assert.strictEqual(lamp.name, 'Hall lamp', 'a device is not called what Home Assistant calls it');
   // Reports only ever name devices that measure, so a report never opens on a device with no figures.
   const model = m.portalModel(hass);
   assert.ok(model.meters.plug && !model.meters.lamp, 'the report model lists an unmetered device as a meter');
@@ -306,3 +300,24 @@ console.log('prices ok');
   m.DEVICES.length = 0;
   console.log('any provider ok');
 }
+
+// With the price source down, the portal uses what the server last saw, and says it is not live.
+(async () => {
+  const tree = () => m.setTree({ places: [{ id: 'loc:x', name: 'X', kind: 'location' }], placed: {}, prices: { 'loc:x': { mode: 'exchange', sensor: 'sensor.market', extra: 0.01, vat: true } } });
+  tree();
+  const day = new Date().toISOString().slice(0, 10), rows = Array.from({ length: 96 }, (_, i) => ({ time: new Date(Date.parse(`${day}T00:00:00Z`) + i * 900000).toISOString(), price: 100 }));
+  const down = { config: { time_zone: 'UTC' }, states: { 'input_number.client_tariff': { state: '0.25' }, 'sensor.market': { state: 'unavailable', attributes: {} } }, callWS: async () => ({ at: Date.now() / 1000 - 600, values: { 'sensor.market': { state: '200', unit: '€/MWh' } }, today: rows, tomorrow: [], live: false }) };
+  const before = m.priceRule(down, 'loc:x');
+  assert.ok(before.missing, 'without anything remembered the helper price is used, and said so');
+  await m.loadPriceMemory(down, true);
+  tree(); // other checks in this file run in between and set their own
+  const kept = m.priceRule(down, 'loc:x');
+  assert.ok(kept.stale && !kept.missing && Math.abs(kept.now - (100 / 1000 + 0.01) * 1.2) < 1e-9, `the last known price is not used: ${JSON.stringify(kept)}`);
+  assert.strictEqual(m.priceStatus(down).live, false);
+  assert.strictEqual(m.priceList(down).length, 96);
+  const up = { ...down, states: { ...down.states, 'sensor.market': { state: '300', attributes: { unit_of_measurement: '€/MWh', prices_today: rows } } } };
+  const live = m.priceRule(up, 'loc:x');
+  assert.ok(!live.stale && Math.abs(live.now - (300 / 1000 + 0.01) * 1.2) < 1e-9, 'a live reading wins over the remembered one');
+  assert.strictEqual(m.priceStatus(up).live, true);
+  console.log('last known prices ok');
+})().catch((e) => { console.error(e); process.exit(1); });

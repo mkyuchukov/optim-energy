@@ -203,22 +203,31 @@ try {
   assert.equal(await locationLinks.count(), 0, 'single-location user saw the Locations tab');
   await oneLocation.context.close();
 
-  // Checked tree/price editing through the client-admin UI.
+  // A tenant admin's Setup uses the same tables and dialogs as Administration, without what only
+  // an administrator may do. The price of a location is set in a dialog.
   await adminPage.goto(`${base}/energy-setup/structure`, { waitUntil: 'domcontentloaded' });
-  const manage = await waitCard(adminPage, 'building-manage-card');
-  await manage.getByText('Price per kWh').waitFor({ timeout: 30000 });
-  const fixed = manage.locator(`[data-price-mode="fixed"][data-loc="${state.location_a_north}"]`);
-  await fixed.click();
-  await manage.locator('#typed').fill('0.31');
-  await manage.locator(`[data-type-save="${state.location_a_north}"]`).click();
-  await manage.getByText('€ 0.310').first().waitFor({ timeout: 20000 });
-  // The main device decides what the client sees, so only root may change it.
-  assert.equal(await manage.locator('select[data-main-for]').count(), 0, 'client admin was offered the main-device control');
+  const manage = await waitCard(adminPage, 'building-admin-table-card');
+  await manage.getByRole('heading', { level: 1, name: 'Locations' }).waitFor({ timeout: 30000 });
+  const northRow = (card) => card.locator('#admin tbody tr').filter({ hasText: 'Browser A North' }).first();
+  await northRow(manage).waitFor({ timeout: 30000 });
+  assert.equal(await manage.locator('[data-new-location], [data-edit-location], [data-move-location], [data-delete-location], #clientSwitch').count(), 0, 'a tenant admin is offered to add, rename, move or delete locations');
+  await northRow(manage).locator('[data-price]').click();
+  await manage.locator('dialog[open] [data-price-tab="fixed"]').click();
+  await manage.locator('#priceFixed').fill('0.31');
+  await shot(adminPage, 'price-dialog');
+  await manage.locator('dialog[open] [data-save-editor]').click();
+  await northRow(manage).getByText('€ 0.310').waitFor({ timeout: 20000 });
   await adminPage.waitForTimeout(500);
   await adminPage.reload({ waitUntil: 'domcontentloaded' });
-  const manageReloaded = await waitCard(adminPage, 'building-manage-card');
-  await manageReloaded.getByText('Price per kWh').waitFor({ timeout: 30000 });
-  await manageReloaded.getByText('€ 0.310').first().waitFor({ timeout: 20000 });
+  const manageReloaded = await waitCard(adminPage, 'building-admin-table-card');
+  await northRow(manageReloaded).getByText('€ 0.310').waitFor({ timeout: 30000 });
+  // The exchange price needs no upload; without a market sensor the dialog says so instead of saving.
+  await northRow(manageReloaded).locator('[data-price]').click();
+  await manageReloaded.locator('dialog[open] [data-price-tab="exchange"]').click();
+  await manageReloaded.locator('dialog[open] .live').waitFor({ timeout: 10000 });
+  await manageReloaded.locator('dialog[open] [data-save-editor]').click();
+  assert.match(await manageReloaded.locator('#editorError').innerText(), /No exchange price sensor/, 'an exchange price was saved without a price sensor');
+  await manageReloaded.locator('dialog[open] .form-actions [data-cancel-editor]').click();
 
 
   // Clean up the browser-created user through the same UI.
@@ -232,20 +241,33 @@ try {
   await deleteRow.waitFor({ state: 'detached', timeout: 20000 });
 
   {
-    // A client administrator manages its own groups under Setup ...
+    // A tenant admin manages its own groups under Setup, in the same dialog an administrator uses ...
     await adminPage.goto(`${base}/energy-setup/structure`, { waitUntil: 'domcontentloaded' });
-    const setup = await waitCard(adminPage, 'building-manage-card');
-    await setup.locator(`[data-group-new="${state.location_a_north}"]`).click();
-    await setup.locator('#gname').fill('Admin Group');
-    await setup.locator('[data-group-save]').click();
-    const adminGroup = () => setup.locator('#tree li').filter({ hasText: 'Admin Group' }).last();
-    await adminGroup().waitFor({ timeout: 20000 });
-    await adminGroup().locator('[data-group-rename]').click();
-    await setup.locator('#gname').fill('Admin Team');
-    await setup.locator('[data-group-save]').click();
-    const adminTeam = () => setup.locator('#tree li').filter({ hasText: 'Admin Team' }).last();
-    await adminTeam().waitFor({ timeout: 20000 });
-    assert.equal(await setup.locator('[data-nav]').count(), 0, 'client administrator is still sent to Home Assistant settings');
+    const setup = await waitCard(adminPage, 'building-admin-table-card');
+    await setup.locator(`[data-select-location="${state.location_a_north}"]`).first().click();
+    await setup.locator('[data-new-group]').click();
+    await setup.locator('#editorName').fill('Admin Group');
+    await setup.locator('dialog[open] [data-save-editor]').click();
+    const groupNamed = (name) => setup.locator('#admin tbody tr').filter({ hasText: name }).first();
+    await groupNamed('Admin Group').waitFor({ timeout: 20000 });
+    await groupNamed('Admin Group').locator('[data-edit-group]').click();
+    await setup.locator('#editorName').fill('Admin Team');
+    await setup.locator('dialog[open] [data-save-editor]').click();
+    await groupNamed('Admin Team').waitFor({ timeout: 20000 });
+
+    // ... and edits a device there too: name, location and group, but not its wiring.
+    await adminPage.goto(`${base}/energy-setup/devices`, { waitUntil: 'domcontentloaded' });
+    const setupDevices = await waitCard(adminPage, 'building-admin-table-card');
+    await setupDevices.getByRole('heading', { level: 1, name: 'Devices' }).waitFor({ timeout: 30000 });
+    const meterRow = setupDevices.locator('#admin tbody tr').filter({ hasText: 'Browser Meter A' }).first();
+    await meterRow.waitFor({ timeout: 30000 });
+    assert.equal(await setupDevices.locator('[data-new-virtual], [data-delete-virtual], [data-inbox-remove], [data-device-view], [data-add-device]').count(), 0, 'a tenant admin is offered an administrator\'s device controls');
+    await meterRow.locator('[data-edit-device]').click();
+    await setupDevices.locator('dialog[open] #deviceLocation').waitFor({ timeout: 10000 });
+    assert.equal(await setupDevices.locator('dialog[open] #deviceGroup').count(), 1, 'the device dialog has no group field');
+    assert.equal(await setupDevices.locator('dialog[open] #editorParent, dialog[open] #editorMain, dialog[open] #deviceClient').count(), 0, 'a tenant admin is offered wiring, the main device or another tenant');
+    await shot(adminPage, 'setup-device-dialog');
+    await setupDevices.locator('dialog[open] .form-actions [data-cancel-editor]').click();
 
     // ... and renames a device and moves it into that group from the device's own page.
     await adminPage.goto(`${base}/energy-locations/start`, { waitUntil: 'domcontentloaded' });
@@ -264,7 +286,7 @@ try {
     assert.equal(await list.locator('#dplace option').filter({ hasText: 'Browser Client B' }).count(), 0, 'another client is offered as a place');
 
     // A light with no metering is a device of the portal too: listed, switchable, and no page trips over its missing figures.
-    for (const path of ['/energy-home/home', '/energy-groups/groups', '/energy-devices/topology', '/energy-reports/report', '/energy-alerts/alerts', '/energy-setup/wiring', '/energy-setup/automations', '/energy-setup/alerts']) {
+    for (const path of ['/energy-home/home', '/energy-groups/groups', '/energy-devices/topology', '/energy-reports/report', '/energy-alerts/alerts', '/energy-setup/devices', '/energy-setup/automations', '/energy-setup/alerts']) {
       await adminPage.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' });
       await adminPage.waitForTimeout(2500);
     }
@@ -290,8 +312,10 @@ try {
 
     // A Home Assistant administrator can now open a client's Setup instead of being sent back to Administration.
     await root.goto(`${base}/energy-setup/structure`, { waitUntil: 'domcontentloaded' });
-    const rootSetup = await waitCard(root, 'building-manage-card');
-    await rootSetup.getByText('Price per kWh').waitFor({ timeout: 30000 });
+    const rootSetup = await waitCard(root, 'building-admin-table-card');
+    await rootSetup.getByText('Price per kWh').first().waitFor({ timeout: 30000 });
+    assert.equal(await rootSetup.locator('[data-new-location]').count(), 0, 'Setup offers to add a location');
+    await rootSetup.locator(`[data-select-location="${state.location_a_north}"]`).first().dispatchEvent('click');
     await rootSetup.getByText('Admin Team').first().waitFor({ timeout: 20000 });
     assert.match(new URL(root.url()).pathname, /^\/energy-setup/, 'administrator was redirected away from Setup');
 
