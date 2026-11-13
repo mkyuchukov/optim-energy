@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from acceptance import (
+    seed_legacy_dashboard,
     create_fixture_entry,
     CLIENT_ADMIN_A,
     RuntimeHarness,
@@ -48,6 +49,8 @@ def run(version: str, *, keep: bool = False) -> None:
     try:
         harness.start()
         root_token = complete_onboarding(http)
+        # These flows start on the label model and migrate, so the instance needs an older tree.
+        seed_legacy_dashboard(harness, http, root_token)
         create_config_entry(http, root_token)
         root = WebSocket(http.host, http.port)
         root.auth(root_token)
@@ -215,8 +218,15 @@ def run(version: str, *, keep: bool = False) -> None:
                     "devices": [
                         {"key": "browser_spare", "name": "Browser Spare Meter", "entity": True},
                         {"key": "browser_meter_a", "name": "Browser Meter A", "meter": True},
+                        {"key": "browser_lamp_a", "name": "Browser Lamp A", "light": True},
                     ],
                 }
+            )
+            lamp_a = next(
+                d["id"] for d in migrate.command({"type": "optim_energy/device/inbox"}) if d["name"] == "Browser Lamp A"
+            )
+            migrate.command(
+                {"type": "optim_energy/device/assign", "client": client_a, "device_id": lamp_a, "place": location_a_north}
             )
             # A metered device that already belongs to Client A, for the client administrator to manage.
             meter_a = next(

@@ -20,6 +20,7 @@ Every `optim_energy/*` websocket command and the roles that may call it. A test 
 | `location/catalog` | yes | no | no |
 | `location/save` | yes | no | no |
 | `location/delete` | yes, when empty | no | no |
+| `location/move` | yes, when no person is assigned to it and nothing links it to the client's other locations | no | no |
 | `group/save` | any client | own locations | no |
 | `group/delete` | any client | own groups | no |
 | `device/assign` | any device, any client, or unassign; refused while a sum, schedule or alert of the old client still uses the device | own devices to own locations and groups | no |
