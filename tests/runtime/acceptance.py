@@ -1018,15 +1018,16 @@ def run(version: str, *, keep: bool = False) -> None:
             assert_equal(area_of_device(channel), None, "a channel stayed in the location its meter left")
             wait_until(lambda: not user_a_reads("sensor.phase_meter_a_power"), "the user still reads a channel whose meter left", timeout=20)
 
-            # Shelly devices heard on an MQTT broker become devices of their own, the first time they are
-            # heard. Only the accounts asked for are taken, and live values are written once per interval.
-            set_options(http, root_token, entry_id, {"audit": False, "broker_import": True, "broker_accounts": "acme@aiot.example", "broker_interval": 5})
+            # Shelly devices heard on an MQTT broker become devices of their own the first time they are
+            # heard, with a sensor for every number they report, and every message is written at once.
+            set_options(http, root_token, entry_id, {"audit": False, "broker_import": True})
             em = '{"id":0,"a_act_power":100.0,"b_act_power":200.0,"c_act_power":300.0,"a_voltage":231.0,"total_act_power":600.0}'
             emdata = '{"id":0,"total_act":2500000.0,"total_act_ret":10.0,"a_total_act_energy":900000.0}'
             fed = root.command({"type": "optim_runtime_fixture/broker_feed", "messages": [
                 ["acme@aiot.example/aa11bb22cc33/online", "true"],
                 ["acme@aiot.example/aa11bb22cc33/status/em:0", em],
                 ["acme@aiot.example/aa11bb22cc33/status/emdata:0", emdata],
+                ["acme@aiot.example/aa11bb22cc33/status/sys", '{"uptime":5}'],
                 ["other@aiot.example/ffeeddccbbaa/status/em:0", em],
                 ["acme@aiot.example/aa11bb22cc33/events/rpc", "{}"],
             ]})
@@ -1037,25 +1038,22 @@ def run(version: str, *, keep: bool = False) -> None:
 
             power = wait_until(lambda: (s := broker_state("sensor.acme_aa11bb22cc33_power")) and s["state"] == "600.0" and s, "a broker device's power did not appear", timeout=20)
             assert_equal(power["attributes"].get("unit_of_measurement"), "W", "unit of a broker device's power")
-            energy = broker_state("sensor.acme_aa11bb22cc33_energy")
-            assert_equal((energy or {}).get("state"), "2500.0", "a broker device's energy, in kWh")
-            assert_equal(broker_state("sensor.acme_aa11bb22cc33_power_phase_a"), None, "a per-phase reading is on by default")
+            assert_equal((broker_state("sensor.acme_aa11bb22cc33_energy") or {}).get("state"), "2500.0", "a broker device's energy, in kWh")
+            assert_equal((broker_state("sensor.acme_aa11bb22cc33_power_phase_a") or {}).get("state"), "100.0", "a per-phase reading")
+            assert_equal((broker_state("sensor.acme_aa11bb22cc33_voltage_phase_a") or {}).get("state"), "231.0", "a voltage reading")
             assert_equal(broker_state("binary_sensor.acme_aa11bb22cc33_online")["state"], "on", "a broker device's online state")
+            assert_true(broker_state("sensor.other_ffeeddccbbaa_power") is not None, "a device of a second account was not made")
+            assert_true(not any(s["entity_id"].endswith("_uptime") for s in root.command({"type": "get_states"})), "the device's own housekeeping became a sensor")
             names = {d["name"] for d in root.command({"type": "config/device_registry/list"})}
-            assert_true("acme · aa11bb22cc33" in names and not any(n.startswith("other ·") for n in names), f"broker devices made: {sorted(n for n in names if '·' in n)}")
-            broker_device = next(d for d in inbox().values() if d["name"] == "acme · aa11bb22cc33")
-            assert_equal((broker_device["status"], broker_device["kind"]), ("unassigned", "meter"), "a broker device in the device list")
-            # A new value is written at the next interval, not at once.
+            assert_true({"acme · aa11bb22cc33", "other · ffeeddccbbaa", "MQTT broker import"} <= names, f"broker devices made: {sorted(n for n in names if '·' in n or 'broker' in n)}")
+            broker_row = next(d for d in inbox().values() if d["name"] == "acme · aa11bb22cc33")
+            assert_equal(broker_row["status"], "other", "a broker device is offered in Administration's Unassigned list")
+            # Every new value is written as soon as it arrives.
             root.command({"type": "optim_runtime_fixture/broker_feed", "messages": [["acme@aiot.example/aa11bb22cc33/status/em:0", em.replace("600.0", "650.0")]]})
-            assert_equal(broker_state("sensor.acme_aa11bb22cc33_power")["state"], "600.0", "a live value was written before the interval")
-            wait_until(lambda: broker_state("sensor.acme_aa11bb22cc33_power")["state"] == "650.0", "a live value was not written at the interval", timeout=20)
+            assert_equal(broker_state("sensor.acme_aa11bb22cc33_power")["state"], "650.0", "a new value was not written at once")
             # Offline: its readings say so.
             root.command({"type": "optim_runtime_fixture/broker_feed", "messages": [["acme@aiot.example/aa11bb22cc33/online", "false"]]})
-            wait_until(lambda: broker_state("sensor.acme_aa11bb22cc33_power")["state"] == "unavailable", "an offline broker device still shows a reading", timeout=20)
-            # Assigned like any device, a tenant's user reads it.
-            root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": broker_device["id"], "place": location_a})
-            wait_until(lambda: user_a_reads("sensor.acme_aa11bb22cc33_power"), "a tenant's user cannot read an assigned broker device", timeout=20)
-            root.command({"type": "optim_energy/device/assign", "client": client_a, "device_id": broker_device["id"]})
+            assert_equal(broker_state("sensor.acme_aa11bb22cc33_power")["state"], "unavailable", "an offline broker device still shows a reading")
             set_options(http, root_token, entry_id, {"audit": False, "broker_import": False})
 
             # A device still counted in a client's sum cannot leave that client.

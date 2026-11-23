@@ -1,15 +1,12 @@
 """Shelly devices from an MQTT broker, as Home Assistant devices.
 
-Shelly Gen2/Gen3 devices that report to a shared broker publish their status
-under ``<account>/<device>/status/<component>`` and an ``online`` flag under
-``<account>/<device>/online``. This reads those messages through Home
-Assistant's own MQTT connection and makes a device with sensors for each
-Shelly it hears from, the first time it hears from it. Nothing is ever
-published: the broker and its devices only ever see a subscriber.
-
-The live readings change every few seconds. They are written to Home
-Assistant at most once per interval, so hundreds of devices do not flood the
-database.
+Shelly Gen2/Gen3/Gen4 devices that report to a shared broker publish their
+status under ``<account>/<device>/status/<component>`` and an ``online`` flag
+under ``<account>/<device>/online``. This reads those messages through Home
+Assistant's own MQTT connection and makes a device with a sensor for every
+number it reports, the first time it is heard. Every message is written as it
+arrives: nothing is averaged, skipped or held back. Nothing is ever published:
+the broker and its devices only ever see a subscriber.
 """
 
 from __future__ import annotations
@@ -31,7 +28,29 @@ _LOGGER = logging.getLogger(__name__)
 BROKER_KEY = f"{DOMAIN}_broker"
 STATUS_TOPIC = "+/+/status/+"
 ONLINE_TOPIC = "+/+/online"
-_COMPONENT_RE = re.compile(r"^(em|emdata|em1|em1data|switch|pm1):(\d+)$")
+# Parts of a Shelly that describe the device itself, not what it measures.
+_NOT_MEASURED = {"sys", "wifi", "cloud", "mqtt", "ble", "ws", "eth", "ui", "knx", "modbus", "bthome", "script", "schedule", "plugs_ui", "matter", "zigbee", "input"}
+_COMPONENT_RE = re.compile(r"^([a-z0-9_]+):(\d+)$")
+_SKIP_KEYS = {"id", "minute_ts", "tF", "by_minute", "errors", "flags"}
+_PHASES = {"a": "phase A", "b": "phase B", "c": "phase C", "n": "neutral"}
+# What a field is: its name, device class, unit, how to scale it, and whether it only counts up.
+_FIELDS: dict[str, tuple[str, str | None, str | None, float, bool]] = {
+    "act_power": ("Power", "power", "W", 1.0, False),
+    "apower": ("Power", "power", "W", 1.0, False),
+    "aprt_power": ("Apparent power", "apparent_power", "VA", 1.0, False),
+    "voltage": ("Voltage", "voltage", "V", 1.0, False),
+    "current": ("Current", "current", "A", 1.0, False),
+    "freq": ("Frequency", "frequency", "Hz", 1.0, False),
+    "pf": ("Power factor", "power_factor", None, 1.0, False),
+    "total_act": ("Energy", "energy", "kWh", 0.001, True),
+    "total_act_ret": ("Energy returned", "energy", "kWh", 0.001, True),
+    "total_act_energy": ("Energy", "energy", "kWh", 0.001, True),
+    "total_act_ret_energy": ("Energy returned", "energy", "kWh", 0.001, True),
+    "aenergy.total": ("Energy", "energy", "kWh", 0.001, True),
+    "ret_aenergy.total": ("Energy returned", "energy", "kWh", 0.001, True),
+    "temperature.tC": ("Temperature", "temperature", "°C", 1.0, False),
+    "tC": ("Temperature", "temperature", "°C", 1.0, False),
+}
 
 
 @dataclass(frozen=True)
@@ -40,10 +59,9 @@ class Reading:
 
     key: str
     name: str
-    device_class: str
-    unit: str
+    device_class: str | None
+    unit: str | None
     state_class: str
-    enabled: bool
     value: float
 
 
@@ -53,66 +71,67 @@ def _number(value: Any) -> float | None:
     return float(value)
 
 
-def readings(component: str, payload: Any) -> list[Reading]:
-    """Turn one Shelly status message into readings. Pure, so it is easy to test.
+def _flat(payload: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Fields one level deep, so ``{"aenergy": {"total": 5}}`` gives ``aenergy.total``."""
+    out: list[tuple[str, Any]] = []
+    for key, value in payload.items():
+        if key in _SKIP_KEYS:
+            continue
+        if isinstance(value, dict):
+            out.extend((f"{key}.{inner}", v) for inner, v in value.items() if inner not in _SKIP_KEYS)
+        else:
+            out.append((key, value))
+    return out
 
-    A device's main power and energy keep the plain names "Power" and
-    "Energy"; everything per phase or per extra channel is named after them
-    ("Power phase A", "Energy channel 2") and starts disabled, so it costs
-    nothing until someone turns it on.
+
+def describe(field: str) -> tuple[str, str | None, str | None, float, bool]:
+    """Name a field. Known ones get their unit; anything else is kept under a readable name."""
+    if field in _FIELDS:
+        return _FIELDS[field]
+    phase, rest = None, field
+    if len(field) > 2 and field[1] == "_" and field[0] in _PHASES:
+        phase, rest = _PHASES[field[0]], field[2:]
+    elif field.startswith("total_") and field[6:] in _FIELDS:
+        rest = field[6:]
+    if rest == "total_act_energy" and phase:
+        name, cls, unit, scale, total = _FIELDS["total_act_energy"]
+    elif rest == "total_act_ret_energy" and phase:
+        name, cls, unit, scale, total = _FIELDS["total_act_ret_energy"]
+    elif rest in _FIELDS:
+        name, cls, unit, scale, total = _FIELDS[rest]
+    else:
+        name, cls, unit, scale, total = rest.replace(".", " ").replace("_", " ").capitalize(), None, None, 1.0, False
+    return (f"{name} {phase}" if phase else name, cls, unit, scale, total)
+
+
+def readings(component: str, payload: Any) -> list[Reading]:
+    """Turn one Shelly status message into readings: one for every number in it.
+
+    Pure, so it is easy to test. The device's main power and energy keep the
+    plain names "Power" and "Energy"; a second channel is named apart
+    ("Power channel 2").
     """
     match = _COMPONENT_RE.match(component)
-    if not match or not isinstance(payload, dict):
+    if not match or match.group(1) in _NOT_MEASURED or not isinstance(payload, dict):
         return []
     kind, index = match.group(1), int(match.group(2))
     channel = f" channel {index + 1}" if index else ""
-    suffix = f"_{index + 1}" if index else ""
     out: list[Reading] = []
-
-    def add(key: str, name: str, device_class: str, unit: str, raw: Any, *, main: bool, scale: float = 1.0, total: bool = False) -> None:
+    for field, raw in _flat(payload):
         value = _number(raw)
         if value is None:
-            return
+            continue
+        name, cls, unit, scale, total = describe(field)
         out.append(
             Reading(
-                key=f"{key}{suffix}",
+                key=f"{kind}{index}_{field}".replace(".", "_"),
                 name=f"{name}{channel}",
-                device_class=device_class,
+                device_class=cls,
                 unit=unit,
                 state_class="total_increasing" if total else "measurement",
-                enabled=main and not index,
-                value=round(value * scale, 4),
+                value=round(value * scale, 6),
             )
         )
-
-    if kind == "em":
-        add("power", "Power", "power", "W", payload.get("total_act_power"), main=True)
-        add("current", "Current", "current", "A", payload.get("total_current"), main=False)
-        for phase in "abc":
-            name = phase.upper()
-            add(f"power_phase_{phase}", f"Power phase {name}", "power", "W", payload.get(f"{phase}_act_power"), main=False)
-            add(f"voltage_phase_{phase}", f"Voltage phase {name}", "voltage", "V", payload.get(f"{phase}_voltage"), main=False)
-            add(f"current_phase_{phase}", f"Current phase {name}", "current", "A", payload.get(f"{phase}_current"), main=False)
-    elif kind == "emdata":
-        add("energy", "Energy", "energy", "kWh", payload.get("total_act"), main=True, scale=0.001, total=True)
-        add("energy_returned", "Energy returned", "energy", "kWh", payload.get("total_act_ret"), main=True, scale=0.001, total=True)
-        for phase in "abc":
-            add(f"energy_phase_{phase}", f"Energy phase {phase.upper()}", "energy", "kWh", payload.get(f"{phase}_total_act_energy"), main=False, scale=0.001, total=True)
-    elif kind == "em1":
-        add("power", "Power", "power", "W", payload.get("act_power"), main=True)
-        add("voltage", "Voltage", "voltage", "V", payload.get("voltage"), main=False)
-        add("current", "Current", "current", "A", payload.get("current"), main=False)
-        add("frequency", "Frequency", "frequency", "Hz", payload.get("freq"), main=False)
-    elif kind == "em1data":
-        add("energy", "Energy", "energy", "kWh", payload.get("total_act_energy"), main=True, scale=0.001, total=True)
-        add("energy_returned", "Energy returned", "energy", "kWh", payload.get("total_act_ret_energy"), main=True, scale=0.001, total=True)
-    else:  # switch and pm1: a relay or a power meter with its own counter
-        add("power", "Power", "power", "W", payload.get("apower"), main=True)
-        add("voltage", "Voltage", "voltage", "V", payload.get("voltage"), main=False)
-        add("current", "Current", "current", "A", payload.get("current"), main=False)
-        add("energy", "Energy", "energy", "kWh", (payload.get("aenergy") or {}).get("total") if isinstance(payload.get("aenergy"), dict) else None, main=True, scale=0.001, total=True)
-        returned = payload.get("ret_aenergy")
-        add("energy_returned", "Energy returned", "energy", "kWh", returned.get("total") if isinstance(returned, dict) else None, main=True, scale=0.001, total=True)
     return out
 
 
@@ -132,27 +151,28 @@ def device_name(account: str, device: str) -> str:
 
 
 class BrokerImport:
-    """Hold the devices heard on the broker and keep their sensors up to date."""
+    """Hold the devices heard on the broker and write every reading as it arrives."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
         self.enabled = False
-        self.accounts: set[str] = set()
-        self.interval = 60
         self.adders: dict[str, Any] = {}
         self.entities: dict[str, Any] = {}
         self.waiting: dict[str, list[Any]] = {"sensor": [], "binary_sensor": []}
         self.online: dict[str, bool] = {}
-        self._dirty: set[str] = set()
+        self.devices: set[str] = set()
+        self.rate = None  # messages in the last full minute, for the load sensor
+        self._count = 0
         self._unsubs: list[Any] = []
 
-    async def async_configure(self, enabled: bool, accounts: set[str], interval: int) -> None:
-        """Start, stop or change the import. Devices already made are kept."""
+    async def async_configure(self, enabled: bool) -> None:
+        """Start or stop listening. Devices already made are kept."""
         self.stop()
-        self.enabled, self.accounts, self.interval = enabled, accounts, max(5, int(interval))
+        self.enabled = enabled
         if not enabled:
             return
-        self._unsubs.append(async_track_time_interval(self.hass, self._flush, timedelta(seconds=self.interval)))
+        self._unsubs.append(async_track_time_interval(self.hass, self._minute, timedelta(minutes=1)))
+        self._load_sensor()
         try:
             from homeassistant.components import mqtt
         except ImportError:  # pragma: no cover - MQTT is part of Home Assistant
@@ -162,7 +182,7 @@ class BrokerImport:
             return
         for topic in (STATUS_TOPIC, ONLINE_TOPIC):
             self._unsubs.append(await mqtt.async_subscribe(self.hass, topic, self._message, qos=0))
-        _LOGGER.info("Optim Energy broker import listening (%s)", ", ".join(sorted(accounts)) or "all accounts")
+        _LOGGER.info("Optim Energy broker import listening")
 
     def stop(self) -> None:
         for unsub in self._unsubs:
@@ -175,32 +195,31 @@ class BrokerImport:
 
     @callback
     def handle(self, topic: str, payload: Any) -> None:
-        """Take one broker message. Also called directly by the tests."""
+        """Take one broker message and write what it says at once. Also called by the tests."""
         if not self.enabled:
             return
         where = split_topic(topic)
         if where is None:
             return
+        self._count += 1
         account, device, part = where
-        if self.accounts and account not in self.accounts:
-            return
         base = f"{account}/{device}"
+        self.devices.add(base)
         if part == "online":
             text = payload.decode() if isinstance(payload, bytes) else str(payload)
             self.online[base] = text.strip().lower() == "true"
-            entity = self._entity("binary_sensor", f"{base}:online", account, device, None)
-            entity.update_now(self.online[base])
-            for key in [k for k in self.entities if k.startswith(f"{base}:")]:
-                self._dirty.add(key)
+            self._entity("binary_sensor", f"{base}:online", account, device, None).show(self.online[base])
+            # Its readings follow: unavailable while it is offline.
+            for key, entity in self.entities.items():
+                if key.startswith(f"{base}:") and entity.hass is not None and key != f"{base}:online":
+                    entity.async_write_ha_state()
             return
         try:
             data = json.loads(payload) if isinstance(payload, (str, bytes)) else payload
         except ValueError:
             return
         for reading in readings(part, data):
-            entity = self._entity("sensor", f"{base}:{reading.key}", account, device, reading)
-            entity.value = reading.value
-            self._dirty.add(f"{base}:{reading.key}")
+            self._entity("sensor", f"{base}:{reading.key}", account, device, reading).show(reading.value)
 
     def _entity(self, platform: str, key: str, account: str, device: str, reading: Reading | None) -> Any:
         entity = self.entities.get(key)
@@ -217,6 +236,25 @@ class BrokerImport:
             self.waiting[platform].append(entity)
         return entity
 
+    def _load_sensor(self) -> None:
+        if "load" in self.entities:
+            return
+        from .broker_entities import BrokerLoad
+
+        entity = BrokerLoad(self)
+        self.entities["load"] = entity
+        if self.adders.get("sensor"):
+            self.adders["sensor"]([entity])
+        else:
+            self.waiting["sensor"].append(entity)
+
+    @callback
+    def _minute(self, _now: Any = None) -> None:
+        self.rate, self._count = self._count, 0
+        load = self.entities.get("load")
+        if load is not None and load.hass is not None:
+            load.async_write_ha_state()
+
     def register(self, platform: str, adder: Any) -> None:
         """A platform is ready: it takes every entity made before it was."""
         self.adders[platform] = adder
@@ -224,10 +262,3 @@ class BrokerImport:
             adder(self.waiting[platform])
             self.waiting[platform] = []
 
-    @callback
-    def _flush(self, _now: Any = None) -> None:
-        dirty, self._dirty = self._dirty, set()
-        for key in dirty:
-            entity = self.entities.get(key)
-            if entity is not None and entity.hass is not None:
-                entity.async_write_ha_state()

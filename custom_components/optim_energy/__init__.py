@@ -19,8 +19,6 @@ from homeassistant.exceptions import HomeAssistantError
 from .broker import BROKER_KEY, BrokerImport
 from .const import (
     CONF_BROKER,
-    CONF_BROKER_ACCOUNTS,
-    CONF_BROKER_INTERVAL,
     CONF_SITE_NAME,
     DOMAIN,
     FRONTEND_DIRECTORY,
@@ -95,18 +93,10 @@ async def _async_apply_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await _async_configure_broker(hass, entry)
 
 
-def _broker_accounts(value: Any) -> set[str]:
-    return {part.strip() for part in str(value or "").replace("\n", ",").split(",") if part.strip()}
-
-
 async def _async_configure_broker(hass: HomeAssistant, entry: ConfigEntry) -> None:
     importer: BrokerImport | None = hass.data.get(BROKER_KEY)
     if importer is not None:
-        await importer.async_configure(
-            bool(entry.options.get(CONF_BROKER, False)),
-            _broker_accounts(entry.options.get(CONF_BROKER_ACCOUNTS)),
-            int(entry.options.get(CONF_BROKER_INTERVAL, 60)),
-        )
+        await importer.async_configure(bool(entry.options.get(CONF_BROKER, False)))
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

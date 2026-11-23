@@ -577,21 +577,28 @@ class TenancyTests(unittest.TestCase):
         assert broker.split_topic("methodia@aiotcloud.app/08f9e0e66f84/online") == ("methodia@aiotcloud.app", "08f9e0e66f84", "online")
         assert broker.split_topic("methodia@aiotcloud.app/08f9e0e66f84/events/rpc") is None
         assert broker.device_name("methodia@aiotcloud.app", "08f9e0e66f84") == "methodia · 08f9e0e66f84"
-        # A three-phase meter: total power and energy (in kWh) are on; the per-phase figures start off.
-        em = {r.key: r for r in broker.readings("em:0", {"id": 0, "a_act_power": 10.0, "b_act_power": 20.0, "c_act_power": 30.0, "a_voltage": 235.1, "total_act_power": 60.0, "total_current": 0.3})}
-        assert em["power"].value == 60.0 and em["power"].enabled and em["power"].device_class == "power"
-        assert not em["power_phase_a"].enabled and em["voltage_phase_a"].unit == "V"
-        data = {r.key: r for r in broker.readings("emdata:0", {"id": 0, "total_act": 8093789.59, "total_act_ret": 1774.41, "a_total_act_energy": 2113722.14})}
-        assert data["energy"].value == 8093.7896 and data["energy"].unit == "kWh" and data["energy"].state_class == "total_increasing"
-        assert data["energy_returned"].enabled and not data["energy_phase_a"].enabled
-        # A relay with its own meter, and its second channel, which starts off and is named apart.
-        sw = {r.key: r for r in broker.readings("switch:0", {"apower": 5.5, "aenergy": {"total": 1500}})}
-        assert sw["power"].value == 5.5 and sw["energy"].value == 1.5
-        second = {r.key: r for r in broker.readings("switch:1", {"apower": 1})}
-        assert second["power_2"].name == "Power channel 2" and not second["power_2"].enabled
-        # Anything else is ignored rather than guessed at.
-        assert broker.readings("sys", {"uptime": 5}) == [] and broker.readings("em:0", "not json") == []
-        assert broker.readings("em:0", {"total_act_power": None, "a_voltage": True}) == []
+        by_name = lambda component, payload: {r.name: r for r in broker.readings(component, payload)}
+        # A three-phase meter: every number becomes a reading, with its unit; the id does not.
+        em = by_name("em:0", {"id": 0, "a_current": 0.028, "a_voltage": 235.1, "a_act_power": 0.0, "a_aprt_power": 6.6, "a_pf": 0.0, "a_freq": 50.0,
+                              "n_current": None, "total_current": 0.3, "total_act_power": 60.0, "total_aprt_power": 70.0, "user_calibrated_phase": []})
+        assert set(em) == {"Current phase A", "Voltage phase A", "Power phase A", "Apparent power phase A", "Power factor phase A", "Frequency phase A", "Current", "Power", "Apparent power"}, sorted(em)
+        assert em["Power"].value == 60.0 and em["Power"].device_class == "power" and em["Power"].unit == "W"
+        assert em["Voltage phase A"].unit == "V" and em["Power factor phase A"].unit is None
+        # Its counters, in kWh, counting up.
+        data = by_name("emdata:0", {"id": 0, "a_total_act_energy": 2113722.14, "a_total_act_ret_energy": 1222.75, "total_act": 8093789.59, "total_act_ret": 1774.41})
+        assert data["Energy"].value == 8093.78959 and data["Energy"].unit == "kWh" and data["Energy"].state_class == "total_increasing"
+        assert data["Energy returned"].value == 1.77441 and data["Energy phase A"].value == 2113.72214 and "Energy returned phase A" in data
+        # A relay with its own meter, read one level deep; a second channel is named apart.
+        sw = by_name("switch:0", {"id": 0, "output": True, "apower": 5.5, "aenergy": {"total": 1500, "by_minute": [1, 2], "minute_ts": 1}, "temperature": {"tC": 41.2, "tF": 106.2}})
+        assert sw["Power"].value == 5.5 and sw["Energy"].value == 1.5 and sw["Temperature"].unit == "°C" and set(sw) == {"Power", "Energy", "Temperature"}
+        assert "Power channel 2" in by_name("switch:1", {"apower": 1})
+        # A number nobody named yet is still kept, under a readable name.
+        assert by_name("em:0", {"new_metric": 3})["New metric"].unit is None
+        # The device's own housekeeping is not a measurement, and nothing is guessed from bad data.
+        assert broker.readings("sys:0", {"uptime": 5}) == [] and broker.readings("wifi", {"rssi": -60}) == []
+        assert broker.readings("em:0", "not json") == []
+        # Readings of different parts never share a key.
+        assert len({r.key for r in broker.readings("em:0", {"total_act_power": 1})} | {r.key for r in broker.readings("switch:0", {"apower": 1})}) == 2
 
     def test_every_command_has_a_capability_row(self) -> None:
         import re

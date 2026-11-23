@@ -20,12 +20,10 @@
     "step": {
       "init": {
         "title": "Optim Energy options",
-        "description": "Audit mode logs the commands and REST requests that would be denied; use it only to validate an upgrade. The broker import makes a device for every Shelly that reports on the MQTT broker Home Assistant is connected to. It only listens and never sends anything to the broker.",
+        "description": "Audit mode logs the commands and REST requests that would be denied; use it only to validate an upgrade. Reading Shelly devices from the MQTT broker makes a device, with a sensor for every value it reports, for each Shelly heard on the broker Home Assistant is connected to. Every message is written as it arrives. It only listens and never sends anything to the broker.",
         "data": {
           "audit": "Audit mode",
-          "broker_import": "Import Shelly devices from the MQTT broker",
-          "broker_accounts": "Only these accounts (first part of the topic, comma separated; empty for all)",
-          "broker_interval": "Write live readings at most every (seconds)"
+          "broker_import": "Read Shelly devices from the MQTT broker"
         }
       }
     }

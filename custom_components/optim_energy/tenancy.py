@@ -1306,6 +1306,9 @@ class TenancyManager:
                 )
             elif device.id in ignored:
                 item["status"] = "ignored"
+            elif any(domain == DOMAIN and str(ident).startswith("broker:") for domain, ident in device.identifiers):
+                # Read from the MQTT broker: in Home Assistant, but not offered to tenants for now.
+                item["status"] = "other"
             elif kind and not device.disabled_by and str(device.entry_type or "") != "service":
                 item["status"] = "unassigned"
             else:
