@@ -94,6 +94,9 @@ sys.modules[_PACKAGE.__name__] = _PACKAGE
 tenancy = _load("optim_energy_test.tenancy", COMPONENT / "tenancy.py")
 firewall = _load("optim_energy_test.firewall", COMPONENT / "firewall.py")
 portal_ops = _load("optim_energy_test.portal_ops", COMPONENT / "portal_ops.py")
+sys.modules["homeassistant.helpers.event"].async_track_time_interval = MagicMock()
+_load("optim_energy_test.const", COMPONENT / "const.py")
+broker = _load("optim_energy_test.broker", COMPONENT / "broker.py")
 
 
 def test_location_filter_does_not_expose_another_location() -> None:
@@ -567,6 +570,28 @@ class TenancyTests(unittest.TestCase):
         # A channel placed somewhere other than its parent is shown where it is.
         assert not fold("Shelly", "Shelly", "meter", b, a)
         assert not fold(None, None, "meter", None, None)
+
+    def test_broker_messages_become_readings(self) -> None:
+        # The topics a Shelly uses on a shared broker, with an account in front.
+        assert broker.split_topic("methodia@aiotcloud.app/08f9e0e66f84/status/em:0") == ("methodia@aiotcloud.app", "08f9e0e66f84", "em:0")
+        assert broker.split_topic("methodia@aiotcloud.app/08f9e0e66f84/online") == ("methodia@aiotcloud.app", "08f9e0e66f84", "online")
+        assert broker.split_topic("methodia@aiotcloud.app/08f9e0e66f84/events/rpc") is None
+        assert broker.device_name("methodia@aiotcloud.app", "08f9e0e66f84") == "methodia · 08f9e0e66f84"
+        # A three-phase meter: total power and energy (in kWh) are on; the per-phase figures start off.
+        em = {r.key: r for r in broker.readings("em:0", {"id": 0, "a_act_power": 10.0, "b_act_power": 20.0, "c_act_power": 30.0, "a_voltage": 235.1, "total_act_power": 60.0, "total_current": 0.3})}
+        assert em["power"].value == 60.0 and em["power"].enabled and em["power"].device_class == "power"
+        assert not em["power_phase_a"].enabled and em["voltage_phase_a"].unit == "V"
+        data = {r.key: r for r in broker.readings("emdata:0", {"id": 0, "total_act": 8093789.59, "total_act_ret": 1774.41, "a_total_act_energy": 2113722.14})}
+        assert data["energy"].value == 8093.7896 and data["energy"].unit == "kWh" and data["energy"].state_class == "total_increasing"
+        assert data["energy_returned"].enabled and not data["energy_phase_a"].enabled
+        # A relay with its own meter, and its second channel, which starts off and is named apart.
+        sw = {r.key: r for r in broker.readings("switch:0", {"apower": 5.5, "aenergy": {"total": 1500}})}
+        assert sw["power"].value == 5.5 and sw["energy"].value == 1.5
+        second = {r.key: r for r in broker.readings("switch:1", {"apower": 1})}
+        assert second["power_2"].name == "Power channel 2" and not second["power_2"].enabled
+        # Anything else is ignored rather than guessed at.
+        assert broker.readings("sys", {"uptime": 5}) == [] and broker.readings("em:0", "not json") == []
+        assert broker.readings("em:0", {"total_act_power": None, "a_voltage": True}) == []
 
     def test_every_command_has_a_capability_row(self) -> None:
         import re

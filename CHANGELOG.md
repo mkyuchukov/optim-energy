@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.0
+
+Shelly devices from an MQTT broker.
+
+- New option, "Import Shelly devices from the MQTT broker". With it on, every Shelly Gen2/Gen3 device that reports on the broker Home Assistant's MQTT integration is connected to (topics `<account>/<device>/status/<component>` and `<account>/<device>/online`) becomes a Home Assistant device the first time it is heard, named "<account> · <device id>". It then appears under Administration, Devices, Unassigned like any other device.
+- Each device gets Power, Energy and Energy returned (kWh) and an Online state. Per-phase and per-channel readings are made too but start disabled. Understood: three-phase meters (`em`, `emdata`), single meters (`em1`, `em1data`) and relays or plugs with a meter (`switch`, `pm1`).
+- It only listens; nothing is ever published to the broker. Live values are written at most once per interval (60 seconds unless set otherwise), so hundreds of devices do not flood the database. The import can be limited to some accounts.
+
 ## 0.17.3
 
 - Devices, Map, Connection by device looks like a connection map again, not like the power tree. The location is in the centre and each level of parent devices is one ring around it; a device that carries others has its name under it and a + or − to show or hide what is under it. It opens three levels deep. A hierarchy of 47 devices over five levels fits the screen at about half size fully expanded, where the first circle (0.17.1) needed almost twice the room.

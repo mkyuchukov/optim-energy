@@ -16,7 +16,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from .broker import BROKER_KEY, BrokerImport
 from .const import (
+    CONF_BROKER,
+    CONF_BROKER_ACCOUNTS,
+    CONF_BROKER_INTERVAL,
     CONF_SITE_NAME,
     DOMAIN,
     FRONTEND_DIRECTORY,
@@ -66,6 +70,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     audit = bool(entry.options.get("audit", False))
     websocket_firewall.audit = rest_firewall.audit = audit
 
+    # Devices heard on an MQTT broker, when the option is on (see broker.py).
+    hass.data[BROKER_KEY] = BrokerImport(hass)
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "binary_sensor"])
+    entry.async_create_background_task(hass, _async_configure_broker(hass, entry), "optim_energy broker import")
+
     await _async_replace_dashboards(hass, entry.data[CONF_SITE_NAME])
     await _async_set_portal_default(hass)
     await manager.async_sync_all_sidebars()
@@ -83,6 +92,21 @@ async def _async_apply_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if rest_firewall is not None:
         rest_firewall.audit = audit
     _LOGGER.warning("Optim Energy audit mode %s", "enabled" if audit else "disabled")
+    await _async_configure_broker(hass, entry)
+
+
+def _broker_accounts(value: Any) -> set[str]:
+    return {part.strip() for part in str(value or "").replace("\n", ",").split(",") if part.strip()}
+
+
+async def _async_configure_broker(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    importer: BrokerImport | None = hass.data.get(BROKER_KEY)
+    if importer is not None:
+        await importer.async_configure(
+            bool(entry.options.get(CONF_BROKER, False)),
+            _broker_accounts(entry.options.get(CONF_BROKER_ACCOUNTS)),
+            int(entry.options.get(CONF_BROKER_INTERVAL, 60)),
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -93,6 +117,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     websocket_firewall: WebsocketFirewall | None = hass.data.pop(_FIREWALL_KEY, None)
     if websocket_firewall is not None:
         websocket_firewall.uninstall()
+    importer: BrokerImport | None = hass.data.pop(BROKER_KEY, None)
+    if importer is not None:
+        importer.stop()
+    await hass.config_entries.async_unload_platforms(entry, ["sensor", "binary_sensor"])
     manager: TenancyManager | None = hass.data.pop(_TENANCY_KEY, None)
     if manager is not None:
         if manager.prices is not None:

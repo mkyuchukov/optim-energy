@@ -141,6 +141,27 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             )
         connection.send_result(msg["id"], created)
 
+    @websocket_api.require_admin
+    @websocket_api.websocket_command(
+        {
+            probatio.Required("type"): "optim_runtime_fixture/broker_feed",
+            probatio.Required("messages"): [[str]],
+        }
+    )
+    @callback
+    def websocket_broker_feed(
+        hass: HomeAssistant,
+        connection: ActiveConnection,
+        msg: dict[str, Any],
+    ) -> None:
+        # The test instance has no MQTT broker; this hands messages to the
+        # broker import exactly as Home Assistant's MQTT client would.
+        importer = hass.data.get("optim_energy_broker")
+        for topic, payload in msg["messages"]:
+            importer.handle(topic, payload)
+        connection.send_result(msg["id"], {"fed": len(msg["messages"]), "enabled": importer.enabled})
+
+    websocket_api.async_register_command(hass, websocket_broker_feed)
     websocket_api.async_register_command(hass, websocket_create_devices)
     websocket_api.async_register_command(hass, websocket_install_late_command)
     return True

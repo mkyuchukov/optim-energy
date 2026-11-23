@@ -13,7 +13,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 
-from .const import CONF_AUDIT, CONF_SITE_NAME, DOMAIN
+from .const import CONF_AUDIT, CONF_BROKER, CONF_BROKER_ACCOUNTS, CONF_BROKER_INTERVAL, CONF_SITE_NAME, DOMAIN
 
 
 class OptimEnergyConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -56,7 +56,7 @@ class OptimEnergyConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class OptimEnergyOptionsFlow(OptionsFlow):
-    """Configure audit mode before an HA upgrade or rollout."""
+    """Audit mode, and the import of Shelly devices from the MQTT broker Home Assistant is connected to."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -64,7 +64,12 @@ class OptimEnergyOptionsFlow(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(
                 title="",
-                data={CONF_AUDIT: bool(user_input.get(CONF_AUDIT, False))},
+                data={
+                    CONF_AUDIT: bool(user_input.get(CONF_AUDIT, False)),
+                    CONF_BROKER: bool(user_input.get(CONF_BROKER, False)),
+                    CONF_BROKER_ACCOUNTS: str(user_input.get(CONF_BROKER_ACCOUNTS, "")).strip(),
+                    CONF_BROKER_INTERVAL: int(user_input.get(CONF_BROKER_INTERVAL, 60)),
+                },
             )
         return self.async_show_form(
             step_id="init",
@@ -74,6 +79,9 @@ class OptimEnergyOptionsFlow(OptionsFlow):
                         CONF_AUDIT,
                         default=bool(self.config_entry.options.get(CONF_AUDIT, False)),
                     ): bool,
+                    vol.Optional(CONF_BROKER, default=bool(self.config_entry.options.get(CONF_BROKER, False))): bool,
+                    vol.Optional(CONF_BROKER_ACCOUNTS, default=str(self.config_entry.options.get(CONF_BROKER_ACCOUNTS, ""))): str,
+                    vol.Optional(CONF_BROKER_INTERVAL, default=int(self.config_entry.options.get(CONF_BROKER_INTERVAL, 60))): vol.All(vol.Coerce(int), vol.Range(min=5, max=3600)),
                 }
             ),
         )
